@@ -13656,12 +13656,24 @@ function cacheRecentPlaceLookup(query, result) {
   }
   const id = buildLookupPlaceId(result);
   const existing = state.ai.recentPlaceLookups.find((entry) => entry.id === id);
+  const queryText = String(query ?? "").trim();
+  const normalizedQuery = normalizeLookupText(queryText);
+  const resultText = normalizeLookupText([result.name, result.displayName, result.sub].filter(Boolean).join(" "));
+  const shouldStoreQueryAlias = Boolean(
+    normalizedQuery
+    && normalizedQuery.length >= 3
+    && resultText
+    && (
+      resultText.includes(normalizedQuery)
+      || normalizedQuery.split(" ").every((token) => token && resultText.includes(token))
+    )
+  );
   const aliases = new Set([
     ...(existing?.aliases ?? []),
     result.name,
     result.displayName,
     result.query,
-    query,
+    shouldStoreQueryAlias ? queryText : "",
   ].map((value) => String(value ?? "").trim()).filter(Boolean));
   const next = {
     id,
@@ -13691,6 +13703,18 @@ function getRecentPlaceLookupRecords() {
     .filter((entry) => Number.isFinite(Number(entry.lat)) && Number.isFinite(Number(entry.lon)))
     .map((entry) => finalizeLookupRecord({
       ...entry,
+      aliases: (entry.aliases ?? []).filter((alias) => {
+        const normalizedAlias = normalizeLookupText(alias);
+        if (!normalizedAlias) {
+          return false;
+        }
+        if (normalizedAlias.length <= 2) {
+          return true;
+        }
+        const resultText = normalizeLookupText([entry.name, entry.subtitle, entry.displayName].filter(Boolean).join(" "));
+        return resultText.includes(normalizedAlias)
+          || normalizedAlias.split(" ").every((token) => token && resultText.includes(token));
+      }),
       lat: Number(entry.lat),
       lon: Number(entry.lon),
     }))
@@ -13871,6 +13895,15 @@ function buildLookupSearchVariants(term) {
   return [...new Set([primary, stripped].filter(Boolean))];
 }
 
+function matchesLookupTokenPrefix(token, value) {
+  const normalizedToken = normalizeLookupText(token);
+  const normalizedValue = normalizeLookupText(value);
+  if (!normalizedToken || !normalizedValue) {
+    return false;
+  }
+  return normalizedValue.split(" ").some((part) => part.startsWith(normalizedToken));
+}
+
 function computeMapLookupMatchScore(term, contentId, record) {
   const variants = buildLookupSearchVariants(term);
   if (!variants.length) {
@@ -13885,31 +13918,46 @@ function computeMapLookupMatchScore(term, contentId, record) {
   const combined = record.searchText ?? normalizeMapContentsSearchText(fields.join(" "));
   const acronym = record.searchAcronym ?? buildSearchAcronym(combined);
   const searchName = record.searchName ?? normalizeMapContentsSearchText(record.name);
+  const aliasText = normalizeMapContentsSearchText(Array.isArray(record.aliases) ? record.aliases.join(" ") : "");
   let bestScore = -1;
   for (const normalizedTerm of variants) {
+    const tokens = normalizedTerm.split(" ").filter(Boolean);
+    let score = -1;
     if (searchName === normalizedTerm) {
-      bestScore = Math.max(bestScore, 120);
+      score = 150;
+    } else if (searchName.startsWith(normalizedTerm)) {
+      score = 132;
+    } else if (matchesLookupTokenPrefix(normalizedTerm, record.name)) {
+      score = 122;
+    } else if (aliasText && aliasText.includes(normalizedTerm)) {
+      score = 112;
+    } else if (combined.startsWith(normalizedTerm)) {
+      score = 104;
+    } else if (tokens.length > 1 && tokens.every((token) => matchesLookupTokenPrefix(token, record.name) || combined.includes(token))) {
+      score = 96 + tokens.length;
+    } else if (tokens.every((token) => combined.includes(token))) {
+      score = 82 + tokens.length;
+    } else if (normalizedTerm.length >= 3 && acronym.startsWith(normalizedTerm)) {
+      score = 72;
+    } else if (tokens.length > 1 && smartMapContentsMatch(normalizedTerm, fields)) {
+      score = 52;
+    } else if (normalizedTerm.length >= 5 && isSubsequenceMatch(normalizedTerm, searchName)) {
+      score = 28;
+    }
+    if (score < 0) {
       continue;
     }
-    if (searchName.startsWith(normalizedTerm)) {
-      bestScore = Math.max(bestScore, 108);
-      continue;
+    if (record.source === "map-content") {
+      score += 10;
+    } else if (record.path === "Recent Place Search") {
+      score -= 18;
+    } else if (record.source === "geocoder") {
+      score -= 6;
     }
-    if (combined.startsWith(normalizedTerm)) {
-      bestScore = Math.max(bestScore, 100);
-      continue;
+    if (record.hidden) {
+      score -= 8;
     }
-    if (combined.includes(normalizedTerm)) {
-      bestScore = Math.max(bestScore, 80);
-      continue;
-    }
-    if (acronym.includes(normalizedTerm)) {
-      bestScore = Math.max(bestScore, 65);
-      continue;
-    }
-    if (smartMapContentsMatch(normalizedTerm, fields)) {
-      bestScore = Math.max(bestScore, 50);
-    }
+    bestScore = Math.max(bestScore, score);
   }
   return bestScore;
 }
@@ -14046,8 +14094,36 @@ async function fetchRemoteLookupMatches(term, limit = 6) {
   if (!query) {
     return [];
   }
-  const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=${Math.max(1, Math.min(limit, 8))}&addressdetails=1`;
-  const resp = await fetch(url, {
+  const maxResults = Math.max(1, Math.min(limit, 8));
+  const bias = (() => {
+    if (!state.map?.getCenter || !state.map?.getBounds) {
+      return null;
+    }
+    const center = state.map.getCenter();
+    const bounds = state.map.getBounds();
+    if (!center || !bounds?.isValid?.()) {
+      return null;
+    }
+    return {
+      lat: Number(center.lat),
+      lon: Number(center.lng),
+      west: Number(bounds.getWest()),
+      south: Number(bounds.getSouth()),
+      east: Number(bounds.getEast()),
+      north: Number(bounds.getNorth()),
+    };
+  })();
+  const params = new URLSearchParams({
+    q: query,
+    format: "jsonv2",
+    limit: String(maxResults),
+    addressdetails: "1",
+  });
+  if (bias) {
+    params.set("viewbox", `${bias.west},${bias.north},${bias.east},${bias.south}`);
+    params.set("bounded", "0");
+  }
+  const resp = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
     headers: {
       "Accept-Language": "en",
       "User-Agent": "RFSim/1.0",
@@ -14074,7 +14150,7 @@ async function fetchRemoteLookupMatches(term, limit = 6) {
       displayName,
       sub: displayName,
       query,
-      aliases: [shortName, displayName, query],
+      aliases: [shortName, displayName],
       lat: Number(item.lat),
       lon: Number(item.lon),
       bounds,
@@ -14083,16 +14159,41 @@ async function fetchRemoteLookupMatches(term, limit = 6) {
   })
     .filter((item) => item && Number.isFinite(item.lat) && Number.isFinite(item.lon))
     .sort((left, right) => {
-      const leftScore = computeMapLookupMatchScore(query, left.id ?? left.name, left);
-      const rightScore = computeMapLookupMatchScore(query, right.id ?? right.name, right);
+      const scoreDistanceBias = (result) => {
+        if (!bias) {
+          return 0;
+        }
+        const lat = Number(result?.lat);
+        const lon = Number(result?.lon ?? result?.lng);
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+          return 0;
+        }
+        const latDelta = lat - bias.lat;
+        const lonDelta = (lon - bias.lon) * Math.cos((bias.lat * Math.PI) / 180);
+        const distance = Math.sqrt((latDelta * latDelta) + (lonDelta * lonDelta));
+        return Math.max(0, 18 - (distance * 9));
+      };
+      const leftScore = computeMapLookupMatchScore(query, left.id ?? left.name, left) + scoreDistanceBias(left);
+      const rightScore = computeMapLookupMatchScore(query, right.id ?? right.name, right) + scoreDistanceBias(right);
       if (rightScore !== leftScore) {
         return rightScore - leftScore;
       }
       return String(left.name ?? "").localeCompare(String(right.name ?? ""));
     })
-    .slice(0, Math.max(1, Math.min(limit, 8)));
+    .slice(0, maxResults);
   results.forEach((result) => cacheRecentPlaceLookup(query, result));
-  return results;
+  const seen = new Set();
+  return results.filter((result) => {
+    const name = normalizeLookupText(result?.displayName || result?.name || "");
+    const latKey = Number.isFinite(Number(result?.lat)) ? Number(result.lat).toFixed(3) : "na";
+    const lonKey = Number.isFinite(Number(result?.lon ?? result?.lng)) ? Number(result.lon ?? result.lng).toFixed(3) : "na";
+    const key = `${name}:${latKey}:${lonKey}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
 }
 
 async function searchLookupTargets(term, { allowRemote = false, limit = 6 } = {}) {
@@ -22006,6 +22107,7 @@ let _geocoderActiveIndex = -1;
 let _geocoderResults = [];
 let _geocoderResultsElOverride = null;
 let _geocoderSearchToken = 0;
+const _geocoderRemoteCache = new Map();
 
 function getGeocoderResultsEl() {
   return _geocoderResultsElOverride ?? document.getElementById("mapGeoSearchResults");
@@ -22071,6 +22173,44 @@ function setGeocoderActiveIndex(idx) {
   items.forEach((item, i) => item.classList.toggle("active", i === idx));
   _geocoderActiveIndex = idx;
   if (idx >= 0 && items[idx]) items[idx].scrollIntoView({ block: "nearest" });
+}
+
+function buildGeocoderResultKey(result) {
+  const name = normalizeLookupText(result?.displayName || result?.name || "");
+  const kind = String(result?.kind || result?.source || "place");
+  const latKey = Number.isFinite(Number(result?.lat)) ? Number(result.lat).toFixed(3) : "na";
+  const lonKey = Number.isFinite(Number(result?.lon ?? result?.lng)) ? Number(result.lon ?? result.lng).toFixed(3) : "na";
+  return `${kind}:${name}:${latKey}:${lonKey}`;
+}
+
+function dedupeGeocoderResults(results, limit = 8) {
+  const deduped = [];
+  const seen = new Set();
+  for (const result of results ?? []) {
+    if (!result) {
+      continue;
+    }
+    const key = buildGeocoderResultKey(result);
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    deduped.push(result);
+    if (deduped.length >= limit) {
+      break;
+    }
+  }
+  return deduped;
+}
+
+function mergeGeocoderResults(localResults, remoteResults, limit = 8) {
+  return dedupeGeocoderResults([...(localResults ?? []), ...(remoteResults ?? [])], limit);
+}
+
+function isActiveGeocoderSearch(query, searchToken) {
+  const activeQuery = document.getElementById("mapGeoSearchInput")?.value.trim() ?? "";
+  return searchToken === _geocoderSearchToken
+    && normalizeLookupText(activeQuery) === normalizeLookupText(query);
 }
 
 function normalizeGeocoderBounds(bounds) {
@@ -22231,7 +22371,9 @@ function initMapGeoSearch() {
     updateClear();
     if (!val) { hideGeocoderResults(); return; }
     clearTimeout(_geocoderDebounceTimer);
-    _geocoderDebounceTimer = setTimeout(() => void runGeocoderSearch(val), 220);
+    const searchToken = ++_geocoderSearchToken;
+    void runResponsiveGeocoderSearch(val, { searchToken, allowRemote: false });
+    _geocoderDebounceTimer = setTimeout(() => void runResponsiveGeocoderSearch(val, { searchToken, allowRemote: true }), 90);
   });
 
   clearBtn?.addEventListener("click", () => {
@@ -22308,6 +22450,73 @@ async function runGeocoderSearch(query) {
   } catch (_) {
     if (searchToken === _geocoderSearchToken) {
       showGeocoderStatus("Search unavailable — check connection.");
+    }
+  }
+}
+
+async function runResponsiveGeocoderSearch(query, { searchToken = ++_geocoderSearchToken, allowRemote = true } = {}) {
+  const q = query.trim();
+  if (!q) {
+    hideGeocoderResults();
+    return;
+  }
+
+  const local = tryParseCoordinateSearch(q);
+  if (local) {
+    if (isActiveGeocoderSearch(q, searchToken)) {
+      renderGeocoderResults(dedupeGeocoderResults(local, 8));
+    }
+    return;
+  }
+
+  const localMatches = dedupeGeocoderResults(await searchLookupTargets(q, { allowRemote: false, limit: 8 }), 8);
+  if (!isActiveGeocoderSearch(q, searchToken)) {
+    return;
+  }
+  if (localMatches.length) {
+    renderGeocoderResults(localMatches);
+  } else if (normalizeLookupText(q).length >= 2) {
+    showGeocoderStatus("Searching...");
+  }
+
+  if (!allowRemote) {
+    return;
+  }
+
+  const cacheKey = normalizeLookupText(q);
+  const cachedRemote = _geocoderRemoteCache.get(cacheKey);
+  if (cachedRemote) {
+    if (!isActiveGeocoderSearch(q, searchToken)) {
+      return;
+    }
+    const mergedCached = mergeGeocoderResults(localMatches, cachedRemote, 8);
+    if (mergedCached.length) {
+      renderGeocoderResults(mergedCached);
+    } else {
+      showGeocoderStatus("No results found.");
+    }
+    return;
+  }
+
+  try {
+    const remoteResults = await fetchRemoteLookupMatches(q, 8);
+    _geocoderRemoteCache.set(cacheKey, remoteResults);
+    if (!isActiveGeocoderSearch(q, searchToken)) {
+      return;
+    }
+    const merged = mergeGeocoderResults(localMatches, remoteResults, 8);
+    if (!merged.length) {
+      showGeocoderStatus("No results found.");
+      return;
+    }
+    renderGeocoderResults(merged);
+  } catch (_) {
+    if (isActiveGeocoderSearch(q, searchToken)) {
+      if (localMatches.length) {
+        renderGeocoderResults(localMatches);
+      } else {
+        showGeocoderStatus("Search unavailable - check connection.");
+      }
     }
   }
 }
