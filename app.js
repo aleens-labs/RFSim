@@ -27858,6 +27858,16 @@ function initPlanViewIfNeeded() {
     hideToContextMenu();
     openToEditModal();
   });
+  document.getElementById("toCtxDuplicate")?.addEventListener("click", () => {
+    const source = _toState.units.find(u => u.id === _toState.selectedUnit);
+    if (!source) return;
+    const newUnit = { ...source, id: _toState.nextId++, x: source.x + 40, y: source.y + 40 };
+    _toState.units.push(newUnit);
+    _toState.selectedUnit = newUnit.id;
+    hideToContextMenu();
+    renderToView();
+    saveMapState();
+  });
   document.getElementById("toCtxDelete")?.addEventListener("click", () => {
     if (!_toState.selectedUnit) return;
     const linkedTactical = getTacticalObjectByPlanUnitId(_toState.selectedUnit);

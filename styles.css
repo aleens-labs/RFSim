@@ -6316,7 +6316,9 @@ body.emitter-modal-open {
 .to-unit-icon {
   width: 143px;
   height: 143px;
-  display: block;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
   border-radius: 2px;
   pointer-events: none;
   -webkit-user-drag: none;
@@ -6330,6 +6332,7 @@ body.emitter-modal-open {
   display: block;
   width: 111px;
   height: 143px;
+  margin: 0 auto;
   pointer-events: none;
   -webkit-user-drag: none;
 }
