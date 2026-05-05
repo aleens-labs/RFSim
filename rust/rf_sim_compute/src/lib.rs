@@ -7,6 +7,9 @@ thread_local! {
     static TERRAIN_CACHE: RefCell<HashMap<String, TerrainGrid>> = RefCell::new(HashMap::new());
 }
 
+/// Latitude/longitude origin of a cached terrain raster.
+///
+/// Inputs are deserialized from the JS/WASM boundary in decimal degrees.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Origin {
@@ -14,6 +17,10 @@ struct Origin {
     lon: f64,
 }
 
+/// Terrain raster plus optional base-surface and building overlays used by the RF engine.
+///
+/// The grid is assumed to be rectilinear in latitude/longitude space with row/column spacing
+/// expressed in degrees.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct TerrainGrid {
@@ -34,6 +41,10 @@ struct TerrainGrid {
     building_material_preset: String,
 }
 
+/// RF endpoint passed in from JS for link, terrain-trace, and path-profile calculations.
+///
+/// Coordinates are decimal degrees. RF parameters are optional so callers can omit values and
+/// let the engine fall back to scenario defaults.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Endpoint {
@@ -63,6 +74,9 @@ struct Endpoint {
     ground_elevation_m: Option<f64>,
 }
 
+/// Weather inputs used by the atmospheric-loss approximation path.
+///
+/// Values are interpreted as Celsius, percent relative humidity, hectopascals, and meters/second.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct WeatherModel {
@@ -76,6 +90,7 @@ struct WeatherModel {
     wind_speed_mps: f64,
 }
 
+/// Output of the terrain line-of-sight sweep between two endpoints.
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct TraceTerrainResult {
@@ -88,6 +103,7 @@ struct TraceTerrainResult {
     terrain_completeness: String,
 }
 
+/// Output of the simplified RF link simulation path.
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SimulateLinkResult {
@@ -102,6 +118,7 @@ struct SimulateLinkResult {
     rssi_dbm: f64,
 }
 
+/// Geographic point returned for the worst path-profile location.
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct PathPoint {
@@ -109,6 +126,7 @@ struct PathPoint {
     lon: f64,
 }
 
+/// Detailed path-profile result for clearance, Fresnel, and fade-margin inspection.
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct BuildPathProfileResult {
@@ -127,25 +145,69 @@ struct BuildPathProfileResult {
     worst_point: Option<PathPoint>,
 }
 
+/// Returns the default ambient temperature used when weather is omitted.
+///
+/// Inputs: none.
+/// Reference: project-local default value, not an external algorithm.
 fn default_temperature_c() -> f64 { 20.0 }
+
+/// Returns the default relative humidity used when weather is omitted.
+///
+/// Inputs: none.
+/// Reference: project-local default value, not an external algorithm.
 fn default_humidity() -> f64 { 50.0 }
+
+/// Returns the default pressure used when weather is omitted.
+///
+/// Inputs: none.
+/// Reference: project-local default value, not an external algorithm.
 fn default_pressure_hpa() -> f64 { 1013.2 }
+
+/// Returns the default wind speed used when weather is omitted.
+///
+/// Inputs: none.
+/// Reference: project-local default value, not an external algorithm.
 fn default_wind_speed_mps() -> f64 { 3.0 }
+
+/// Returns the fallback building-material preset used by the building loss heuristic.
+///
+/// Inputs: none.
+/// Reference: project-local default value, not an external algorithm.
 fn default_building_material() -> String { "reinforced-concrete".to_string() }
 
+/// Returns the compute engine version string exposed to JS callers.
+///
+/// Inputs: none.
+/// Reference: project-local API metadata, not an external algorithm.
 #[wasm_bindgen]
 pub fn engine_version() -> String {
     "0.1.0".to_string()
 }
 
+/// Placeholder cache-clear entrypoint kept for JS API compatibility.
+///
+/// Inputs: none.
+/// Side effects: currently none.
+/// Reference: project-local compatibility shim.
 #[wasm_bindgen]
 pub fn clear_compute_caches() {}
 
+/// Clears every cached terrain grid from the in-memory WASM terrain cache.
+///
+/// Inputs: none.
+/// Side effects: empties `TERRAIN_CACHE`.
+/// Reference: project-local cache-management helper.
 #[wasm_bindgen]
 pub fn clear_terrain_cache() {
     TERRAIN_CACHE.with(|cache| cache.borrow_mut().clear());
 }
 
+/// Removes a single cached terrain grid by terrain id.
+///
+/// Inputs:
+/// - `id`: cache key previously supplied in `cache_terrain`.
+/// Side effects: deletes the matching cache entry when present.
+/// Reference: project-local cache-management helper.
 #[wasm_bindgen]
 pub fn remove_terrain(id: String) {
     TERRAIN_CACHE.with(|cache| {
@@ -153,6 +215,12 @@ pub fn remove_terrain(id: String) {
     });
 }
 
+/// Deserializes a JS terrain object and stores it in the in-memory terrain cache.
+///
+/// Inputs:
+/// - `terrain`: JS object matching `TerrainGrid`.
+/// Output: `Ok(())` on success or a JS error if decoding fails.
+/// Reference: project-local WASM boundary and cache-ingest path.
 #[wasm_bindgen]
 pub fn cache_terrain(terrain: JsValue) -> Result<(), JsValue> {
     let terrain: TerrainGrid = serde_wasm_bindgen::from_value(terrain)
@@ -163,6 +231,18 @@ pub fn cache_terrain(terrain: JsValue) -> Result<(), JsValue> {
     Ok(())
 }
 
+/// Samples one terrain field at the requested latitude/longitude.
+///
+/// Inputs:
+/// - `terrain_id`: cached terrain key.
+/// - `field_name`: `"elevations"` or `"baseElevations"`.
+/// - `lat`, `lon`: decimal-degree sample coordinates.
+/// Output: interpolated field value or `null` when the point is outside the grid or all nearby
+/// samples are invalid.
+/// Reference: delegates to `sample_terrain_field_inner`, which uses bilinear interpolation on the
+/// rectilinear raster grid. For the interpolation method itself, see NIST Dataplot's bilinear
+/// interpolation reference:
+/// https://www.itl.nist.gov/div898/software/dataplot/refman2/ch3/bilinter.pdf
 #[wasm_bindgen]
 pub fn sample_terrain_field(terrain_id: String, field_name: String, lat: f64, lon: f64) -> Result<JsValue, JsValue> {
     let value = with_terrain(&terrain_id, |terrain| sample_terrain_field_inner(lat, lon, terrain, &field_name))?;
@@ -172,6 +252,15 @@ pub fn sample_terrain_field(terrain_id: String, field_name: String, lat: f64, lo
     }
 }
 
+/// Computes terrain/building line-of-sight between two endpoints over a cached terrain grid.
+///
+/// Inputs:
+/// - `terrain_id`: cached terrain key.
+/// - `source`, `target`: JS endpoint objects decoded into `Endpoint`.
+/// - `tx_height_m`, `rx_height_m`: antenna heights above sampled ground.
+/// Output: serialized `TraceTerrainResult`.
+/// Reference: delegates to `trace_terrain_inner`, a project-local terrain sweep that combines
+/// great-circle spacing, linear interpolation along the path, and spherical-Earth curvature.
 #[wasm_bindgen]
 pub fn trace_terrain(
     terrain_id: String,
@@ -188,6 +277,17 @@ pub fn trace_terrain(
     serde_wasm_bindgen::to_value(&result).map_err(|err| JsValue::from_str(&format!("trace encode failed: {err}")))
 }
 
+/// Simulates a single RF link between two endpoints, optionally using cached terrain.
+///
+/// Inputs:
+/// - `terrain_id`: cached terrain key, or an empty string to disable terrain lookup.
+/// - `tx_asset`, `rx_target`: JS endpoint objects decoded into `Endpoint`.
+/// - `weather`: JS weather object decoded into `WeatherModel`.
+/// - `propagation_model`: model selector such as `itu-p526`, `itu-hybrid`, or
+///   `itu-buildings-weather`.
+/// Output: serialized `SimulateLinkResult`.
+/// Reference: delegates to `simulate_link_inner`, which combines free-space loss with optional
+/// diffraction, atmospheric, and building-loss terms.
 #[wasm_bindgen]
 pub fn simulate_link(
     terrain_id: String,
@@ -208,6 +308,17 @@ pub fn simulate_link(
     serde_wasm_bindgen::to_value(&result).map_err(|err| JsValue::from_str(&format!("simulate encode failed: {err}")))
 }
 
+/// Builds a detailed path profile between two endpoints for LOS/Fresnel inspection.
+///
+/// Inputs:
+/// - `terrain_id`: cached terrain key, or an empty string to run without terrain.
+/// - `source`, `target`: JS endpoint objects decoded into `Endpoint`.
+/// - `weather`: JS weather object decoded into `WeatherModel`.
+/// - `propagation_model`: RF loss model selector.
+/// - `clearance_policy`: policy selector such as geometric LOS, 60% Fresnel, or 100% Fresnel.
+/// Output: serialized `BuildPathProfileResult`.
+/// Reference: delegates to `build_path_profile_inner`, which performs a sampled profile sweep and
+/// first-Fresnel clearance check before reusing `simulate_link_inner` for path loss and RSSI.
 #[wasm_bindgen]
 pub fn build_path_profile(
     terrain_id: String,
@@ -229,6 +340,13 @@ pub fn build_path_profile(
     serde_wasm_bindgen::to_value(&result).map_err(|err| JsValue::from_str(&format!("profile encode failed: {err}")))
 }
 
+/// Runs a closure with an optional cached terrain reference.
+///
+/// Inputs:
+/// - `terrain_id`: cache key; an empty string means "no terrain".
+/// - `f`: closure that accepts `Option<&TerrainGrid>`.
+/// Output: closure result wrapped in `Result`.
+/// Reference: project-local cache access helper.
 fn with_optional_terrain<T, F>(terrain_id: &str, f: F) -> Result<T, JsValue>
 where
     F: FnOnce(Option<&TerrainGrid>) -> T,
@@ -244,6 +362,13 @@ where
     })
 }
 
+/// Runs a closure with a required cached terrain reference.
+///
+/// Inputs:
+/// - `terrain_id`: cache key that must already exist.
+/// - `f`: closure that accepts `&TerrainGrid`.
+/// Output: closure result or a JS error when the terrain id is missing.
+/// Reference: project-local cache access helper.
 fn with_terrain<T, F>(terrain_id: &str, f: F) -> Result<T, JsValue>
 where
     F: FnOnce(&TerrainGrid) -> T,
@@ -257,18 +382,44 @@ where
     })
 }
 
+/// Returns whether the selected propagation model should include terrain/diffraction effects.
+///
+/// Inputs:
+/// - `propagation_model`: model selector string from the JS layer.
+/// Output: `true` when terrain-aware penalties should be evaluated.
+/// Reference: project-local model-selection policy.
 fn uses_terrain_effects(propagation_model: &str) -> bool {
     matches!(propagation_model, "itu-p526" | "itu-hybrid" | "itu-buildings-weather")
 }
 
+/// Returns whether the selected propagation model should include atmospheric attenuation.
+///
+/// Inputs:
+/// - `propagation_model`: model selector string from the JS layer.
+/// Output: `true` when atmospheric-loss terms should be evaluated.
+/// Reference: project-local model-selection policy.
 fn uses_atmospheric_effects(propagation_model: &str) -> bool {
     matches!(propagation_model, "itu-hybrid" | "itu-buildings-weather")
 }
 
+/// Returns whether the selected propagation model should include building penalties.
+///
+/// Inputs:
+/// - `propagation_model`: model selector string from the JS layer.
+/// Output: `true` when building-loss terms should be evaluated.
+/// Reference: project-local model-selection policy.
 fn uses_building_effects(propagation_model: &str) -> bool {
     propagation_model == "itu-buildings-weather"
 }
 
+/// Checks whether one terrain sample can participate in interpolation.
+///
+/// Inputs:
+/// - `terrain`: terrain metadata including optional nodata mask.
+/// - `source`: field values being sampled.
+/// - `index`: flattened cell index into `source`.
+/// Output: `true` when the sample exists, is finite, and is not marked nodata.
+/// Reference: project-local raster validation helper.
 fn terrain_sample_is_valid(terrain: &TerrainGrid, source: &[f64], index: usize) -> bool {
     if let Some(value) = source.get(index) {
         if !value.is_finite() {
@@ -283,6 +434,13 @@ fn terrain_sample_is_valid(terrain: &TerrainGrid, source: &[f64], index: usize) 
     true
 }
 
+/// Selects which terrain field array to sample for a given field name.
+///
+/// Inputs:
+/// - `terrain`: terrain grid holding the available field arrays.
+/// - `field_name`: JS-visible field selector.
+/// Output: slice of the chosen field values.
+/// Reference: project-local field-dispatch helper.
 fn get_terrain_field_source<'a>(terrain: &'a TerrainGrid, field_name: &str) -> &'a [f64] {
     if field_name == "baseElevations" {
         if let Some(base) = &terrain.base_elevations {
@@ -292,6 +450,17 @@ fn get_terrain_field_source<'a>(terrain: &'a TerrainGrid, field_name: &str) -> &
     terrain.elevations.as_slice()
 }
 
+/// Samples one terrain field by bilinear interpolation across the four surrounding raster cells.
+///
+/// Inputs:
+/// - `lat`, `lon`: decimal-degree coordinates to sample.
+/// - `terrain`: raster definition and field arrays.
+/// - `field_name`: field selector resolved by `get_terrain_field_source`.
+/// Output: interpolated value, or `None` when the point is outside the raster footprint or all
+/// contributing samples are invalid.
+/// Reference: standard bilinear interpolation on a rectilinear grid, adapted to a latitude/longitude
+/// terrain raster with nodata masking. NIST summary:
+/// https://www.itl.nist.gov/div898/software/dataplot/refman2/ch3/bilinter.pdf
 fn sample_terrain_field_inner(lat: f64, lon: f64, terrain: &TerrainGrid, field_name: &str) -> Option<f64> {
     let row_float = (lat - terrain.origin.lat) / terrain.lat_step_deg;
     let col_float = (lon - terrain.origin.lon) / terrain.lon_step_deg;
@@ -331,14 +500,38 @@ fn sample_terrain_field_inner(lat: f64, lon: f64, terrain: &TerrainGrid, field_n
     }
 }
 
+/// Samples the active terrain surface elevation at one point.
+///
+/// Inputs:
+/// - `lat`, `lon`: decimal-degree sample location.
+/// - `terrain`: terrain raster.
+/// Output: interpolated terrain surface elevation.
+/// Reference: thin wrapper over bilinear raster sampling.
 fn sample_terrain(lat: f64, lon: f64, terrain: &TerrainGrid) -> Option<f64> {
     sample_terrain_field_inner(lat, lon, terrain, "elevations")
 }
 
+/// Samples the base terrain elevation before building overlays are applied.
+///
+/// Inputs:
+/// - `lat`, `lon`: decimal-degree sample location.
+/// - `terrain`: terrain raster.
+/// Output: interpolated base-surface elevation.
+/// Reference: thin wrapper over bilinear raster sampling.
 fn sample_terrain_base(lat: f64, lon: f64, terrain: &TerrainGrid) -> Option<f64> {
     sample_terrain_field_inner(lat, lon, terrain, "baseElevations")
 }
 
+/// Samples the effective obstructing surface used for LOS tests.
+///
+/// Inputs:
+/// - `lat`, `lon`: decimal-degree sample location.
+/// - `terrain`: terrain raster and optional building-overlay settings.
+/// Output: maximum sampled obstruction height near the requested point.
+/// Reference:
+/// - Base terrain comes from bilinear raster sampling.
+/// - The surrounding-point max search is a project-local heuristic meant to avoid undersampling
+///   narrow building footprints within coarse cells.
 fn sample_surface_obstruction(lat: f64, lon: f64, terrain: &TerrainGrid) -> Option<f64> {
     if !terrain.osm_buildings_enabled {
         return sample_terrain(lat, lon, terrain);
@@ -370,6 +563,21 @@ fn sample_surface_obstruction(lat: f64, lon: f64, terrain: &TerrainGrid) -> Opti
     max_height
 }
 
+/// Walks the path between two endpoints and measures terrain/building obstruction against the LOS ray.
+///
+/// Inputs:
+/// - `source`, `target`: RF endpoints in decimal degrees.
+/// - `tx_height_m`, `rx_height_m`: antenna heights above local ground.
+/// - `terrain`: terrain/building raster used for sampling.
+/// Output: `TraceTerrainResult` containing LOS status, obstruction depth, building-hit statistics,
+/// and terrain coverage completeness.
+/// Reference:
+/// - Distance spacing uses `haversine_km`, the standard great-circle haversine relation.
+/// - LOS height uses linear interpolation along the path.
+/// - Earth bulge correction uses the spherical-Earth sag approximation in `earth_curvature_drop_meters`.
+/// - The overall sweep and building-hit bookkeeping are project-local RF-planning logic.
+/// - Great-circle / haversine background:
+///   https://dtcenter.org/sites/default/files/community-code/met/docs/write-ups/gc_simple.pdf
 fn trace_terrain_inner(source: &Endpoint, target: &Endpoint, tx_height_m: f64, rx_height_m: f64, terrain: &TerrainGrid) -> TraceTerrainResult {
     let total_distance_km = haversine_km(source.lat, source.lon, target.lat, target.lon);
     let total_distance_meters = total_distance_km * 1000.0;
@@ -429,6 +637,22 @@ fn trace_terrain_inner(source: &Endpoint, target: &Endpoint, tx_height_m: f64, r
     }
 }
 
+/// Simulates an RF link budget with optional terrain, atmospheric, diffraction, and building effects.
+///
+/// Inputs:
+/// - `tx_asset`, `rx_target`: transmit and receive endpoints.
+/// - `terrain`: optional terrain raster for terrain-aware models.
+/// - `weather`: weather parameters used by the atmospheric-loss approximation.
+/// - `propagation_model`: model selector controlling which penalty terms are enabled.
+/// Output: `SimulateLinkResult` with distance, path loss, LOS state, and RSSI.
+/// Reference:
+/// - Free-space loss uses the standard Friis/FSPL log-distance form via `free_space_path_loss`.
+///   See Shaw, "Radiometry and the Friis transmission equation" (Am. J. Phys. 81, 33, 2013):
+///   https://www.montana.edu/jshaw/documents/RadiometryFriis%20Eqn%20-%20Shaw%20-%20AJP%202013.pdf
+/// - Diffraction uses the knife-edge excess-loss form in `diffraction_penalty`, aligned to ITU-R P.526 style handling:
+///   https://www.itu.int/rec/r-rec-p.526/en
+/// - Atmospheric attenuation uses a project-local approximation inspired by atmospheric gas loss models rather than a direct implementation of a full ITU recommendation.
+/// - Building penalties are project-local heuristics layered on top of the terrain trace.
 fn simulate_link_inner(
     tx_asset: &Endpoint,
     rx_target: &Endpoint,
@@ -520,6 +744,24 @@ fn simulate_link_inner(
     }
 }
 
+/// Builds a sampled path profile and evaluates geometric LOS, Fresnel clearance, and fade margin.
+///
+/// Inputs:
+/// - `source`, `target`: profile endpoints.
+/// - `terrain`: optional terrain raster.
+/// - `weather`: weather inputs reused by the RF loss model.
+/// - `propagation_model`: RF loss model selector.
+/// - `clearance_policy`: policy controlling whether geometric LOS, 60% Fresnel, 100% Fresnel,
+///   or building-aware clearance is required.
+/// Output: `BuildPathProfileResult` containing worst-point location, clearances, pass/fail state,
+/// path loss, RSSI, and extra mast height needed.
+/// Reference:
+/// - Path distance uses the haversine relation.
+/// - Fresnel clearance uses the first Fresnel zone radius formula.
+/// - Earth bulge correction uses a spherical-Earth curvature approximation.
+/// - The policy evaluation and "extra height needed" logic are project-local decision rules.
+/// - Great-circle / haversine background:
+///   https://dtcenter.org/sites/default/files/community-code/met/docs/write-ups/gc_simple.pdf
 fn build_path_profile_inner(
     source: &Endpoint,
     target: &Endpoint,
@@ -641,6 +883,13 @@ fn build_path_profile_inner(
     }
 }
 
+/// Returns frequency-band coefficients used by the building-loss heuristic.
+///
+/// Inputs:
+/// - `frequency_mhz`: operating frequency in MHz.
+/// Output: tuple of penetration/shadow coefficients, or `None` below the modeled range.
+/// Reference: project-local band bucketing heuristic; the values are tuning constants rather than a
+/// direct transcription of a single external standard.
 fn get_building_band_profile(frequency_mhz: f64) -> Option<(f64, f64, f64, f64, f64)> {
     if frequency_mhz < 30.0 {
         None
@@ -653,6 +902,17 @@ fn get_building_band_profile(frequency_mhz: f64) -> Option<(f64, f64, f64, f64, 
     }
 }
 
+/// Estimates additional building penetration and shadowing loss from the terrain trace.
+///
+/// Inputs:
+/// - `terrain_profile`: obstruction statistics produced by `trace_terrain_inner`.
+/// - `frequency_mhz`: operating frequency in MHz.
+/// - `terrain`: terrain/building metadata, including the selected material preset.
+/// Output: extra building loss in dB.
+/// Reference:
+/// - This is a project-specific heuristic model.
+/// - It combines frequency-band scaling, material presets, obstruction depth, and building path
+///   length rather than implementing a single named propagation recommendation verbatim.
 fn building_structure_penalty(terrain_profile: &TraceTerrainResult, frequency_mhz: f64, terrain: &TerrainGrid) -> f64 {
     if !terrain.osm_buildings_enabled {
         return 0.0;
@@ -687,6 +947,16 @@ fn building_structure_penalty(terrain_profile: &TraceTerrainResult, frequency_mh
     total_loss_db.min(max_additional_loss_db + max_shadow_extra_db)
 }
 
+/// Computes excess diffraction loss from the maximum LOS obstruction height.
+///
+/// Inputs:
+/// - `max_obstruction_m`: positive obstruction above the LOS ray in meters.
+/// - `distance_km`: total path length in kilometers.
+/// - `frequency_mhz`: operating frequency in MHz.
+/// Output: diffraction penalty in dB.
+/// Reference: single-knife-edge excess-loss equation using the `v` parameter, consistent with the
+/// common ITU-R P.526 formulation:
+/// https://www.itu.int/rec/r-rec-p.526/en
 fn diffraction_penalty(max_obstruction_m: f64, distance_km: f64, frequency_mhz: f64) -> f64 {
     if max_obstruction_m <= 0.0 {
         return 0.0;
@@ -700,6 +970,18 @@ fn diffraction_penalty(max_obstruction_m: f64, distance_km: f64, frequency_mhz: 
     6.9 + 20.0 * (((v - 0.1).powi(2) + 1.0).sqrt() + v - 0.1).log10()
 }
 
+/// Approximates atmospheric loss over the path using weather-weighted frequency scaling.
+///
+/// Inputs:
+/// - `freq_mhz`: operating frequency in MHz.
+/// - `weather`: temperature, humidity, pressure, and wind inputs.
+/// - `distance_km`: total path length in kilometers.
+/// Output: atmospheric attenuation in dB.
+/// Reference:
+/// - Inspired by atmospheric-gas attenuation modeling such as ITU-R P.676:
+///   https://www.itu.int/rec/R-REC-p.676/en
+/// - This implementation is intentionally simplified and should be treated as a project-local
+///   approximation, not a full line-by-line implementation of the ITU method.
 fn atmospheric_attenuation(freq_mhz: f64, weather: &WeatherModel, distance_km: f64) -> f64 {
     let freq_ghz = freq_mhz.max(1.0) / 1000.0;
     let humidity_factor = (weather.humidity / 100.0) * 0.18;
@@ -711,14 +993,38 @@ fn atmospheric_attenuation(freq_mhz: f64, weather: &WeatherModel, distance_km: f
     ((oxygen_loss + water_vapor_loss + wind_noise) * distance_km).max(0.0)
 }
 
+/// Computes free-space path loss from range and frequency.
+///
+/// Inputs:
+/// - `distance_km`: path length in kilometers.
+/// - `frequency_mhz`: operating frequency in MHz.
+/// Output: free-space path loss in dB.
+/// Reference: standard FSPL expression commonly attributed to the Friis transmission relation,
+/// using distance in km and frequency in MHz. Background reference:
+/// https://www.montana.edu/jshaw/documents/RadiometryFriis%20Eqn%20-%20Shaw%20-%20AJP%202013.pdf
 fn free_space_path_loss(distance_km: f64, frequency_mhz: f64) -> f64 {
     32.44 + 20.0 * distance_km.max(0.001).log10() + 20.0 * frequency_mhz.max(0.1).log10()
 }
 
+/// Converts transmit power from watts to dBm.
+///
+/// Inputs:
+/// - `watts`: transmit power in watts.
+/// Output: power in dBm, clamped away from zero to avoid log singularities.
+/// Reference: standard logarithmic power conversion between watts and dBm.
 fn watts_to_dbm(watts: f64) -> f64 {
     10.0 * (watts.max(0.000001) * 1000.0).log10()
 }
 
+/// Chooses path-trace sample spacing from the raster cell size at the current latitude.
+///
+/// Inputs:
+/// - `terrain`: terrain grid whose angular cell size defines the sampling resolution.
+/// - `latitude`: representative latitude used to convert longitude degrees to meters.
+/// Output: sample spacing in meters.
+/// Reference:
+/// - Degree-to-meter conversion is standard geographic scaling.
+/// - The final `cell/3`, min, and max clamps are project-local tuning for LOS sampling density.
 fn estimate_trace_sample_meters(terrain: &TerrainGrid, latitude: f64) -> f64 {
     let lat_meters = terrain.lat_step_deg.abs() * 111_320.0;
     let lon_meters = terrain.lon_step_deg.abs() * 111_320.0 * latitude.to_radians().cos().max(1e-6);
@@ -726,6 +1032,13 @@ fn estimate_trace_sample_meters(terrain: &TerrainGrid, latitude: f64) -> f64 {
     clamp(cell_meters / 3.0, 8.0, 40.0)
 }
 
+/// Computes great-circle distance between two latitude/longitude points.
+///
+/// Inputs:
+/// - `lat1`, `lon1`, `lat2`, `lon2`: decimal-degree coordinates.
+/// Output: distance in kilometers.
+/// Reference: haversine formula for spherical great-circle distance. Compact derivation/reference:
+/// https://dtcenter.org/sites/default/files/community-code/met/docs/write-ups/gc_simple.pdf
 fn haversine_km(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
     let rad = std::f64::consts::PI / 180.0;
     let d_lat = (lat2 - lat1) * rad;
@@ -735,14 +1048,34 @@ fn haversine_km(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
     6371.0 * 2.0 * a.sqrt().atan2((1.0 - a).sqrt())
 }
 
+/// Approximates Earth-curvature drop below a tangent line over a path segment.
+///
+/// Inputs:
+/// - `distance_km`: horizontal distance from the path origin in kilometers.
+/// Output: curvature sag in meters.
+/// Reference: spherical-Earth approximation `d^2 / (2R)` for small-sag geometry.
 fn earth_curvature_drop_meters(distance_km: f64) -> f64 {
     (distance_km * 1000.0).powi(2) / (2.0 * 6_371_000.0)
 }
 
+/// Linearly interpolates between two scalar values.
+///
+/// Inputs:
+/// - `a`, `b`: endpoints.
+/// - `t`: interpolation fraction, typically in `[0, 1]`.
+/// Output: interpolated value.
+/// Reference: standard linear interpolation helper.
 fn lerp(a: f64, b: f64, t: f64) -> f64 {
     a + (b - a) * t
 }
 
+/// Clamps a scalar value into an inclusive numeric range.
+///
+/// Inputs:
+/// - `value`: input scalar.
+/// - `min`, `max`: lower and upper bounds.
+/// Output: bounded value.
+/// Reference: standard utility helper; project-local wrapper around `max/min`.
 fn clamp(value: f64, min: f64, max: f64) -> f64 {
     value.max(min).min(max)
 }

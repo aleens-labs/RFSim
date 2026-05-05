@@ -1727,6 +1727,7 @@ const dom = {
   aiSettingsModelSelect: document.querySelector("#aiSettingsModelSelect"),
   aiRefreshModelsBtn: document.querySelector("#aiRefreshModelsBtn"),
   aiProviderSummary: document.querySelector("#aiProviderSummary"),
+  aiAgentProfilesList: document.querySelector("#aiAgentProfilesList"),
   aiLocalModelSection: document.querySelector("#aiLocalModelSection"),
   aiGenAiMilNetworkWarning: document.querySelector("#aiGenAiMilNetworkWarning"),
   aiLocalModelUrlInput: document.querySelector("#aiLocalModelUrlInput"),
@@ -2225,6 +2226,7 @@ const state = {
     pressureHpa: 1013.2,
     windSpeedMps: 3,
     source: "manual",
+    observedAt: "",
   },
   profiles: [],
   gps: {
@@ -2312,6 +2314,7 @@ const state = {
     recentPlaceLookups: [],
     recentActionObjects: [],
     agentProfileId: "general",
+    enabledAgentProfileIds: null,
     agentProfileConfidence: 0,
     agentProfileReason: "No specialist mode inferred yet.",
     agentProfilePinned: false,
@@ -4910,6 +4913,95 @@ const AI_AGENT_PROFILES = {
   },
 };
 
+function getDefaultEnabledAiAgentProfileIds() {
+  return Object.keys(AI_AGENT_PROFILES).filter((profileId) => profileId !== "general");
+}
+
+function normalizeEnabledAiAgentProfileIds(profileIds) {
+  if (!Array.isArray(profileIds)) {
+    return getDefaultEnabledAiAgentProfileIds();
+  }
+  return [...new Set(profileIds.filter((profileId) =>
+    profileId !== "general" && Boolean(AI_AGENT_PROFILES[profileId])
+  ))];
+}
+
+function getEnabledAiAgentProfileIds({ includeGeneral = true } = {}) {
+  const enabled = normalizeEnabledAiAgentProfileIds(state.ai?.enabledAgentProfileIds);
+  return (includeGeneral ? ["general", ...enabled] : enabled)
+    .filter((profileId, index, list) => Boolean(AI_AGENT_PROFILES[profileId]) && list.indexOf(profileId) === index);
+}
+
+function isAiAgentProfileEnabled(profileId) {
+  if (profileId === "general") {
+    return true;
+  }
+  return getEnabledAiAgentProfileIds({ includeGeneral: false }).includes(profileId);
+}
+
+function getAiAgentProfileTriggerSummary(profileId) {
+  const profile = AI_AGENT_PROFILES[profileId];
+  if (!profile) {
+    return [];
+  }
+  return [...new Set((profile.triggerPhrases || []).filter(Boolean))].slice(0, 5);
+}
+
+function renderAiAgentProfileSettings() {
+  const container = dom.aiAgentProfilesList;
+  if (!container) {
+    return;
+  }
+  const enabled = new Set(getEnabledAiAgentProfileIds({ includeGeneral: false }));
+  const profiles = Object.entries(AI_AGENT_PROFILES)
+    .sort((left, right) => {
+      if (left[0] === "general") return -1;
+      if (right[0] === "general") return 1;
+      return (right[1].routingPriority || 0) - (left[1].routingPriority || 0);
+    });
+  container.innerHTML = profiles.map(([profileId, profile]) => {
+    const triggers = getAiAgentProfileTriggerSummary(profileId);
+    const isGeneral = profileId === "general";
+    const isEnabled = isGeneral || enabled.has(profileId);
+    const triggerMarkup = triggers.length
+      ? triggers.map((trigger) => `<span class="ai-agent-profile-trigger">${escapeHtml(trigger)}</span>`).join("")
+      : `<span class="ai-agent-profile-trigger-note">Fallback mode when no specialist trigger is strong.</span>`;
+    return `
+      <article class="ai-agent-profile-card${isEnabled ? "" : " is-disabled"}" data-ai-agent-profile-card="${profileId}">
+        <div class="ai-agent-profile-card-header">
+          <div class="ai-agent-profile-card-title">
+            <strong>${escapeHtml(profile.label)}</strong>
+            <span>${escapeHtml(profile.indicatorLabel || profile.label)}</span>
+          </div>
+          <label class="ai-agent-profile-toggle">
+            <input
+              type="checkbox"
+              data-ai-agent-profile-id="${profileId}"
+              ${isEnabled ? "checked" : ""}
+              ${isGeneral ? "disabled" : ""}
+            >
+            <span>${isGeneral ? "Always on" : "Enabled"}</span>
+          </label>
+        </div>
+        <div class="ai-agent-profile-description">${escapeHtml(profile.summary)}</div>
+        <div class="ai-agent-profile-triggers">${triggerMarkup}</div>
+      </article>
+    `;
+  }).join("");
+}
+
+function setEnabledAiAgentProfileIds(profileIds, { reason = "" } = {}) {
+  state.ai.enabledAgentProfileIds = normalizeEnabledAiAgentProfileIds(profileIds);
+  if (!isAiAgentProfileEnabled(state.ai.agentProfileId)) {
+    const previousProfile = getAiAgentProfile(state.ai.agentProfileId);
+    setAiAgentProfile("general", {
+      confidence: 1,
+      reason: reason || `${previousProfile.label} was disabled in AI Integration settings.`,
+      pinned: false,
+    });
+  }
+}
+
 function getAiViewProfile(view = state.ui?.currentView) {
   return AI_VIEW_PROFILES[view] ?? AI_VIEW_PROFILES.map;
 }
@@ -4934,11 +5026,13 @@ function resolveAiAgentProfile({ prompt = "", currentView = state.ui?.currentVie
   const recentText = recentMessages.slice(-6).map((msg) => normalizeAgentRoutingText(msg?.text)).join(" \n ");
   const combined = `${text}\n${recentText}`;
   const scores = {};
-  Object.keys(AI_AGENT_PROFILES).forEach((key) => {
+  const eligibleProfiles = getEnabledAiAgentProfileIds();
+  eligibleProfiles.forEach((key) => {
     scores[key] = key === "general" ? 1 : 0;
   });
 
-  Object.entries(AI_AGENT_PROFILES).forEach(([profileId, profile]) => {
+  eligibleProfiles.forEach((profileId) => {
+    const profile = AI_AGENT_PROFILES[profileId];
     (profile.triggerPhrases || []).forEach((phrase) => {
       if (combined.includes(normalizeAgentRoutingText(phrase))) {
         scores[profileId] += 18;
@@ -4946,37 +5040,43 @@ function resolveAiAgentProfile({ prompt = "", currentView = state.ui?.currentVie
     });
   });
 
-  if (/\b(cp|command post|toc)\b/.test(combined)) scores.command_post_site_selection += 30;
-  if (/\b(relay|retrans|repeater|los|line of sight|qth|shore|beach)\b/.test(combined)) scores.relay_planning += 26;
-  if (/\b(rocket m5|ubiquiti|5 ghz|backhaul|fresnel|dish|ptp)\b/.test(combined)) scores.microwave_backhaul += 28;
-  if (/\b(sensor|isr|surveillance|observation|watch)\b/.test(combined)) scores.rf_sensor_site_selection += 24;
-  if (/\b(interference|deconflict|spectrum|channel plan|frequency conflict)\b/.test(combined)) scores.spectrum_deconfliction += 24;
-  if (/\b(jammer|ew|intercept|detection risk|lpi|lpd)\b/.test(combined)) scores.ew_threat_analysis += 24;
-  if (/\b(route|movement|convoy|handoff)\b/.test(combined)) scores.movement_route_comms += 22;
-  if (/\b(compare|best site|which site|candidate)\b/.test(combined)) scores.site_comparison += 18;
-  if (/\b(masked|concealed|screened|terrain masking|hidden site)\b/.test(combined)) scores.terrain_masking += 18;
-  if (/\b(why can't|why cant|blocked link|diagnose|why is this link|marginal)\b/.test(combined)) scores.link_diagnosis += 20;
+  const addScore = (profileId, value) => {
+    if (Object.prototype.hasOwnProperty.call(scores, profileId)) {
+      scores[profileId] += value;
+    }
+  };
+
+  if (/\b(cp|command post|toc)\b/.test(combined)) addScore("command_post_site_selection", 30);
+  if (/\b(relay|retrans|repeater|los|line of sight|qth|shore|beach)\b/.test(combined)) addScore("relay_planning", 26);
+  if (/\b(rocket m5|ubiquiti|5 ghz|backhaul|fresnel|dish|ptp)\b/.test(combined)) addScore("microwave_backhaul", 28);
+  if (/\b(sensor|isr|surveillance|observation|watch)\b/.test(combined)) addScore("rf_sensor_site_selection", 24);
+  if (/\b(interference|deconflict|spectrum|channel plan|frequency conflict)\b/.test(combined)) addScore("spectrum_deconfliction", 24);
+  if (/\b(jammer|ew|intercept|detection risk|lpi|lpd)\b/.test(combined)) addScore("ew_threat_analysis", 24);
+  if (/\b(route|movement|convoy|handoff)\b/.test(combined)) addScore("movement_route_comms", 22);
+  if (/\b(compare|best site|which site|candidate)\b/.test(combined)) addScore("site_comparison", 18);
+  if (/\b(masked|concealed|screened|terrain masking|hidden site)\b/.test(combined)) addScore("terrain_masking", 18);
+  if (/\b(why can't|why cant|blocked link|diagnose|why is this link|marginal)\b/.test(combined)) addScore("link_diagnosis", 20);
 
   if (currentView === "topology") {
-    scores.link_diagnosis += 8;
-    scores.relay_planning += 5;
+    addScore("link_diagnosis", 8);
+    addScore("relay_planning", 5);
   } else if (currentView === "analyze") {
-    scores.spectrum_deconfliction += 4;
-    scores.ew_threat_analysis += 4;
+    addScore("spectrum_deconfliction", 4);
+    addScore("ew_threat_analysis", 4);
   }
 
-  if (state.siteStudy?.type === "relay") scores.relay_planning += 6;
-  if (state.siteStudy?.type === "sensor") scores.rf_sensor_site_selection += 6;
-  if (state.siteStudy?.type === "command-post") scores.command_post_site_selection += 6;
-  if (state.siteStudy?.type === "link") scores.link_diagnosis += 6;
+  if (state.siteStudy?.type === "relay") addScore("relay_planning", 6);
+  if (state.siteStudy?.type === "sensor") addScore("rf_sensor_site_selection", 6);
+  if (state.siteStudy?.type === "command-post") addScore("command_post_site_selection", 6);
+  if (state.siteStudy?.type === "link") addScore("link_diagnosis", 6);
 
   const selectedObjects = contextIds
     .map((contentId) => getMapContentName(contentId))
     .filter(Boolean)
     .map((name) => normalizeAgentRoutingText(name))
     .join(" ");
-  if (/\b(cp|command post|toc)\b/.test(selectedObjects)) scores.command_post_site_selection += 10;
-  if (/\b(sensor|radar|observation)\b/.test(selectedObjects)) scores.rf_sensor_site_selection += 10;
+  if (/\b(cp|command post|toc)\b/.test(selectedObjects)) addScore("command_post_site_selection", 10);
+  if (/\b(sensor|radar|observation)\b/.test(selectedObjects)) addScore("rf_sensor_site_selection", 10);
 
   const ranked = Object.entries(scores)
     .sort((left, right) => right[1] - left[1]);
@@ -4998,7 +5098,7 @@ function resolveAiAgentProfile({ prompt = "", currentView = state.ui?.currentVie
 }
 
 function setAiAgentProfile(profileId, { confidence = 1, reason = "", pinned = false } = {}) {
-  const next = AI_AGENT_PROFILES[profileId] ? profileId : "general";
+  const next = AI_AGENT_PROFILES[profileId] && isAiAgentProfileEnabled(profileId) ? profileId : "general";
   state.ai.agentProfileId = next;
   state.ai.agentProfileConfidence = confidence;
   state.ai.agentProfileReason = reason || getAiAgentProfile(next).summary;
@@ -5009,8 +5109,17 @@ function setAiAgentProfile(profileId, { confidence = 1, reason = "", pinned = fa
 function syncAiAgentModeSelect() {
   const select = dom.aiAgentModeSelect;
   if (!select) return;
-  const currentValue = state.ai.agentProfileId || "general";
+  const allowedProfiles = new Set(getEnabledAiAgentProfileIds());
+  const currentValue = allowedProfiles.has(state.ai.agentProfileId) ? state.ai.agentProfileId : "general";
+  if (currentValue !== state.ai.agentProfileId) {
+    setAiAgentProfile("general", {
+      confidence: 1,
+      reason: "Current agent profile is disabled in AI Integration settings.",
+      pinned: false,
+    });
+  }
   const profiles = Object.entries(AI_AGENT_PROFILES)
+    .filter(([profileId]) => allowedProfiles.has(profileId))
     .sort((a, b) => (b[1].routingPriority || 0) - (a[1].routingPriority || 0));
   const expected = profiles.length;
   if (select.options.length !== expected) {
@@ -6562,11 +6671,11 @@ async function init() {
   syncSiteStudyUi();
   renderMapContents();
   refreshTakLiveFeed({ immediate: true });
-  renderMapTakDebugPanel();
-  refreshActionButtons();
-  updateTerrainSummary();
-  updateWeatherState();
-  applySettings();
+    renderMapTakDebugPanel();
+    refreshActionButtons();
+    updateTerrainSummary();
+    normalizeWeatherState();
+    applySettings();
   syncGpsUi();
   syncTakIdentityUi();
   updateMapOverlayMetrics();
@@ -7246,6 +7355,25 @@ function wireEvents() {
     syncAiUi();
     setStatus(`AI mode set to ${profile.label}.`);
   });
+  dom.aiAgentProfilesList?.addEventListener("change", (event) => {
+    const input = event.target instanceof HTMLInputElement ? event.target : null;
+    const profileId = input?.dataset.aiAgentProfileId;
+    if (!input || !profileId || profileId === "general" || !AI_AGENT_PROFILES[profileId]) {
+      return;
+    }
+    const nextEnabled = new Set(getEnabledAiAgentProfileIds({ includeGeneral: false }));
+    if (input.checked) {
+      nextEnabled.add(profileId);
+    } else {
+      nextEnabled.delete(profileId);
+    }
+    setEnabledAiAgentProfileIds([...nextEnabled], {
+      reason: `${AI_AGENT_PROFILES[profileId].label} was disabled in AI Integration settings.`,
+    });
+    persistAiProviderSettings();
+    syncAiUi();
+    setStatus(`${AI_AGENT_PROFILES[profileId].label} ${input.checked ? "enabled" : "disabled"} for AI auto-switching.`);
+  });
   dom.aiChatForm.addEventListener("submit", onAiChatSubmit);
   dom.aiChatModelSelect.addEventListener("change", onAiModelChanged);
   dom.aiClearChatBtn.addEventListener("click", clearAiChat);
@@ -7662,6 +7790,7 @@ function applySavedMapState(rawSaved) {
   }
   if (saved.weather) {
     state.weather = { ...state.weather, ...saved.weather };
+    normalizeWeatherState();
   }
   if (saved.settings) {
     state.settings = { ...state.settings, ...saved.settings };
@@ -8068,6 +8197,7 @@ function applySettings() {
   if (dom.coordsLabel) dom.coordsLabel.textContent = coordinateSystemStatusLabel(state.settings.coordinateSystem);
   updateWeatherUnitLabels();
   syncWeatherInputsFromState();
+  syncWeatherSummaryFromState();
   updateCoordinateDisplays();
   updateMapOverlayMetrics();
   updateGridLayer();
@@ -8093,9 +8223,25 @@ function updateWeatherUnitLabels() {
   dom.tempLabel.textContent = `Temperature ${isStandard ? "F" : "C"}`;
   dom.pressureLabel.textContent = `Pressure ${isStandard ? "inHg" : "hPa"}`;
   dom.windLabel.textContent = `Wind ${isStandard ? "mph" : "m/s"}`;
+  if (dom.tempC) {
+    dom.tempC.min = isStandard ? "-76" : "-60";
+    dom.tempC.max = isStandard ? "140" : "60";
+    dom.tempC.step = "0.1";
+  }
+  if (dom.pressure) {
+    dom.pressure.min = isStandard ? "23" : "800";
+    dom.pressure.max = isStandard ? "33" : "1100";
+    dom.pressure.step = isStandard ? "0.01" : "0.1";
+  }
+  if (dom.windSpeed) {
+    dom.windSpeed.min = "0";
+    dom.windSpeed.max = isStandard ? "200" : "90";
+    dom.windSpeed.step = "0.1";
+  }
 }
 
 function syncWeatherInputsFromState() {
+  normalizeWeatherState();
   dom.tempC.value = formatInputNumber(displayTemperature(state.weather.temperatureC), 1);
   dom.humidity.value = formatInputNumber(state.weather.humidity, 0);
   dom.pressure.value = formatInputNumber(displayPressure(state.weather.pressureHpa), state.settings.measurementUnits === "standard" ? 2 : 1);
@@ -8105,6 +8251,44 @@ function syncWeatherInputsFromState() {
 
 function updateWeatherMenuValue() {
   dom.weatherMenuValue.textContent = state.weather.source === "open-meteo" ? "Live" : "Manual";
+}
+
+const HPA_TO_INHG = 0.0295299830714;
+const MPS_TO_MPH = 2.2369362921;
+
+function normalizeWeatherState() {
+  const fallback = {
+    temperatureC: 20,
+    humidity: 50,
+    pressureHpa: 1013.2,
+    windSpeedMps: 3,
+  };
+  state.weather.temperatureC = Number.isFinite(Number(state.weather.temperatureC))
+    ? Number(state.weather.temperatureC)
+    : fallback.temperatureC;
+  state.weather.humidity = clamp(Number(state.weather.humidity), 0, 100);
+  state.weather.pressureHpa = Number.isFinite(Number(state.weather.pressureHpa))
+    ? Number(state.weather.pressureHpa)
+    : fallback.pressureHpa;
+  state.weather.windSpeedMps = Math.max(
+    0,
+    Number.isFinite(Number(state.weather.windSpeedMps)) ? Number(state.weather.windSpeedMps) : fallback.windSpeedMps,
+  );
+  state.weather.source = state.weather.source === "open-meteo" ? "open-meteo" : "manual";
+  state.weather.observedAt = typeof state.weather.observedAt === "string" ? state.weather.observedAt : "";
+}
+
+function syncWeatherSummaryFromState() {
+  if (!dom.weatherSummary) {
+    return;
+  }
+  if (state.weather.source === "open-meteo") {
+    dom.weatherSummary.textContent = state.weather.observedAt
+      ? `Weather from Open-Meteo at ${state.weather.observedAt}.`
+      : "Live weather profile active.";
+    return;
+  }
+  dom.weatherSummary.textContent = "Manual weather profile active.";
 }
 
 function coordinateSystemStatusLabel(system) {
@@ -9092,8 +9276,15 @@ function loadAiProviderSettings() {
     if (typeof parsed.localModelUrl === "string") {
       state.ai.localModelUrl = parsed.localModelUrl.trim();
     }
+    state.ai.enabledAgentProfileIds = normalizeEnabledAiAgentProfileIds(parsed.enabledAgentProfileIds);
     if (typeof parsed.agentProfileId === "string" && AI_AGENT_PROFILES[parsed.agentProfileId]) {
       state.ai.agentProfileId = parsed.agentProfileId;
+    }
+    if (!isAiAgentProfileEnabled(state.ai.agentProfileId)) {
+      state.ai.agentProfileId = "general";
+      state.ai.agentProfileConfidence = 1;
+      state.ai.agentProfilePinned = false;
+      state.ai.agentProfileReason = "Disabled specialist mode reset to general.";
     }
     state.ai.agentProfileConfidence = Number(parsed.agentProfileConfidence) || 0;
     state.ai.agentProfileReason = typeof parsed.agentProfileReason === "string"
@@ -9103,6 +9294,12 @@ function loadAiProviderSettings() {
     state.ai.agentProfileLastUpdatedAt = typeof parsed.agentProfileLastUpdatedAt === "string"
       ? parsed.agentProfileLastUpdatedAt
       : state.ai.agentProfileLastUpdatedAt;
+    if (!isAiAgentProfileEnabled(state.ai.agentProfileId)) {
+      state.ai.agentProfileId = "general";
+      state.ai.agentProfileConfidence = 1;
+      state.ai.agentProfilePinned = false;
+      state.ai.agentProfileReason = "Disabled specialist mode reset to general.";
+    }
     const isLocalProvider = getAiProviderMeta(state.ai.provider)?.isLocalModel;
     if (state.ai.provider && (state.ai.apiKey || isLocalProvider)) {
       state.ai.status = "pending";
@@ -9138,6 +9335,7 @@ function persistAiProviderSettings() {
     apiKey: state.ai.apiKey,
     model: state.ai.model,
     localModelUrl: state.ai.localModelUrl,
+    enabledAgentProfileIds: normalizeEnabledAiAgentProfileIds(state.ai.enabledAgentProfileIds),
     agentProfileId: state.ai.agentProfileId,
     agentProfileConfidence: state.ai.agentProfileConfidence,
     agentProfileReason: state.ai.agentProfileReason,
@@ -9624,11 +9822,13 @@ function syncAiUi() {
     return;
   }
 
+  state.ai.enabledAgentProfileIds = normalizeEnabledAiAgentProfileIds(state.ai.enabledAgentProfileIds);
   const isLocalModel = Boolean(getAiProviderMeta(state.ai.provider)?.isLocalModel);
   syncAiViewMeta();
 
   renderAiSavedConfigOptions();
   renderAiModelOptions();
+  renderAiAgentProfileSettings();
   dom.aiProviderSelect.value = state.ai.provider;
   if (dom.aiSavedConfigLabelInput) {
     dom.aiSavedConfigLabelInput.value = state.ai.configLabel;
@@ -10867,7 +11067,7 @@ function createAiMessageController(role, text = "", images = [], contextItems = 
 
 function appendAiModeSuggestionCard(profileIds = [], introText = "I can handle this as one of several specialist modes.") {
   const options = ["general", ...profileIds].filter((profileId, index, list) =>
-    AI_AGENT_PROFILES[profileId] && list.indexOf(profileId) === index
+    AI_AGENT_PROFILES[profileId] && isAiAgentProfileEnabled(profileId) && list.indexOf(profileId) === index
   );
   if (!options.length || !dom.aiChatMessages) {
     return;
@@ -16696,8 +16896,10 @@ async function executeAiAction(action, { placedAssetIds = [], touchedObjects = [
       state.weather.windSpeedMps = Math.max(0, Number(action.windSpeedMps));
     }
     state.weather.source = "manual";
+    state.weather.observedAt = "";
+    normalizeWeatherState();
     syncWeatherInputsFromState();
-    dom.weatherSummary.textContent = "Manual weather profile active.";
+    syncWeatherSummaryFromState();
     updateWeatherMenuValue();
     return "Updated weather inputs.";
   }
@@ -19310,14 +19512,14 @@ function clearAssets() {
 }
 
 function updateWeatherState() {
+  normalizeWeatherState();
   state.weather.temperatureC = parseTemperatureInput(dom.tempC.value);
-  state.weather.humidity = Number(dom.humidity.value);
+  state.weather.humidity = clamp(Number(dom.humidity.value), 0, 100);
   state.weather.pressureHpa = parsePressureInput(dom.pressure.value);
   state.weather.windSpeedMps = parseWindSpeedInput(dom.windSpeed.value);
   state.weather.source = "manual";
-  if (state.weather.source === "manual") {
-    dom.weatherSummary.textContent = "Manual weather profile active.";
-  }
+  state.weather.observedAt = "";
+  syncWeatherSummaryFromState();
   updateWeatherMenuValue();
   if (state.ui?.currentView === "topology") {
     renderTopologyView();
@@ -19335,6 +19537,8 @@ async function fetchWeather() {
   url.searchParams.set("latitude", center.lat.toFixed(5));
   url.searchParams.set("longitude", center.lng.toFixed(5));
   url.searchParams.set("current", "temperature_2m,relative_humidity_2m,surface_pressure,wind_speed_10m");
+  url.searchParams.set("temperature_unit", "celsius");
+  url.searchParams.set("wind_speed_unit", "ms");
 
   setStatus("Fetching local weather...");
 
@@ -19352,8 +19556,10 @@ async function fetchWeather() {
     state.weather.windSpeedMps = current.wind_speed_10m ?? state.weather.windSpeedMps;
 
     state.weather.source = "open-meteo";
+    state.weather.observedAt = current.time ?? "";
+    normalizeWeatherState();
     syncWeatherInputsFromState();
-    dom.weatherSummary.textContent = `Weather from Open-Meteo at ${payload.current.time}.`;
+    syncWeatherSummaryFromState();
     updateWeatherMenuValue();
     if (state.ui?.currentView === "topology") {
       renderTopologyView();
@@ -19361,7 +19567,8 @@ async function fetchWeather() {
     setStatus("Weather updated.");
   } catch (error) {
     state.weather.source = "manual";
-    dom.weatherSummary.textContent = "Weather fetch failed. Manual values remain active.";
+    state.weather.observedAt = "";
+    syncWeatherSummaryFromState();
     updateWeatherMenuValue();
     if (state.ui?.currentView === "topology") {
       renderTopologyView();
@@ -26919,11 +27126,11 @@ function displayTemperature(celsius) {
 }
 
 function displayPressure(hectopascals) {
-  return state.settings.measurementUnits === "standard" ? hectopascals * 0.0295299830714 : hectopascals;
+  return state.settings.measurementUnits === "standard" ? hectopascals * HPA_TO_INHG : hectopascals;
 }
 
 function displayWindSpeed(metersPerSecond) {
-  return state.settings.measurementUnits === "standard" ? metersPerSecond * 2.2369362921 : metersPerSecond;
+  return state.settings.measurementUnits === "standard" ? metersPerSecond * MPS_TO_MPH : metersPerSecond;
 }
 
 function parseTemperatureInput(value) {
@@ -26939,7 +27146,7 @@ function parsePressureInput(value) {
   if (!Number.isFinite(numeric)) {
     return state.weather.pressureHpa;
   }
-  return state.settings.measurementUnits === "standard" ? numeric / 0.0295299830714 : numeric;
+  return state.settings.measurementUnits === "standard" ? numeric / HPA_TO_INHG : numeric;
 }
 
 function parseWindSpeedInput(value) {
@@ -26947,7 +27154,7 @@ function parseWindSpeedInput(value) {
   if (!Number.isFinite(numeric)) {
     return state.weather.windSpeedMps;
   }
-  return state.settings.measurementUnits === "standard" ? numeric / 2.2369362921 : numeric;
+  return state.settings.measurementUnits === "standard" ? numeric / MPS_TO_MPH : numeric;
 }
 
 function formatInputNumber(value, digits) {

@@ -295,20 +295,20 @@
             </div>
             <div class="menu-grid two-column compact-grid">
               <label>
-                <span id="tempLabel">Temperature C</span>
-                <input id="tempC" type="number" step="0.1" value="20">
+                <span id="tempLabel">Temperature F</span>
+                <input id="tempC" type="number" step="0.1" value="68">
               </label>
               <label>
                 Humidity %
                 <input id="humidity" type="number" min="0" max="100" step="1" value="50">
               </label>
               <label>
-                <span id="pressureLabel">Pressure hPa</span>
-                <input id="pressure" type="number" min="800" max="1100" step="0.1" value="1013.2">
+                <span id="pressureLabel">Pressure inHg</span>
+                <input id="pressure" type="number" min="23" max="33" step="0.01" value="29.92">
               </label>
               <label>
-                <span id="windLabel">Wind m/s</span>
-                <input id="windSpeed" type="number" min="0" step="0.1" value="3">
+                <span id="windLabel">Wind mph</span>
+                <input id="windSpeed" type="number" min="0" step="0.1" value="6.7">
               </label>
             </div>
             <div class="weather-summary" id="weatherSummary">Manual weather profile active.</div>
@@ -2099,6 +2099,13 @@
                 <button id="aiRefreshModelsBtn" class="ghost-button small" type="button">Refresh Models</button>
               </div>
             </label>
+          </div>
+          <div class="ai-agent-profiles-section">
+            <div class="menu-title-row ai-agent-profiles-header">
+              <strong>Agent Profiles</strong>
+              <span class="settings-inline-help">Enable or exclude specialist modes from automatic AI switching.</span>
+            </div>
+            <div id="aiAgentProfilesList" class="ai-agent-profiles-list"></div>
           </div>
 
           <div id="aiGenAiMilNetworkWarning" class="ai-genai-mil-warning hidden">
