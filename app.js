@@ -23787,32 +23787,97 @@ function _syncCesiumEntitiesImmediate() {
   // --- TERRAIN HEATMAP ---
   if (state.terrainHeatmap.enabled && state.terrainHeatmap.sample) {
     const sample = state.terrainHeatmap.sample;
-    const latHalf = sample.latStepDeg / 2;
-    const lonHalf = sample.lonStepDeg / 2;
-    const span = Math.max(0.0001, sample.maxElevationM - sample.minElevationM);
-    const instances = [];
-    for (let index = 0; index < sample.latitudes.length; index += 1) {
-      if (sample.nodataMask[index] === 1 || !Number.isFinite(sample.elevations[index])) {
-        continue;
+    const { rows, cols, elevations, nodataMask, minElevationM, maxElevationM, latStepDeg, lonStepDeg, bounds } = sample;
+    const span = Math.max(0.0001, maxElevationM - minElevationM);
+    const opacity = state.terrainHeatmap.opacity;
+
+    // Pre-compute raw RGB floats per sample point for bilinear blending.
+    const stops = [
+      { at: 0,   r: 255, g: 59,  b: 59  },
+      { at: 0.2, r: 255, g: 140, b: 61  },
+      { at: 0.4, r: 250, g: 204, b: 21  },
+      { at: 0.6, r: 52,  g: 211, b: 153 },
+      { at: 0.8, r: 56,  g: 189, b: 248 },
+      { at: 1,   r: 139, g: 92,  b: 246 },
+    ];
+    function elevToRgb(elev) {
+      const t = Math.max(0, Math.min(1, (elev - minElevationM) / span));
+      let lo = stops[0], hi = stops[stops.length - 1];
+      for (let s = 1; s < stops.length; s += 1) {
+        if (t <= stops[s].at) { lo = stops[s - 1]; hi = stops[s]; break; }
       }
-      const lat = sample.latitudes[index];
-      const lon = sample.longitudes[index];
-      const color = C.Color.fromCssColorString(
-        terrainHeatmapGradientColor((sample.elevations[index] - sample.minElevationM) / span, state.terrainHeatmap.opacity)
-      );
-      instances.push(new C.GeometryInstance({
-        id: `terrain-heatmap:${index}`,
-        geometry: new C.RectangleGeometry({
-          rectangle: C.Rectangle.fromDegrees(
-            lon - lonHalf, lat - latHalf,
-            lon + lonHalf, lat + latHalf,
-          ),
-          vertexFormat: C.PerInstanceColorAppearance.VERTEX_FORMAT,
-        }),
-        attributes: {
-          color: C.ColorGeometryInstanceAttribute.fromColor(color),
-        },
-      }));
+      const f = Math.max(0, Math.min(1, (t - lo.at) / Math.max(0.0001, hi.at - lo.at)));
+      return [lo.r + (hi.r - lo.r) * f, lo.g + (hi.g - lo.g) * f, lo.b + (hi.b - lo.b) * f];
+    }
+
+    const gridR = new Float32Array(rows * cols);
+    const gridG = new Float32Array(rows * cols);
+    const gridB = new Float32Array(rows * cols);
+    const gridValid = new Uint8Array(rows * cols);
+    for (let i = 0; i < rows * cols; i += 1) {
+      if (nodataMask[i] === 1 || !Number.isFinite(elevations[i])) continue;
+      const [r, g, b] = elevToRgb(elevations[i]);
+      gridR[i] = r; gridG[i] = g; gridB[i] = b;
+      gridValid[i] = 1;
+    }
+
+    // Each cell is subdivided into SUBxSUB quads; each quad gets a bilinearly
+    // interpolated color from the four surrounding sample-point corners.
+    const SUB = 4;
+    const instances = [];
+    for (let row = 0; row < rows; row += 1) {
+      const swLat = bounds.sw.lat + row * latStepDeg;
+      const neLat = swLat + latStepDeg;
+      for (let col = 0; col < cols; col += 1) {
+        const swLon = bounds.sw.lon + col * lonStepDeg;
+        const neLon = swLon + lonStepDeg;
+
+        // Corner sample indices (clamp to grid edges).
+        const r0 = row, r1 = Math.min(rows - 1, row + 1);
+        const c0 = col, c1 = Math.min(cols - 1, col + 1);
+        const i00 = r0 * cols + c0, i10 = r0 * cols + c1;
+        const i01 = r1 * cols + c0, i11 = r1 * cols + c1;
+        const anyValid = gridValid[i00] || gridValid[i10] || gridValid[i01] || gridValid[i11];
+        if (!anyValid) continue;
+
+        for (let sy = 0; sy < SUB; sy += 1) {
+          const ty0 = sy / SUB, ty1 = (sy + 1) / SUB;
+          const tyC = (ty0 + ty1) / 2;
+          for (let sx = 0; sx < SUB; sx += 1) {
+            const tx0 = sx / SUB, tx1 = (sx + 1) / SUB;
+            const txC = (tx0 + tx1) / 2;
+
+            // Bilinear weights at sub-cell center.
+            const w00 = (1 - txC) * (1 - tyC) * gridValid[i00];
+            const w10 = txC       * (1 - tyC) * gridValid[i10];
+            const w01 = (1 - txC) * tyC       * gridValid[i01];
+            const w11 = txC       * tyC       * gridValid[i11];
+            const wSum = w00 + w10 + w01 + w11;
+            if (wSum < 0.0001) continue;
+
+            const wn = 1 / wSum;
+            const r = (gridR[i00]*w00 + gridR[i10]*w10 + gridR[i01]*w01 + gridR[i11]*w11) * wn;
+            const g = (gridG[i00]*w00 + gridG[i10]*w10 + gridG[i01]*w01 + gridG[i11]*w11) * wn;
+            const b = (gridB[i00]*w00 + gridB[i10]*w10 + gridB[i01]*w01 + gridB[i11]*w11) * wn;
+
+            const subW = neLon - swLon, subH = neLat - swLat;
+            const subSwLon = swLon + tx0 * subW, subNeLon = swLon + tx1 * subW;
+            const subSwLat = swLat + ty0 * subH, subNeLat = swLat + ty1 * subH;
+
+            const color = new C.Color(r / 255, g / 255, b / 255, opacity);
+            instances.push(new C.GeometryInstance({
+              id: `terrain-heatmap:${row}:${col}:${sy}:${sx}`,
+              geometry: new C.RectangleGeometry({
+                rectangle: C.Rectangle.fromDegrees(subSwLon, subSwLat, subNeLon, subNeLat),
+                vertexFormat: C.PerInstanceColorAppearance.VERTEX_FORMAT,
+              }),
+              attributes: {
+                color: C.ColorGeometryInstanceAttribute.fromColor(color),
+              },
+            }));
+          }
+        }
+      }
     }
     if (instances.length) {
       const primitive = new C.GroundPrimitive({
@@ -26992,21 +27057,26 @@ function renderToPickerCanvas() {
 
 function renderPickerEdges(units, links, svg) {
   svg.innerHTML = "";
+  const world = document.getElementById("toPickerWorld");
+  if (!world) return;
   for (const lnk of links) {
     const p = units.find(u => u.id === lnk.parentId);
     const c = units.find(u => u.id === lnk.childId);
     if (!p || !c) continue;
-    const x1 = p.x;
-    const y1 = p.y + TO_EDGE_LAYOUT.cardHalfHeight + TO_EDGE_LAYOUT.connectorBuffer;
-    const x2 = c.x;
-    const y2 = c.y - TO_EDGE_LAYOUT.iconHalfHeight - TO_EDGE_LAYOUT.connectorBuffer;
+    const parentAnchor = getToUnitConnectorAnchors(p, world);
+    const childAnchor = getToUnitConnectorAnchors(c, world);
+    if (!parentAnchor || !childAnchor) continue;
+    const x1 = parentAnchor.centerX;
+    const y1 = parentAnchor.bottomY;
+    const x2 = childAnchor.centerX;
+    const y2 = childAnchor.topY;
     const midY = (y1 + y2) / 2;
     const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
     path.setAttribute("d", `M${x1},${y1} L${x1},${midY} L${x2},${midY} L${x2},${y2}`);
     path.setAttribute("stroke", "#565d67");
     path.setAttribute("stroke-width", "1.5");
     path.setAttribute("fill", "none");
-    path.setAttribute("stroke-linejoin", "miter");
+    path.setAttribute("stroke-linejoin", "round");
     svg.appendChild(path);
   }
 }
@@ -27138,12 +27208,6 @@ const _toState = {
 const TO_ICON_RENDERERS = {
   AIGEN: "aigen",
   MILSTD: "milstd",
-};
-
-const TO_EDGE_LAYOUT = {
-  cardHalfHeight: 54,
-  iconHalfHeight: 28,
-  connectorBuffer: 10,
 };
 
 const MIL_COLORS = {
@@ -27921,24 +27985,46 @@ function clearToSelection() {
   document.querySelectorAll(".to-unit.selected").forEach((el) => el.classList.remove("selected"));
 }
 
+function getToUnitConnectorAnchors(unit, world) {
+  if (!unit || !world) return null;
+  const unitEl = Array.from(world.querySelectorAll(".to-unit")).find((entry) => String(entry.dataset.id) === String(unit.id));
+  if (!unitEl) {
+    return {
+      centerX: unit.x,
+      topY: unit.y - 72,
+      bottomY: unit.y + 72,
+    };
+  }
+  const cardEl = unitEl.querySelector(".to-unit-card") || unitEl;
+  const unitWidth = unitEl.offsetWidth || cardEl.offsetWidth || 143;
+  const unitHeight = unitEl.offsetHeight || cardEl.offsetHeight || 143;
+  const cardWidth = cardEl.offsetWidth || unitWidth;
+  const cardHeight = cardEl.offsetHeight || unitHeight;
+  const cardOffsetLeft = cardEl.offsetLeft || 0;
+  const cardOffsetTop = cardEl.offsetTop || 0;
+  return {
+    centerX: unit.x + cardOffsetLeft + cardWidth / 2 - unitWidth / 2,
+    topY: unit.y + cardOffsetTop - unitHeight / 2,
+    bottomY: unit.y + cardOffsetTop + cardHeight - unitHeight / 2,
+  };
+}
+
 function renderToEdges() {
   const svg = document.getElementById("toEdgeSvg");
-  if (!svg) return;
+  const world = document.getElementById("toWorld");
+  if (!svg || !world) return;
   svg.innerHTML = "";
   for (const link of _toState.links) {
     const parent = _toState.units.find(u => u.id === link.parentId);
     const child  = _toState.units.find(u => u.id === link.childId);
     if (!parent || !child) continue;
-    // Convert world coords to SVG coords (applying zoom+pan)
-    const px  = parent.x * _toState.zoom + _toState.panX;
-    const py  = parent.y * _toState.zoom + _toState.panY;
-    const cx2 = child.x  * _toState.zoom + _toState.panX;
-    const cy2 = child.y  * _toState.zoom + _toState.panY;
-    const parentClearance = (TO_EDGE_LAYOUT.cardHalfHeight + TO_EDGE_LAYOUT.connectorBuffer) * _toState.zoom;
-    const childClearance = (TO_EDGE_LAYOUT.iconHalfHeight + TO_EDGE_LAYOUT.connectorBuffer) * _toState.zoom;
-    // Exit below the card body and stop above the icon block.
-    const x1 = px,  y1 = py + parentClearance;
-    const x2 = cx2, y2 = cy2 - childClearance;
+    const parentAnchor = getToUnitConnectorAnchors(parent, world);
+    const childAnchor = getToUnitConnectorAnchors(child, world);
+    if (!parentAnchor || !childAnchor) continue;
+    const x1 = parentAnchor.centerX * _toState.zoom + _toState.panX;
+    const y1 = parentAnchor.bottomY * _toState.zoom + _toState.panY;
+    const x2 = childAnchor.centerX * _toState.zoom + _toState.panX;
+    const y2 = childAnchor.topY * _toState.zoom + _toState.panY;
     const midY = (y1 + y2) / 2;
     // Orthogonal elbow: down → horizontal → down
     const d = `M${x1},${y1} L${x1},${midY} L${x2},${midY} L${x2},${y2}`;
@@ -27947,7 +28033,7 @@ function renderToEdges() {
     line.setAttribute("stroke", "var(--border-strong)");
     line.setAttribute("stroke-width", "1.5");
     line.setAttribute("fill", "none");
-    line.setAttribute("stroke-linejoin", "miter");
+    line.setAttribute("stroke-linejoin", "round");
     svg.appendChild(line);
   }
 }

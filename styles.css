@@ -4757,22 +4757,22 @@ button:focus {
 .settings-modal-body {
   display: grid;
   grid-template-columns: minmax(300px, 0.9fr) minmax(420px, 1.2fr);
-  gap: 22px;
+  gap: 14px;
   align-items: start;
   min-height: 0;
   flex: 1 1 auto;
   overflow-y: auto;
-  padding: 22px;
+  padding: 14px;
   background: var(--bg-elevated);
 }
 
 .settings-modal-section {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 10px;
   align-self: start;
   min-height: 0;
-  padding: 22px;
+  padding: 14px;
   border: 1px solid var(--border);
   background: var(--bg-soft);
 }
@@ -4784,16 +4784,16 @@ button:focus {
 .settings-modal-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18px 20px;
+  gap: 8px 12px;
   align-items: start;
 }
 
 .settings-modal-grid label {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
   color: var(--muted);
-  font-size: 0.84rem;
+  font-size: 0.76rem;
 }
 
 .settings-modal-grid input,
@@ -4809,7 +4809,8 @@ button:focus {
   background: var(--bg-input);
   border: 1px solid var(--border);
   color: var(--text);
-  padding: 10px 12px;
+  padding: 5px 8px;
+  font-size: 0.82rem;
 }
 
 .settings-modal-grid .settings-check-row {
@@ -4818,8 +4819,8 @@ button:focus {
   flex-direction: row;
   align-items: center;
   justify-content: flex-start;
-  gap: 12px;
-  padding: 10px 12px;
+  gap: 8px;
+  padding: 5px 8px;
   border: 1px solid var(--border);
   background: var(--bg-input);
   color: var(--text);
@@ -4827,8 +4828,8 @@ button:focus {
 }
 
 .settings-modal-grid .settings-check-row input[type="checkbox"] {
-  width: 18px;
-  height: 18px;
+  width: 14px;
+  height: 14px;
   margin: 0;
   flex: 0 0 auto;
   -webkit-appearance: checkbox;
@@ -4838,7 +4839,7 @@ button:focus {
 
 .settings-modal-grid .settings-check-row span {
   color: var(--text);
-  font-size: 0.96rem;
+  font-size: 0.82rem;
 }
 
 .settings-span-2 {
@@ -4848,12 +4849,12 @@ button:focus {
 .settings-saved-key-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px;
+  gap: 8px;
   align-items: center;
 }
 
 .settings-modal-actions {
-  margin-top: 2px;
+  margin-top: 0;
 }
 
 .tak-profile-row {
@@ -5011,7 +5012,7 @@ body.settings-modal-open {
   .settings-modal-body {
     grid-template-columns: 1fr;
     overflow-y: auto;
-    padding: 16px;
+    padding: 10px;
   }
 
   .settings-modal-section + .settings-modal-section {
@@ -6329,8 +6330,9 @@ body.emitter-modal-open {
   flex-direction: column;
   align-items: center;
   gap: 0;
-  padding: 0;
-  border-radius: 0;
+  box-sizing: border-box;
+  padding: 12px 0 14px;
+  border-radius: 14px;
   background: transparent;
   border: none;
   box-shadow: none;
@@ -6338,8 +6340,7 @@ body.emitter-modal-open {
 }
 .to-unit:hover .to-unit-card { filter: none; }
 .to-unit:hover .to-unit-icon { filter: brightness(1.3); }
-.to-unit.selected .to-unit-card { outline: none; }
-.to-unit.selected .to-unit-icon { outline: 2px solid var(--accent, #3b82f6); outline-offset: 2px; border-radius: 2px; }
+.to-unit.selected .to-unit-card { outline: 2px solid var(--accent, #3b82f6); outline-offset: 2px; }
 .to-unit-icon {
   width: 143px;
   height: 143px;
@@ -6376,7 +6377,8 @@ body.emitter-modal-open {
   word-break: break-word;
   pointer-events: none;
   font-weight: 700;
-  margin-top: -28px;
+  margin-top: -20px;
+  padding: 0 6px;
   position: relative;
   z-index: 1;
 }
