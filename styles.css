@@ -6355,25 +6355,35 @@ body.emitter-modal-open {
   -webkit-user-drag: none;
   flex-shrink: 0;
 }
-/* Stacked MIL-STD layers rendered as crisp <img> SVGs */
+/* Stacked MIL-STD layers rendered as crisp <img> SVGs.
+   All source SVGs share viewBox="0 0 612 792". The ground frame symbol
+   occupies y=276–516 (240px tall, 360px wide, centered at x=306).
+   We clip to that region by sizing the stack to the symbol's aspect ratio
+   and using a negative margin to hide the blank canvas above/below. */
 .milstd-stack {
   position: relative;
   display: block;
-  width: 143px;
-  height: 143px;
+  width: 110px;
+  height: 74px;
+  overflow: hidden;
   pointer-events: none;
   -webkit-user-drag: none;
 }
 .milstd-layer {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
+  /* Scale the full 612×792 canvas so that the 360px-wide symbol fills the
+     110px container width: scale = 110/360 = 0.3056.
+     Canvas renders at 612*0.3056=187px wide, 792*0.3056=242px tall.
+     Symbol top edge at y=276 maps to 276*0.3056=84px from canvas top.
+     Shift canvas up by 84px so symbol sits at top of container. */
+  width: 187px;
+  height: 242px;
+  left: 50%;
+  top: -84px;
+  transform: translateX(-50%);
   display: block;
   pointer-events: none;
   -webkit-user-drag: none;
-  object-fit: contain;
-  object-position: center;
 }
 .to-unit-label {
   font-size: 1.05rem;
