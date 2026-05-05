@@ -1722,6 +1722,10 @@ const dom = {
   settingsMenu: document.querySelector("#settingsMenu"),
   settingsModalDialog: document.querySelector("#settingsMenu .settings-modal"),
   settingsMenuCloseBtn: document.querySelector("#settingsMenuCloseBtn"),
+  settingsTabButtons: document.querySelectorAll(".settings-tab-button"),
+  settingsTabPanels: document.querySelectorAll(".settings-tab-panel"),
+  settingsDocumentationNav: document.querySelector("#settingsDocumentationNav"),
+  settingsDocumentationContent: document.querySelector("#settingsDocumentationContent"),
   measurementUnitsSelect: document.querySelector("#measurementUnitsSelect"),
   themeSelect: document.querySelector("#themeSelect"),
   coordinateSystemSelect: document.querySelector("#coordinateSystemSelect"),
@@ -2102,6 +2106,7 @@ const state = {
   aiMenuOpen: false,
   gpsMenuOpen: false,
   settingsMenuOpen: false,
+  settingsModalTab: "general",
   settings: {
     measurementUnits: "standard",
     theme: "dark",
@@ -6660,6 +6665,7 @@ function wireEvents() {
   });
   dom.settingsModalDialog?.addEventListener("click", (event) => event.stopPropagation());
   dom.settingsMenuCloseBtn?.addEventListener("click", closeSettingsMenu);
+  wireSettingsModalTabs();
   dom.workspaceLoginBtn?.addEventListener("click", () => onWorkspaceLogin().catch((error) => setStatus(error.message, true)));
   dom.workspaceRegisterBtn?.addEventListener("click", () => onWorkspaceRegister().catch((error) => setStatus(error.message, true)));
   dom.workspaceSignOutBtn?.addEventListener("click", onWorkspaceSignOut);
@@ -7666,6 +7672,9 @@ function toggleSettingsMenu(event) {
   dom.settingsMenu.classList.toggle("hidden", !state.settingsMenuOpen);
   document.body.classList.toggle("settings-modal-open", state.settingsMenuOpen);
   dom.settingsMenuBtn.setAttribute("aria-expanded", String(state.settingsMenuOpen));
+  if (state.settingsMenuOpen) {
+    setSettingsModalTab(state.settingsModalTab || "general");
+  }
 }
 
 function toggleWorkspaceMenu(event) {
@@ -9925,6 +9934,558 @@ function renderDocumentMarkdown(text) {
 
   flushPara(); flushList(); flushTable(); flushPre();
   return out.join("\n");
+}
+
+const SETTINGS_DOCUMENTATION_MD = `
+# RF SIM Operator Guide
+
+## Purpose and workflow
+
+RF SIM is organized around a deliberate operational flow:
+
+1. **PLAN VIEW** is where you build the Table of Organization, define command relationships, and link emitters to units.
+2. **MAP VIEW** is where you place assets, import terrain and overlays, edit emitters, and inspect the physical battlespace.
+3. **TOPOLOGY** is where RF-capable assets are grouped into unit cards or shown as individual emitters so you can inspect link relationships.
+4. **ANALYZE** is where terrain, geometry, weather, and emitter parameters are combined into RF study outputs.
+
+If you use the site in that order, the rest of the workflow becomes much easier to reason about.
+
+## Core concepts
+
+### Unit cards versus emitters
+
+- A **unit** is an organizational object in the Table of Organization.
+- An **emitter** is an RF asset with technical parameters such as frequency, waveform, power, antenna, and location.
+- A unit can have zero, one, or multiple emitters linked to it.
+- In topology mode, RF SIM can either:
+  - show a **single unit card** that groups all emitters linked to that unit, or
+  - show **individual emitters** as separate nodes.
+
+### Why the TO matters
+
+- The TO is not just visual organization.
+- It controls how units are grouped on cards in topology.
+- It gives the AI and analysis workflows structure for command relationships and network reasoning.
+- It helps you explain why one unit can or cannot communicate with another by tying emitters to a hierarchy.
+
+---
+
+## PLAN VIEW
+
+## What PLAN VIEW is for
+
+PLAN VIEW is where you define force structure before you worry about the exact map placement of every RF asset.
+
+Use PLAN VIEW to:
+
+- create units
+- assign unit type, size, and label
+- build parent-child command relationships
+- auto-layout the formation tree
+- link emitters to the correct units
+
+## Recommended sequence in PLAN VIEW
+
+### 1. Build the hierarchy first
+
+- Start with the top-level headquarters or command node.
+- Add subordinate companies, platoons, detachments, relay teams, logistics elements, and special-purpose nodes.
+- Use the hierarchy links to reflect real command or support relationships, not just visual convenience.
+
+### 2. Name units clearly
+
+Good labels make the rest of the site much easier to use. Prefer labels such as:
+
+- \`V34\`
+- \`I CO\`
+- \`K CO\`
+- \`L2\`
+- \`Fires Cell\`
+- \`Relay Team Alpha\`
+
+### 3. Keep the TO operationally meaningful
+
+The TO should answer:
+
+- who reports to whom
+- which units are maneuver elements
+- which are sustainment, ISR, EW, retransmission, or headquarters nodes
+- which units should eventually receive linked emitters
+
+### 4. Use Auto Layout after hierarchy edits
+
+- Auto Layout restores a clean formation tree.
+- Manual drag is useful for cleanup, but Auto Layout should be your baseline reset after major changes.
+- If the tree becomes messy after many link changes, run Auto Layout again before moving on.
+
+## Linking emitters to TO units
+
+- Emitters created elsewhere in the site can be linked back to units in the TO.
+- This is what allows topology to group multiple radios onto one unit card.
+- If a unit has multiple linked emitters, topology will show them as stacked emitter rows under the unit identity.
+
+Best practice:
+
+- Link every operational radio to a unit unless it is intentionally a standalone node.
+- Keep standalone emitters for infrastructure, temporary relays, or devices that truly should not belong to a unit card.
+
+---
+
+## MAP VIEW
+
+## What MAP VIEW is for
+
+MAP VIEW is the geographic workspace. This is where you place, import, edit, and inspect spatial data.
+
+Use MAP VIEW to:
+
+- place emitters on terrain
+- import operational overlays
+- load terrain data
+- manage imagery
+- inspect coordinate positions
+- edit tactical graphics and measurement geometry
+
+## Data sources used by the site
+
+### Basemap and imagery
+
+RF SIM can use configured map tiles and imagery providers for the 2D/3D map background. Depending on configuration, this may include:
+
+- OpenStreetMap-derived layers
+- CARTO-style base maps
+- Cesium imagery and globe services
+- custom tile services you configure
+
+### Terrain
+
+RF SIM uses terrain from one or both of these sources:
+
+- **local DTED / terrain files** that you load into the app
+- **Cesium terrain services** when configured and enabled
+
+Operationally, local terrain is useful for deterministic work in a specific AO, while Cesium terrain is useful for quick broader-area setup.
+
+### Imported operational overlays
+
+RF SIM supports imported geospatial content such as:
+
+- KML
+- KMZ
+- GeoJSON
+- tactical shapes drawn directly in the map
+
+These overlays are used for context, planning boundaries, named features, operational routes, terrain references, and area studies.
+
+## How to import KML, KMZ, and GeoJSON
+
+Use imported overlays when you already have planning products or geospatial context outside the app.
+
+Recommended use cases:
+
+- phase lines
+- routes
+- boundaries
+- operating areas
+- named landmarks
+- infrastructure overlays
+- prior ISR or terrain products
+
+Guidance:
+
+- Use KML/KMZ when the source product already exists in common geospatial planning tools.
+- Use GeoJSON when you want a cleaner modern feature format for points, lines, and polygons.
+- After import, confirm the geometry loaded into the correct location and naming is readable.
+
+## How to load DTED and local terrain
+
+Load DTED or other supported terrain sources when:
+
+- you need a more authoritative terrain surface than the default globe source
+- you want local analysis over a mission area
+- line-of-sight, masking, and relief are central to the problem
+
+Best practice:
+
+1. Load local terrain before running high-confidence propagation studies.
+2. Verify that the AO is fully covered by the local terrain files.
+3. Re-run analysis after new terrain is loaded, because coverage and LOS results can change materially.
+
+## Working with emitters in MAP VIEW
+
+Each emitter should be configured with realistic technical data whenever possible. Key fields affect analysis directly:
+
+- frequency
+- waveform
+- radio model
+- power
+- antenna gain and pattern
+- cable/system losses
+- height or placement
+- relay capability
+- SATCOM capability
+
+### Good emitter editing workflow
+
+1. Create the emitter.
+2. Place it geographically.
+3. Set identity and radio model.
+4. Set RF characteristics.
+5. Set antenna parameters.
+6. Set network/relay behavior.
+7. Link it to the correct TO unit.
+
+### Why exact placement matters
+
+Small terrain changes can alter:
+
+- line of sight
+- terrain masking
+- obstruction clearance
+- relay utility
+- intervisibility between maneuver elements
+
+If an emitter represents a retransmission site, command post, vehicle, or observation node, place it where that asset would really operate.
+
+---
+
+## TOPOLOGY
+
+## What TOPOLOGY is for
+
+TOPOLOGY is the network relationship view. It gives you a clean way to see who can talk, why, and how radios are grouped.
+
+## Unit Cards mode
+
+In Unit Cards mode:
+
+- each TO-linked unit appears as a single card
+- all emitters linked to that unit are grouped on the card
+- link lines connect between unit cards
+
+This mode is best for:
+
+- command-network review
+- organizational RF understanding
+- identifying which unit holds which RF capability
+- reviewing multi-radio units
+
+## Emitters mode
+
+In Emitters mode:
+
+- each emitter is shown separately
+- links are evaluated between individual devices
+- this is useful when the user wants equipment-level detail rather than unit-level grouping
+
+## How RF SIM builds topology connections
+
+RF SIM evaluates candidate relationships between visible RF emitters. In practical terms, the topology system looks at things such as:
+
+- frequency compatibility
+- waveform compatibility
+- model similarity
+- SATCOM versus non-SATCOM behavior
+- link-quality assessment results
+
+The app then builds link descriptors and renders them between cards or emitters.
+
+## How assets are grouped on a unit card
+
+An emitter is grouped onto a unit card when its \`toUnitId\` points at a TO unit.
+
+That means:
+
+- if three radios are linked to the same unit, that unit card can show three emitter rows
+- if a radio is not linked to any unit, it can appear as a standalone emitter node
+- if the user switches display mode, the same underlying RF assets are shown through a different organizational lens
+
+## How to read topology correctly
+
+Do not treat topology as just a pretty diagram. It is a summary of RF structure.
+
+Use it to answer:
+
+- which units have redundant radios
+- which links are terrain-limited
+- which units are acting as relay hubs
+- whether a command element depends on a single fragile connection
+- whether a standalone emitter should actually be assigned to a unit
+
+## Best practices in TOPOLOGY
+
+- Use **Unit Cards** when briefing or checking organization-level network design.
+- Use **Emitters** when debugging a specific radio or waveform issue.
+- Drag cards only for local readability.
+- Use **Auto Layout** to reset back to a clean default arrangement.
+- Use **Fit View** after major changes or after switching between display modes.
+
+---
+
+## ANALYZE
+
+## What ANALYZE is for
+
+ANALYZE is where the site turns terrain, geometry, emitter settings, and environment into RF conclusions.
+
+Typical uses include:
+
+- propagation review
+- LOS and masking checks
+- network quality review
+- coverage comparison
+- relay planning
+- command-post siting
+- risk and vulnerability analysis
+
+## RF propagation and simulation workflow
+
+The quality of analysis depends on the quality of inputs. A good sequence is:
+
+1. Build the TO in PLAN VIEW.
+2. Link emitters to the correct units.
+3. Place emitters accurately in MAP VIEW.
+4. Load terrain and import operational overlays.
+5. Verify frequencies, waveforms, power, antenna, and height.
+6. Open TOPOLOGY to inspect relationships.
+7. Run analysis with the scenario in a clean, consistent state.
+
+## What affects propagation outcomes
+
+Major drivers include:
+
+- terrain elevation and relief
+- obstruction and masking
+- separation distance
+- antenna height
+- antenna gain and pattern
+- frequency band
+- system and cable loss
+- weather and atmospheric assumptions where relevant
+- whether the path is LOS, diffracted, SATCOM, or relay-assisted
+
+## Types of RF questions the site supports well
+
+- Why can unit A talk to unit B but not unit C?
+- Which retransmission site gives the best coverage?
+- Which command post location reduces skyline exposure while preserving links?
+- Which radios should be assigned to which units?
+- Where is the likely single point of failure in the network?
+- Which units need relay support?
+
+---
+
+## AI INTEGRATION
+
+## What AI integration is for
+
+AI in RF SIM is there to help the user interpret the scenario and generate planning outputs faster. It does not replace disciplined RF engineering or terrain validation.
+
+Use AI for:
+
+- planning assistance
+- structured reports
+- RF reasoning support
+- network explanation
+- scenario documentation
+- comparison of COAs
+
+## Supported provider patterns
+
+The site supports multiple AI backends depending on configuration:
+
+- hosted providers such as Anthropic
+- GenAI.mil via the supported relay flow
+- local models through the local relay
+
+## How to connect an AI provider
+
+### Hosted provider
+
+1. Open **Settings → AI Integration**.
+2. Choose a provider.
+3. Paste the API key.
+4. Refresh or select the target model.
+5. Save the key if you want it stored in the UI.
+6. Click **Test Connection** before operational use.
+
+### Local model
+
+1. Run the local relay.
+2. Ensure your model server is running.
+3. Detect available models.
+4. Select the active model.
+5. Test the connection.
+
+### GenAI.mil
+
+Follow the hosted-site relay guidance in the AI Integration tab. The relay and certificate setup are required where direct network access is restricted.
+
+## How to use AI well in RF SIM
+
+- Ask scenario-specific questions, not generic ones.
+- Build the TO and place emitters first.
+- Use AI after the technical inputs are credible.
+- Treat AI output as planning support and verify critical claims against terrain, parameters, and mission requirements.
+
+---
+
+## TAK INTEGRATION
+
+## What TAK integration is for
+
+TAK integration allows RF SIM to coordinate with external TAK environments and project-backed workflows.
+
+Use it when you need to:
+
+- connect RF SIM planning to TAK-hosted operational data
+- stream RF Sim objects into TAK
+- maintain server-backed project relationships
+- manage certificates and authentication for TAK servers
+
+## How to connect a TAK server
+
+1. Open **Settings → TAK**.
+2. Create or select a saved TAK server profile.
+3. Enter the server host, port, and protocol.
+4. Load CA and client certificates if required.
+5. Configure authentication if required.
+6. Save the server profile.
+7. Assign enabled projects if your environment uses server-backed projects.
+8. Click **Test Connection**.
+
+## Certificate handling guidance
+
+- Use the CA certificate when the server requires trust establishment.
+- Use the client certificate when the server requires mutual TLS or similar client identity.
+- If a certificate requires a password, provide it when prompted or through the visible password field.
+
+## Streaming new RF Sim items
+
+If the default stream toggle is enabled, new RF SIM items can be sent to TAK by default. Use this when you want newly created operational objects to propagate into TAK-connected workflows automatically.
+
+---
+
+## Recommended operator flow
+
+## Phase 1: Structure the force
+
+- Build the TO in PLAN VIEW.
+- Create a hierarchy that mirrors how the formation actually operates.
+- Name units clearly.
+
+## Phase 2: Build the battlespace
+
+- Load terrain and imagery.
+- Import KML, KMZ, and GeoJSON overlays.
+- Add operational graphics and reference boundaries.
+
+## Phase 3: Build the RF layer
+
+- Create emitters.
+- Place them carefully on the map.
+- Configure radio and antenna parameters.
+- Link emitters to units.
+
+## Phase 4: Inspect the network
+
+- Open TOPOLOGY.
+- Check grouping on unit cards.
+- Look for orphan emitters, overloaded hubs, and fragile paths.
+- Reset with Auto Layout if the view becomes cluttered.
+
+## Phase 5: Analyze and iterate
+
+- Run the relevant RF studies.
+- Compare locations and configurations.
+- Adjust power, antenna, placement, or hierarchy as needed.
+- Re-run the analysis after meaningful changes.
+
+---
+
+## Troubleshooting checklist
+
+## If topology looks wrong
+
+- Confirm emitters are linked to the intended TO units.
+- Switch between Unit Cards and Emitters to isolate whether the issue is grouping or RF matching.
+- Use Auto Layout, then Fit View.
+
+## If an expected link is missing
+
+- Verify frequency and waveform compatibility.
+- Verify SATCOM capability versus LOS assumptions.
+- Verify both emitters are visible in the current topology filters.
+- Re-check location, elevation, and terrain masking.
+
+## If analysis results look unrealistic
+
+- Verify terrain source coverage.
+- Verify emitter power and antenna settings.
+- Check for placeholder frequencies or unintentional defaults.
+- Confirm the scenario was built in the right order and not with partially linked units.
+`;
+
+let _settingsDocumentationRendered = false;
+
+function slugifySettingsDocHeading(text) {
+  return String(text || "")
+    .toLowerCase()
+    .replace(/<[^>]+>/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80) || "section";
+}
+
+function renderSettingsDocumentation() {
+  if (!dom.settingsDocumentationContent || !dom.settingsDocumentationNav) return;
+  if (_settingsDocumentationRendered) return;
+  dom.settingsDocumentationContent.innerHTML = renderDocumentMarkdown(SETTINGS_DOCUMENTATION_MD);
+  const headings = [...dom.settingsDocumentationContent.querySelectorAll("h1, h2, h3")];
+  const slugCounts = new Map();
+  dom.settingsDocumentationNav.innerHTML = "";
+  headings.forEach((heading) => {
+    const baseSlug = slugifySettingsDocHeading(heading.textContent);
+    const nextCount = (slugCounts.get(baseSlug) || 0) + 1;
+    slugCounts.set(baseSlug, nextCount);
+    const slug = nextCount > 1 ? `${baseSlug}-${nextCount}` : baseSlug;
+    heading.id = `settings-doc-${slug}`;
+    const link = document.createElement("a");
+    link.href = `#${heading.id}`;
+    link.textContent = heading.textContent || "Section";
+    link.dataset.depth = heading.tagName === "H1" ? "1" : heading.tagName === "H2" ? "2" : "3";
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      heading.scrollIntoView({ block: "start", behavior: "smooth" });
+      dom.settingsDocumentationNav.querySelectorAll("a").forEach((entry) => entry.classList.remove("is-active"));
+      link.classList.add("is-active");
+    });
+    dom.settingsDocumentationNav.appendChild(link);
+  });
+  dom.settingsDocumentationNav.querySelector("a")?.classList.add("is-active");
+  _settingsDocumentationRendered = true;
+}
+
+function setSettingsModalTab(tab = "general") {
+  state.settingsModalTab = ["general", "ai", "tak", "documentation"].includes(tab) ? tab : "general";
+  dom.settingsTabButtons?.forEach((button) => {
+    const active = button.dataset.settingsTab === state.settingsModalTab;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-selected", active ? "true" : "false");
+  });
+  dom.settingsTabPanels?.forEach((panel) => {
+    const active = panel.dataset.settingsPanel === state.settingsModalTab;
+    panel.classList.toggle("is-active", active);
+    panel.hidden = !active;
+  });
+  if (state.settingsModalTab === "documentation") renderSettingsDocumentation();
+}
+
+function wireSettingsModalTabs() {
+  dom.settingsTabButtons?.forEach((button) => {
+    button.addEventListener("click", () => setSettingsModalTab(button.dataset.settingsTab || "general"));
+  });
+  setSettingsModalTab(state.settingsModalTab || "general");
 }
 
 function createAiMessageController(role, text = "", images = [], contextItems = []) {
@@ -28504,11 +29065,11 @@ async function renderTopologyView(options = {}) {
 
   // ── Populate position + descriptor maps ──────────────────────────
   _topoNodePositions.clear();
-  for (const [key, pos] of unitPos) _topoNodePositions.set(key, { ...pos });
+  for (const [key, pos] of unitPos) _topoNodePositions.set(String(key), { ...pos });
 
   _topoLinkDescriptors = linkList.map(lnk => ({
-    keyA: lnk.a.key,
-    keyB: lnk.b.key,
+    keyA: String(lnk.a.key),
+    keyB: String(lnk.b.key),
     quality: lnk.quality,
     typeClass: linkTypeClass(lnk.emA, lnk.emB),
     nameA: lnk.a.label || lnk.a.unit?.label || lnk.emA.name || lnk.emA.id,

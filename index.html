@@ -2008,14 +2008,22 @@
       <div class="emitter-modal-header">
         <div class="emitter-modal-title-group">
           <span class="settings-gear-icon">&#9881;</span>
-          <h2 id="settingsModalTitle">Map Settings</h2>
+          <h2 id="settingsModalTitle">RF SIM SETTINGS</h2>
         </div>
         <button id="settingsMenuCloseBtn" class="icon-button ghost-button" type="button" aria-label="Close">&#10005;</button>
       </div>
       <div class="settings-modal-body">
+        <div class="settings-tab-bar" role="tablist" aria-label="RF Sim Settings Sections">
+          <button class="settings-tab-button is-active" type="button" role="tab" aria-selected="true" data-settings-tab="general">General</button>
+          <button class="settings-tab-button" type="button" role="tab" aria-selected="false" data-settings-tab="ai">AI Integration</button>
+          <button class="settings-tab-button" type="button" role="tab" aria-selected="false" data-settings-tab="tak">TAK</button>
+          <button class="settings-tab-button" type="button" role="tab" aria-selected="false" data-settings-tab="documentation">Documentation</button>
+        </div>
+        <div class="settings-tab-panels">
+        <section class="settings-tab-panel is-active" data-settings-panel="general" role="tabpanel">
         <section class="settings-modal-section">
           <div class="menu-title-row">
-            <strong>Map Settings</strong>
+            <strong>General</strong>
           </div>
           <div class="settings-modal-grid">
             <label>
@@ -2069,6 +2077,8 @@
             </label>
           </div>
         </section>
+        </section>
+        <section class="settings-tab-panel" data-settings-panel="ai" role="tabpanel" hidden>
         <section class="settings-modal-section">
           <div class="menu-title-row">
             <strong>AI Integration</strong>
@@ -2339,6 +2349,8 @@
           </div>
           <div class="weather-summary ai-summary" id="aiProviderSummary">Add a provider and API key to enable the AI planning assistant.</div>
         </section>
+        </section>
+        <section class="settings-tab-panel" data-settings-panel="tak" role="tabpanel" hidden>
         <section class="settings-modal-section">
           <div class="menu-title-row">
             <strong>TAK Integration</strong>
@@ -2446,6 +2458,19 @@
             <div class="weather-summary ai-summary" id="takSettingsSummary">Save a TAK server profile to assign it to server-backed projects.</div>
           </div>
         </section>
+        </section>
+        <section class="settings-tab-panel" data-settings-panel="documentation" role="tabpanel" hidden>
+          <section class="settings-modal-section settings-docs-panel">
+            <div class="menu-title-row">
+              <strong>Documentation</strong>
+            </div>
+            <div class="settings-docs-shell">
+              <nav id="settingsDocumentationNav" class="settings-docs-nav" aria-label="RF Sim Documentation"></nav>
+              <article id="settingsDocumentationContent" class="settings-docs-content"></article>
+            </div>
+          </section>
+        </section>
+        </div>
       </div>
     </div>
   </div>
