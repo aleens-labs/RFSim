@@ -4910,6 +4910,8 @@ button:focus {
 
 .settings-tab-panel[data-settings-panel="documentation"] {
   overflow: hidden;
+  padding: 14px;
+  box-sizing: border-box;
 }
 
 .settings-modal-section {
@@ -4923,38 +4925,46 @@ button:focus {
   background: var(--bg-soft);
 }
 
+.settings-docs-panel.settings-modal-section {
+  align-self: stretch;
+  flex: 1 1 auto;
+}
+
 .settings-modal-section + .settings-modal-section {
   background: var(--bg-card-alt);
 }
 
 .settings-docs-panel {
-  height: 100%;
-  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: hidden;
+  padding: 0 !important;
+  border: none !important;
+  background: none !important;
+  gap: 0 !important;
 }
 
 .settings-docs-shell {
   display: grid;
-  grid-template-columns: 300px minmax(0, 1fr);
-  gap: 16px;
-  min-height: 0;
-  height: 100%;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 12px;
   flex: 1 1 auto;
+  min-height: 0;
   overflow: hidden;
+  align-items: stretch;
 }
 
 .settings-docs-nav {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   min-height: 0;
-  height: 100%;
   overflow-y: auto;
   padding: 10px;
   border: 1px solid var(--border);
-  background:
-    radial-gradient(circle at top, rgba(59, 130, 246, 0.12), transparent 34%),
-    linear-gradient(180deg, rgba(8, 13, 24, 0.9), rgba(8, 13, 24, 0.76));
+  background: var(--bg-elevated);
   overscroll-behavior: contain;
 }
 
@@ -5503,7 +5513,7 @@ body.settings-modal-open {
   }
 
   .settings-docs-nav {
-    max-height: 180px;
+    max-height: 260px;
   }
 }
 
