@@ -353,8 +353,8 @@ body.theme-light *::-webkit-scrollbar-thumb:hover {
 
 .status-strip {
   display: flex;
-  align-items: stretch;
-  align-self: stretch;
+  align-items: center;
+  align-self: center;
   flex: 1 1 auto;
   margin-left: 12px;
   min-width: 0;
@@ -6731,18 +6731,19 @@ body.emitter-modal-open {
 ═══════════════════════════════════════════════════════════════ */
 .view-mode-shell {
   display: flex;
-  flex-direction: column;
+  align-items: center;
   justify-content: center;
-  gap: 1px;
-  padding: 3px 8px;
+  gap: 0;
+  padding: 3px 10px;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
   box-sizing: border-box;
   white-space: nowrap;
   flex-shrink: 0;
-  align-self: stretch;
-  min-width: 392px;
+  align-self: center;
+  min-width: 376px;
+  min-height: 38px;
 }
 .view-mode-toggle {
   display: flex;
@@ -6752,7 +6753,7 @@ body.emitter-modal-open {
   border-radius: 10px;
   padding: 2px;
   position: relative;
-  height: 28px;
+  height: 26px;
   gap: 0;
   flex-shrink: 0;
   width: 100%;
@@ -6781,7 +6782,7 @@ body.emitter-modal-open {
   background: none;
   border: none;
   cursor: pointer;
-  font-size: 0.66rem;
+  font-size: 0.64rem;
   font-weight: 700;
   letter-spacing: 0.12em;
   color: var(--muted);

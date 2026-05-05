@@ -13679,6 +13679,7 @@ function cacheRecentPlaceLookup(query, result) {
     id,
     contentId: id,
     name: String(result.name || query || "Location").trim(),
+    displayName: String(result.displayName || result.sub || result.name || query || "Location").trim(),
     subtitle: String(result.sub || result.displayName || "").trim(),
     kind: "place",
     path: "Recent Place Search",
@@ -14207,7 +14208,17 @@ async function searchLookupTargets(term, { allowRemote = false, limit = 6 } = {}
     source: record.source ?? "map-content",
     contentId: record.contentId ?? record.id,
     name: record.name,
-    sub: record.path ? `${record.kind} | ${record.path}` : record.kind,
+    displayName: record.displayName || record.subtitle || record.name,
+    subtitle: record.subtitle || "",
+    path: record.path || "",
+    aliases: Array.isArray(record.aliases) ? [...record.aliases] : [],
+    searchName: record.searchName,
+    searchText: record.searchText,
+    searchAcronym: record.searchAcronym,
+    hidden: Boolean(record.hidden),
+    sub: record.path === "Recent Place Search"
+      ? (record.displayName || record.subtitle || "Recent Place Search")
+      : (record.path ? `${record.kind} | ${record.path}` : record.kind),
     lat: record.lat,
     lon: record.lon,
     bounds: record.bounds
@@ -22213,6 +22224,81 @@ function isActiveGeocoderSearch(query, searchToken) {
     && normalizeLookupText(activeQuery) === normalizeLookupText(query);
 }
 
+function scoreGeocoderCandidate(query, result) {
+  if (!result) {
+    return -1;
+  }
+  return computeMapLookupMatchScore(query, result.contentId ?? result.id ?? result.name, result);
+}
+
+function filterInstantLocalGeocoderMatches(results, query, limit = 8) {
+  const normalizedQuery = normalizeLookupText(query);
+  const queryTokens = normalizedQuery.split(" ").filter(Boolean);
+  return dedupeGeocoderResults(results, Math.max(limit * 2, 8))
+    .filter((result) => {
+      if (!result) {
+        return false;
+      }
+      if (result.kind === "coordinate" || result.kind === "mgrs" || result.source === "map-content") {
+        return true;
+      }
+      const score = scoreGeocoderCandidate(query, result);
+      if (score < 0) {
+        return false;
+      }
+      const display = normalizeLookupText(result.displayName || result.subtitle || result.name || "");
+      const name = normalizeLookupText(result.name || "");
+      const hasStrongPrefix = display.startsWith(normalizedQuery)
+        || name.startsWith(normalizedQuery)
+        || queryTokens.every((token) => matchesLookupTokenPrefix(token, display) || matchesLookupTokenPrefix(token, name));
+      if (result.path === "Recent Place Search") {
+        if (normalizedQuery.length >= 4 && !hasStrongPrefix) {
+          return false;
+        }
+        return score >= 96;
+      }
+      return score >= 74;
+    })
+    .sort((left, right) => {
+      const delta = scoreGeocoderCandidate(query, right) - scoreGeocoderCandidate(query, left);
+      if (delta !== 0) {
+        return delta;
+      }
+      return String(left.name ?? "").localeCompare(String(right.name ?? ""));
+    })
+    .slice(0, limit);
+}
+
+function getPrefixCachedRemoteGeocoderResults(query, limit = 8) {
+  const normalizedQuery = normalizeLookupText(query);
+  if (normalizedQuery.length < 3 || !_geocoderRemoteCache.size) {
+    return [];
+  }
+  let bestKey = "";
+  let bestResults = [];
+  _geocoderRemoteCache.forEach((results, key) => {
+    if (!key || !(normalizedQuery.startsWith(key) || key.startsWith(normalizedQuery))) {
+      return;
+    }
+    if (key.length > bestKey.length) {
+      bestKey = key;
+      bestResults = results;
+    }
+  });
+  if (!bestResults.length) {
+    return [];
+  }
+  return dedupeGeocoderResults(bestResults, Math.max(limit * 2, 8))
+    .sort((left, right) => {
+      const delta = scoreGeocoderCandidate(query, right) - scoreGeocoderCandidate(query, left);
+      if (delta !== 0) {
+        return delta;
+      }
+      return String(left.name ?? "").localeCompare(String(right.name ?? ""));
+    })
+    .slice(0, limit);
+}
+
 function normalizeGeocoderBounds(bounds) {
   if (!bounds) {
     return null;
@@ -22469,7 +22555,11 @@ async function runResponsiveGeocoderSearch(query, { searchToken = ++_geocoderSea
     return;
   }
 
-  const localMatches = dedupeGeocoderResults(await searchLookupTargets(q, { allowRemote: false, limit: 8 }), 8);
+  const localMatches = filterInstantLocalGeocoderMatches(
+    await searchLookupTargets(q, { allowRemote: false, limit: 8 }),
+    q,
+    8,
+  );
   if (!isActiveGeocoderSearch(q, searchToken)) {
     return;
   }
@@ -22484,6 +22574,10 @@ async function runResponsiveGeocoderSearch(query, { searchToken = ++_geocoderSea
   }
 
   const cacheKey = normalizeLookupText(q);
+  const prefixCachedRemote = getPrefixCachedRemoteGeocoderResults(q, 8);
+  if (prefixCachedRemote.length && isActiveGeocoderSearch(q, searchToken)) {
+    renderGeocoderResults(mergeGeocoderResults(localMatches, prefixCachedRemote, 8));
+  }
   const cachedRemote = _geocoderRemoteCache.get(cacheKey);
   if (cachedRemote) {
     if (!isActiveGeocoderSearch(q, searchToken)) {
