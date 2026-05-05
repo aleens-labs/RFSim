@@ -28459,6 +28459,18 @@ async function refreshOfflineServerStatus() {
   }
 }
 
+function setOfflineServerStatusUnknown() {
+  const dot = document.getElementById("offlineServerDot");
+  const label = document.getElementById("offlineServerLabel");
+  const badge = document.getElementById("offlineStatusBadge");
+  dot?.classList.remove("offline-dot-ok", "offline-dot-err");
+  dot?.classList.add("offline-dot-unknown");
+  if (label) {
+    label.textContent = "Local server status checked when this panel is opened.";
+  }
+  badge?.classList.add("hidden");
+}
+
 function updateOfflineCacheStats(data) {
   const el = document.getElementById("offlineCacheStats");
   if (!el || !data) return;
@@ -29053,6 +29065,8 @@ function initOfflineDownload() {
   const zoomMin  = document.getElementById("offlineZoomMin");
   const zoomMax  = document.getElementById("offlineZoomMax");
 
+  setOfflineServerStatusUnknown();
+
   openBtn?.addEventListener("click", () => {
     modal?.classList.remove("hidden");
     refreshOfflineServerStatus();
@@ -29088,9 +29102,6 @@ function initOfflineDownload() {
     offlineLog("Cache cleared.", "ok");
     await refreshOfflineServerStatus();
   });
-
-  // Check server status in background
-  setTimeout(refreshOfflineServerStatus, 1500);
 }
 
 // ─── Analytics ────────────────────────────────────────────────────────────────
