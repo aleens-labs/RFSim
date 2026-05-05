@@ -1749,6 +1749,7 @@ const dom = {
   cesiumOsmBuildingsToggle: document.querySelector("#cesiumOsmBuildingsToggle"),
   buildingMaterialPreset: document.querySelector("#buildingMaterialPreset"),
   dtedInput: document.querySelector("#dtedInput"),
+  dtedFolderInput: document.querySelector("#dtedFolderInput"),
   clearTerrainBtn: document.querySelector("#clearTerrainBtn"),
   terrainSummary: document.querySelector("#terrainSummary"),
   terrainList: document.querySelector("#terrainList"),
@@ -7085,6 +7086,7 @@ function wireEvents() {
     dom.aiSlashDropdown.classList.add("hidden");
   });
   dom.dtedInput.addEventListener("change", onTerrainImport);
+  dom.dtedFolderInput?.addEventListener("change", onTerrainImport);
   dom.clearTerrainBtn.addEventListener("click", clearTerrain);
   dom.fetchWeatherBtn.addEventListener("click", fetchWeather);
   dom.saveProfileBtn.addEventListener("click", saveProfile);
@@ -17405,45 +17407,122 @@ async function fetchWeather() {
   }
 }
 
-async function onTerrainImport(event) {
-  const [file] = event.target.files;
-  if (!file) {
+function isSupportedTerrainImportFile(file) {
+  const fileName = String(file?.name || "").trim();
+  return /\.(?:dt\d?|dted|tif|tiff)$/i.test(fileName);
+}
+
+function getTerrainImportDisplayName(file) {
+  const relativePath = typeof file?.webkitRelativePath === "string" ? file.webkitRelativePath.trim() : "";
+  return (relativePath || file?.name || "terrain").replace(/\\/g, "/");
+}
+
+function collectTerrainImportFiles(fileList) {
+  return Array.from(fileList ?? [])
+    .filter((file) => file instanceof File && isSupportedTerrainImportFile(file))
+    .sort((left, right) => getTerrainImportDisplayName(left).localeCompare(
+      getTerrainImportDisplayName(right),
+      undefined,
+      { numeric: true, sensitivity: "base" },
+    ));
+}
+
+async function importTerrainFiles(fileList) {
+  const files = collectTerrainImportFiles(fileList);
+  if (!files.length) {
+    throw new Error("No supported terrain files were found. Select DTED (.dt, .dt0, .dt1, .dt2, .dted) or GeoTIFF (.tif, .tiff) files.");
+  }
+
+  const importedTerrains = [];
+  const failedImports = [];
+
+  for (const file of files) {
+    const displayName = getTerrainImportDisplayName(file);
+    try {
+      const buffer = await file.arrayBuffer();
+      const lowerName = displayName.toLowerCase();
+      const isGeoTiff = lowerName.endsWith(".tif") || lowerName.endsWith(".tiff");
+      const terrain = isGeoTiff ? await parseGeoTiffTerrain(buffer, displayName) : parseDted(buffer, displayName);
+      terrain.id = generateId();
+      terrain.name = displayName;
+      terrain.extentVisible = false;
+      importedTerrains.push(terrain);
+    } catch (error) {
+      failedImports.push(`${displayName}: ${error.message}`);
+    }
+  }
+
+  if (!importedTerrains.length) {
+    if (failedImports.length === 1) {
+      throw new Error(failedImports[0]);
+    }
+    throw new Error(`Terrain import failed for ${failedImports.length} files.`);
+  }
+
+  state.terrains.push(...importedTerrains);
+  const mapCenter = state.map?.getCenter?.();
+  const preferredTerrain = mapCenter
+    ? findBestLocalTerrainForCoordinate(mapCenter.lat, mapCenter.lng)
+    : null;
+  state.activeTerrainId = preferredTerrain?.id || importedTerrains[0].id;
+  invalidateDerivedTerrainCaches();
+  renderTerrains();
+  updateTerrainSummary();
+  updateMapOverlayMetrics();
+
+  for (const terrain of importedTerrains) {
+    await cacheTerrainInWorker(terrain);
+  }
+
+  state.assets.forEach((asset) => {
+    asset.groundElevationM = sampleTerrainElevation(asset.lat, asset.lon);
+    if (!Number.isFinite(asset.groundElevationM) && usesConfiguredCesiumTerrain()) {
+      refreshAssetGroundElevation(asset).catch(() => {});
+    } else {
+      updateAssetMarker(asset);
+    }
+  });
+
+  syncCesiumScene();
+
+  const importedCount = importedTerrains.length;
+  const failedCount = failedImports.length;
+  if (!failedCount) {
+    setStatus(`Imported ${importedCount} terrain file${importedCount === 1 ? "" : "s"}.`);
     return;
   }
 
-  setStatus(`Importing terrain from ${file.name}...`);
+  console.warn("[terrain] Some files failed to import:", failedImports);
+  setStatus(
+    `Imported ${importedCount} terrain file${importedCount === 1 ? "" : "s"}; ${failedCount} failed. Check the console for file details.`,
+    true,
+  );
+}
+
+async function onTerrainImport(event) {
+  const selectedCount = event.target.files?.length ?? 0;
+  const files = collectTerrainImportFiles(event.target.files);
+  if (!files.length) {
+    if (selectedCount > 0) {
+      dom.terrainSummary.textContent = "Terrain import failed.";
+      setStatus("No supported terrain files were found in that selection.", true);
+    }
+    event.target.value = "";
+    return;
+  }
+
+  const selectionLabel = files.length === 1
+    ? getTerrainImportDisplayName(files[0])
+    : `${files.length} terrain files`;
+  setStatus(`Importing ${selectionLabel}...`);
 
   try {
-    const buffer = await file.arrayBuffer();
-    const lowerName = file.name.toLowerCase();
-    const isGeoTiff = lowerName.endsWith(".tif") || lowerName.endsWith(".tiff");
-    const terrain = isGeoTiff ? await parseGeoTiffTerrain(buffer, file.name) : parseDted(buffer, file.name);
-    terrain.id = generateId();
-    terrain.name = file.name;
-    terrain.extentVisible = false;
-
-    state.terrains.push(terrain);
-    state.activeTerrainId = terrain.id;
-    invalidateDerivedTerrainCaches();
-    renderTerrains();
-    updateTerrainSummary();
-    updateMapOverlayMetrics();
-    await cacheTerrainInWorker(terrain);
-    state.assets.forEach((asset) => {
-      asset.groundElevationM = sampleTerrainElevation(asset.lat, asset.lon);
-      if (!Number.isFinite(asset.groundElevationM) && usesConfiguredCesiumTerrain()) {
-        refreshAssetGroundElevation(asset).catch(() => {});
-      } else {
-        updateAssetMarker(asset);
-      }
-    });
-    syncCesiumScene();
-    setStatus("Terrain imported.");
+    await importTerrainFiles(files);
   } catch (error) {
     dom.terrainSummary.textContent = "Terrain import failed.";
     setStatus(error.message, true);
   } finally {
-    dom.dtedInput.value = "";
+    event.target.value = "";
   }
 }
 
@@ -28260,10 +28339,22 @@ async function renderTopologyView() {
 
   // ── Smart layout ──────────────────────────────────────────────────
   // Card dimensions (approximate — cards are centered on their position point)
-  const CARD_W = 170, CARD_H = 240, PAD_X = 240, PAD_Y = 200;
+  const CARD_W = 184, CARD_H = 272, PAD_X = 180, PAD_Y = 140;
   const SLOT_W = CARD_W + PAD_X, SLOT_H = CARD_H + PAD_Y;
   const unitPos = new Map(); // key → {x, y}  (visual center)
   const n = posEntries.length;
+
+  function buildGridLayout(entries, startX = 260, startY = 220, colsHint = null) {
+    const cols = colsHint || Math.max(1, Math.ceil(Math.sqrt(entries.length || 1)));
+    entries.forEach((entry, index) => {
+      const col = index % cols;
+      const row = Math.floor(index / cols);
+      unitPos.set(entry.key, {
+        x: startX + col * SLOT_W,
+        y: startY + row * SLOT_H,
+      });
+    });
+  }
 
   if (n === 1) {
     // Single node — center of viewport
@@ -28290,6 +28381,79 @@ async function renderTopologyView() {
       const col = i % cols, row = Math.floor(i / cols);
       unitPos.set(entry.key, { x: CARD_W / 2 + PAD_X / 2 + col * SLOT_W, y: CARD_H / 2 + PAD_Y / 2 + row * SLOT_H });
     });
+  }
+
+  if (displayMode === "units") {
+    unitPos.clear();
+    const unitEntries = posEntries.filter((entry) => entry.kind === "unit");
+    const standaloneEntries = posEntries.filter((entry) => entry.kind !== "unit");
+    const visibleUnitIds = new Set(unitEntries.map((entry) => entry.key));
+    const childSet = new Set();
+    const childMap = new Map();
+
+    for (const link of (_toState.links || [])) {
+      if (!visibleUnitIds.has(link.parentId) || !visibleUnitIds.has(link.childId)) continue;
+      childSet.add(link.childId);
+      if (!childMap.has(link.parentId)) childMap.set(link.parentId, []);
+      childMap.get(link.parentId).push(link.childId);
+    }
+
+    const roots = unitEntries
+      .filter((entry) => !childSet.has(entry.key))
+      .sort((a, b) => String(a.label || "").localeCompare(String(b.label || "")));
+
+    if (unitEntries.length && roots.length && childSet.size) {
+      const H_GAP = 340;
+      const V_GAP = 300;
+      const widthCache = new Map();
+
+      function subtreeWidth(id) {
+        if (widthCache.has(id)) return widthCache.get(id);
+        const children = (childMap.get(id) || []).slice();
+        if (!children.length) {
+          widthCache.set(id, H_GAP);
+          return H_GAP;
+        }
+        const width = Math.max(H_GAP, children.reduce((sum, childId) => sum + subtreeWidth(childId), 0));
+        widthCache.set(id, width);
+        return width;
+      }
+
+      function layoutSubtree(id, centerX, centerY) {
+        unitPos.set(id, { x: centerX, y: centerY });
+        const children = (childMap.get(id) || []).slice();
+        if (!children.length) return;
+        const totalWidth = children.reduce((sum, childId) => sum + subtreeWidth(childId), 0);
+        let cursorX = centerX - totalWidth / 2;
+        children.forEach((childId) => {
+          const childWidth = subtreeWidth(childId);
+          layoutSubtree(childId, cursorX + childWidth / 2, centerY + V_GAP);
+          cursorX += childWidth;
+        });
+      }
+
+      let cursorX = 260;
+      const baseY = 180;
+      roots.forEach((root) => {
+        const rootWidth = subtreeWidth(root.key);
+        layoutSubtree(root.key, cursorX + rootWidth / 2, baseY);
+        cursorX += rootWidth;
+      });
+    } else if (unitEntries.length) {
+      buildGridLayout(unitEntries, 300, 220, Math.min(3, Math.max(1, Math.ceil(Math.sqrt(unitEntries.length)))));
+    }
+
+    if (standaloneEntries.length) {
+      const placedUnitPositions = [...unitPos.values()];
+      const maxUnitX = placedUnitPositions.length ? Math.max(...placedUnitPositions.map((pos) => pos.x)) : 320;
+      const standaloneX = maxUnitX + SLOT_W * 0.95;
+      standaloneEntries.forEach((entry, index) => {
+        unitPos.set(entry.key, {
+          x: standaloneX,
+          y: 220 + index * (CARD_H + 70),
+        });
+      });
+    }
   }
 
 
@@ -29673,11 +29837,11 @@ function redrawTopoLinks() {
 
     const leftMetrics = nodeMetrics.get(leftKey) || { width: 170, height: 240 };
     const rightMetrics = nodeMetrics.get(rightKey) || { width: 170, height: 240 };
-    // Node positions are top-left; shift to center for ray-exit math
-    const leftCx = leftPos.x + leftMetrics.width / 2;
-    const leftCy = leftPos.y + leftMetrics.height / 2;
-    const rightCx = rightPos.x + rightMetrics.width / 2;
-    const rightCy = rightPos.y + rightMetrics.height / 2;
+    // Node positions are stored as the visual center of the card.
+    const leftCx = leftPos.x;
+    const leftCy = leftPos.y;
+    const rightCx = rightPos.x;
+    const rightCy = rightPos.y;
     const dx = rightCx - leftCx;
     const dy = rightCy - leftCy;
     const dist = Math.max(1, Math.sqrt(dx * dx + dy * dy));
@@ -29745,6 +29909,44 @@ function redrawTopoLinks() {
   }
 }
 
+function fitTopologyViewToContent() {
+  const canvas = document.getElementById("topoCanvas");
+  if (!canvas || !_topoNodePositions.size) return;
+
+  const nodeMetrics = [];
+  document.querySelectorAll("#topoNodes .topo-node").forEach((nodeEl) => {
+    const key = nodeEl.dataset.key;
+    if (!key) return;
+    const pos = _topoNodePositions.get(key);
+    if (!pos) return;
+    const cardEl = nodeEl.querySelector(".topo-unit-card") || nodeEl;
+    nodeMetrics.push({
+      x: pos.x,
+      y: pos.y,
+      width: cardEl.offsetWidth || 170,
+      height: cardEl.offsetHeight || 240,
+    });
+  });
+  if (!nodeMetrics.length) return;
+
+  const padding = 72;
+  const minX = Math.min(...nodeMetrics.map((node) => node.x - node.width / 2)) - padding;
+  const maxX = Math.max(...nodeMetrics.map((node) => node.x + node.width / 2)) + padding;
+  const minY = Math.min(...nodeMetrics.map((node) => node.y - node.height / 2)) - padding;
+  const maxY = Math.max(...nodeMetrics.map((node) => node.y + node.height / 2)) + padding;
+  const width = Math.max(1, maxX - minX);
+  const height = Math.max(1, maxY - minY);
+
+  const rect = canvas.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+
+  _topoZoom = Math.max(0.45, Math.min(1.35, Math.min(rect.width / width, rect.height / height)));
+  _topoPanOffset = {
+    x: rect.width / 2 - ((minX + maxX) / 2) * _topoZoom,
+    y: rect.height / 2 - ((minY + maxY) / 2) * _topoZoom,
+  };
+}
+
 let _topoAbortController = null;
 // Persisted across re-renders so pan/zoom survive data refreshes
 let _topoPanOffset = { x: 0, y: 0 };
@@ -29768,6 +29970,11 @@ function wireTopoCanvasPanZoom() {
 
   // Apply whatever state we already have (survives re-renders)
   applyTransform();
+  requestAnimationFrame(() => {
+    fitTopologyViewToContent();
+    applyTransform();
+    _topoViewInitialized = true;
+  });
 
   let dragging = null; // { node, key, startClientX, startClientY, origX, origY } | { panning, startX, startY }
 
@@ -29829,8 +30036,7 @@ function wireTopoCanvasPanZoom() {
   }, { passive: false, signal: sig });
 
   document.getElementById("topoFitBtn")?.addEventListener("click", () => {
-    _topoPanOffset = { x: 0, y: 0 };
-    _topoZoom = 1;
+    fitTopologyViewToContent();
     applyTransform();
   }, { signal: sig });
 

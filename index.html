@@ -273,8 +273,12 @@
               <button id="clearTerrainBtn" class="ghost-button small" type="button">Clear Terrain</button>
             </div>
             <label>
-              Terrain File
-              <input id="dtedInput" type="file" accept=".dt0,.dt1,.dt2,.dted,.tif,.tiff">
+              Terrain Files
+              <input id="dtedInput" type="file" accept=".dt,.dt0,.dt1,.dt2,.dted,.tif,.tiff" multiple>
+            </label>
+            <label>
+              Terrain Folder
+              <input id="dtedFolderInput" type="file" accept=".dt,.dt0,.dt1,.dt2,.dted,.tif,.tiff" webkitdirectory directory multiple>
             </label>
             <div class="terrain-summary" id="terrainSummary">
               No local DTED loaded. Terrain-aware propagation uses Cesium terrain when configured, otherwise it falls back to free-space path loss.

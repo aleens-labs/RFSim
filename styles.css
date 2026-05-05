@@ -7382,14 +7382,15 @@ body.map-tak-debug-resizing {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
-  padding: 8px 10px 10px;
-  border-radius: 10px;
+  gap: 4px;
+  box-sizing: border-box;
+  width: 176px;
+  min-width: 176px;
+  padding: 14px 12px 16px;
+  border-radius: 12px;
   background: rgba(255,255,255,0.94);
   border: 1px solid rgba(15,23,42,0.12);
   box-shadow: 0 6px 18px rgba(15,23,42,0.14);
-  min-width: 110px;
-  max-width: 145px;
   transition: box-shadow 0.15s, outline 0.15s;
 }
 .topo-node:hover .topo-unit-card {
@@ -7407,18 +7408,18 @@ body.map-tak-debug-resizing {
   min-height: 10px;
 }
 .topo-unit-icon-wrap {
-  width: 112px;
-  height: 112px;
+  width: 124px;
+  height: 124px;
   display: block;
   pointer-events: none;
 }
 .topo-unit-icon-wrap .milstd-stack,
 .topo-unit-icon-wrap svg {
-  width: 112px !important;
-  height: 112px !important;
+  width: 124px !important;
+  height: 124px !important;
 }
 .topo-unit-name {
-  font-size: 0.75rem;
+  font-size: 0.8rem;
   font-weight: 700;
   color: #111;
   text-align: center;
@@ -7447,19 +7448,19 @@ body.map-tak-debug-resizing {
 .topo-emitter-list {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
   width: 100%;
-  margin-top: 4px;
+  margin-top: 6px;
   border-top: 1px solid rgba(0,0,0,0.10);
-  padding-top: 5px;
+  padding-top: 7px;
   pointer-events: none;
 }
 .topo-em-row {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 1px;
-  padding: 2px 4px;
+  gap: 2px;
+  padding: 4px 6px;
   border-radius: 5px;
   background: rgba(59,130,246,0.06);
 }
