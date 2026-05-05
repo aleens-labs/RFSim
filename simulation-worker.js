@@ -10,6 +10,9 @@ self.addEventListener("message", (event) => {
     if (type === "terrain:cache") {
       terrainCache.set(payload.id, payload);
       clearComputationCaches();
+      try {
+        getComputeEngine()?.cacheTerrain?.(payload);
+      } catch {}
       self.postMessage({
         type: "terrain:cached",
         payload: { id: payload.id },
@@ -20,12 +23,18 @@ self.addEventListener("message", (event) => {
     if (type === "terrain:clear") {
       terrainCache.clear();
       clearComputationCaches();
+      try {
+        getComputeEngine()?.clearTerrainCache?.();
+      } catch {}
       return;
     }
 
     if (type === "terrain:remove") {
       terrainCache.delete(payload.id);
       clearComputationCaches();
+      try {
+        getComputeEngine()?.removeTerrain?.(payload.id);
+      } catch {}
       return;
     }
 
@@ -92,11 +101,60 @@ const terrainFieldMemo = new Map();
 const terrainTraceMemo = new Map();
 const simulateLinkMemo = new Map();
 const pathProfileMemo = new Map();
+const computeEngineState = {
+  active: null,
+  mode: "js",
+  version: "js",
+  error: "",
+  loadPromise: null,
+};
+
+primeComputeEngineLoad();
 
 function getNowMs() {
   return typeof performance !== "undefined" && typeof performance.now === "function"
     ? performance.now()
     : Date.now();
+}
+
+function primeComputeEngineLoad() {
+  if (computeEngineState.loadPromise) {
+    return computeEngineState.loadPromise;
+  }
+  computeEngineState.loadPromise = import("./rf-compute-wasm-loader.mjs")
+    .then(({ loadRfComputeEngine }) => loadRfComputeEngine())
+    .then((engine) => {
+      computeEngineState.active = engine?.kind === "wasm" ? engine : null;
+      computeEngineState.mode = engine?.kind === "wasm" ? "wasm" : "js";
+      computeEngineState.version = engine?.version || computeEngineState.mode;
+      computeEngineState.error = engine?.kind === "wasm" ? "" : (engine?.error || "");
+      if (computeEngineState.active?.cacheTerrain) {
+        terrainCache.forEach((terrain) => {
+          try {
+            computeEngineState.active.cacheTerrain(terrain);
+          } catch {}
+        });
+      }
+      return computeEngineState.active;
+    })
+    .catch((error) => {
+      computeEngineState.active = null;
+      computeEngineState.mode = "js";
+      computeEngineState.version = "js";
+      computeEngineState.error = error instanceof Error ? error.message : "Unknown WASM loader failure.";
+      return null;
+    });
+  return computeEngineState.loadPromise;
+}
+
+function getComputeEngine() {
+  return computeEngineState.active;
+}
+
+function getComputeEngineLabel() {
+  return computeEngineState.mode === "wasm"
+    ? `wasm:${computeEngineState.version || "unknown"}`
+    : "js";
 }
 
 function memoize(map, key, factory, maxEntries = 6000) {
@@ -116,6 +174,9 @@ function clearComputationCaches() {
   terrainTraceMemo.clear();
   simulateLinkMemo.clear();
   pathProfileMemo.clear();
+  try {
+    getComputeEngine()?.clearComputationCaches?.();
+  } catch {}
 }
 
 function buildWeatherCacheKey(weather = {}) {
@@ -230,6 +291,7 @@ function runSimulation(payload, reportProgress = () => {}) {
     requestId,
     asset,
     terrainId,
+    engine: getComputeEngineLabel(),
     receiverHeight,
     radiusMeters,
     opacity,
@@ -261,6 +323,7 @@ function inspectPoint(payload) {
     weather,
     propagationModel,
     ),
+    engine: getComputeEngineLabel(),
     elapsedMs: Math.round(getNowMs() - startedAt),
   };
 }
@@ -418,6 +481,7 @@ function planSites(payload) {
   return {
     requestId,
     terrainId,
+    engine: getComputeEngineLabel(),
     recommendations: best.slice(0, 5),
     candidateCount: candidates.length,
     elapsedMs: Math.round(getNowMs() - startedAt),
@@ -543,6 +607,7 @@ function runSiteStudy(payload) {
   return {
     requestId,
     terrainId,
+    engine: getComputeEngineLabel(),
     summary: `${trimmed.length} ranked ${studyType} candidate${trimmed.length === 1 ? "" : "s"} from ${candidates.length} sampled point${candidates.length === 1 ? "" : "s"}.`,
     results: trimmed,
     elapsedMs: Math.round(getNowMs() - startedAt),
@@ -687,6 +752,12 @@ function serializeLeg(label, from, to, profile) {
 }
 
 function buildPathProfile(source, target, terrain, weather, propagationModel, clearancePolicy = "geometric-los") {
+  const engine = getComputeEngine();
+  if (engine?.buildPathProfile && terrain?.id) {
+    try {
+      return engine.buildPathProfile(terrain.id, source, target, weather, propagationModel, clearancePolicy);
+    } catch {}
+  }
   const cacheKey = [
     clearancePolicy,
     propagationModel ?? "",
@@ -789,6 +860,12 @@ function buildPathProfile(source, target, terrain, weather, propagationModel, cl
 }
 
 function simulateLink(txAsset, rxTarget, terrain, weather, propagationModel) {
+  const engine = getComputeEngine();
+  if (engine?.simulateLink) {
+    try {
+      return engine.simulateLink(terrain?.id || "", txAsset, rxTarget, weather, propagationModel);
+    } catch {}
+  }
   const cacheKey = [
     propagationModel ?? "",
     terrain?.id ?? "none",
@@ -868,6 +945,12 @@ function usesBuildingEffects(propagationModel) {
 function traceTerrain(source, target, txHeightM, rxHeightM, terrain) {
   if (!terrain) {
     return { lineOfSight: true, maxObstructionM: 0, buildingPathMeters: 0, buildingHitSamples: 0, maxBuildingObstructionM: 0, buildingLineOfSightBlocked: false, terrainCompleteness: "none" };
+  }
+  const engine = getComputeEngine();
+  if (engine?.traceTerrain && terrain?.id) {
+    try {
+      return engine.traceTerrain(terrain.id, source, target, txHeightM, rxHeightM);
+    } catch {}
   }
   const cacheKey = [
     terrain.id ?? "none",
@@ -980,6 +1063,15 @@ function sampleTerrainBase(lat, lon, terrain) {
 function sampleTerrainField(lat, lon, terrain, fieldName) {
   if (!terrain) {
     return null;
+  }
+  const engine = getComputeEngine();
+  if (engine?.sampleTerrainField && terrain?.id) {
+    try {
+      const result = engine.sampleTerrainField(terrain.id, fieldName, lat, lon);
+      if (result === null || result === undefined || Number.isFinite(result)) {
+        return result ?? null;
+      }
+    } catch {}
   }
   const cacheKey = `${terrain.id ?? "none"}|${fieldName}|${lat}|${lon}`;
   return memoize(terrainFieldMemo, cacheKey, () => {

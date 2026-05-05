@@ -1,0 +1,10 @@
+{
+  "name": "rf-sim-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "check": "node --check app.js && node --check simulation-worker.js && node --check rf-compute-wasm-loader.mjs",
+    "wasm:build": "wasm-pack build rust/rf_sim_compute --target web --out-dir pkg --release",
+    "wasm:dev": "wasm-pack build rust/rf_sim_compute --target web --out-dir pkg --dev"
+  }
+}

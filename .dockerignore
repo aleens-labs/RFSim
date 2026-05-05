@@ -1,0 +1,17 @@
+.git
+.github
+.codex
+.cache
+.venv
+.vscode
+backend
+certs
+docs
+visuals
+README.md
+CONTRIBUTING.md
+frontend-dev-server.js
+generate-og-image.mjs
+node_modules
+rust/rf_sim_compute/pkg
+rust/rf_sim_compute/target

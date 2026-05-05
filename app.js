@@ -6622,8 +6622,27 @@ async function init() {
     dom.cesiumContainer.classList.remove("hidden");
     dom.cesiumCompassBtn.classList.remove("hidden");
     dom.map.style.visibility = "hidden";
-    await initCesiumIfNeeded();
+    try {
+      await initCesiumIfNeeded();
+    } catch (_) {
+      state.view3dEnabled = false;
+      dom.view3dToggleBtn.textContent = "3D View";
+      dom.cesiumContainer.classList.add("hidden");
+      dom.cesiumCompassBtn.classList.add("hidden");
+      dom.map.style.visibility = "visible";
+      setStatus("3D view unavailable. Cesium failed to initialize.", true);
+      return;
+    }
     const viewer = state.cesiumViewer;
+    if (!viewer) {
+      state.view3dEnabled = false;
+      dom.view3dToggleBtn.textContent = "3D View";
+      dom.cesiumContainer.classList.add("hidden");
+      dom.cesiumCompassBtn.classList.add("hidden");
+      dom.map.style.visibility = "visible";
+      setStatus("3D view unavailable. Cesium viewer could not be created.", true);
+      return;
+    }
     viewer.imageryLayers.removeAll();
     viewer.imageryLayers.addImageryProvider(buildImageryProvider());
     try { viewer.terrainProvider = await buildTerrainProvider(); } catch (_) {}
@@ -12999,28 +13018,222 @@ function getMapContentPathLabel(contentId) {
   return segments.length ? segments.join(" / ") : "Top level";
 }
 
-function buildCompactMapContentRecord(contentId) {
-  const entry = getMapContentEntries().find((item) => item.id === contentId);
-  const detail = serializeMapContentForAi(contentId);
-  if (!entry || !detail) {
+function buildCompactMapContentRecord(contentId, entry = null) {
+  const baseEntry = entry ?? getMapContentEntries().find((item) => item.id === contentId);
+  if (!baseEntry || !contentId || contentId.startsWith("folder:")) {
     return null;
   }
-  const aliases = collectMapLookupAliases(entry, detail);
-  const anchor = extractLookupAnchor(detail);
-  return {
-    id: contentId,
-    contentId,
-    name: getPreferredMapLookupName(entry, detail),
-    subtitle: entry.subtitle,
-    kind: entry.kind,
-    path: getMapContentPathLabel(contentId),
-    aliases,
-    hidden: state.hiddenContentIds.has(contentId),
-    lat: anchor.lat,
-    lon: anchor.lon,
-    bounds: anchor.bounds,
-    source: "map-content",
-  };
+
+  const path = getMapContentPathLabel(contentId);
+  const hidden = state.hiddenContentIds.has(contentId);
+
+  if (contentId.startsWith("asset:")) {
+    const asset = state.assets.find((item) => `asset:${item.id}` === contentId);
+    if (!asset) {
+      return null;
+    }
+    return finalizeLookupRecord({
+      id: contentId,
+      contentId,
+      name: baseEntry.name,
+      subtitle: baseEntry.subtitle,
+      kind: baseEntry.kind,
+      path,
+      aliases: [...new Set([
+        baseEntry.name,
+        asset.name,
+        asset.emitterLabel,
+        asset.unit,
+        asset.type,
+      ].map((value) => String(value ?? "").trim()).filter(Boolean))],
+      hidden,
+      lat: Number(asset.lat),
+      lon: Number(asset.lon),
+      bounds: null,
+      source: "map-content",
+    });
+  }
+
+  if (contentId.startsWith("imported:")) {
+    const item = state.importedItems.find((candidate) => `imported:${candidate.id}` === contentId);
+    if (!item) {
+      return null;
+    }
+    const anchor = buildLookupAnchorFromLeafletLayer(item.layer);
+    return finalizeLookupRecord({
+      id: contentId,
+      contentId,
+      name: getPreferredMapLookupName(baseEntry, { properties: item.properties }),
+      subtitle: baseEntry.subtitle,
+      kind: baseEntry.kind,
+      path,
+      aliases: collectMapLookupAliases(baseEntry, { properties: item.properties }),
+      hidden,
+      lat: anchor.lat,
+      lon: anchor.lon,
+      bounds: anchor.bounds,
+      source: "map-content",
+    });
+  }
+
+  if (contentId.startsWith("tactical:")) {
+    const objectId = contentId.slice("tactical:".length);
+    const object = getTacticalObjectById(objectId);
+    const layer = state.tacticalLayers.get(objectId);
+    if (!object) {
+      return null;
+    }
+    const anchor = buildLookupAnchorFromLeafletLayer(layer);
+    return finalizeLookupRecord({
+      id: contentId,
+      contentId,
+      name: baseEntry.name,
+      subtitle: baseEntry.subtitle,
+      kind: baseEntry.kind,
+      path,
+      aliases: [...new Set([
+        baseEntry.name,
+        object.name,
+        object.designator,
+        object.objectClass,
+      ].map((value) => String(value ?? "").trim()).filter(Boolean))],
+      hidden,
+      lat: anchor.lat,
+      lon: anchor.lon,
+      bounds: anchor.bounds,
+      source: "map-content",
+    });
+  }
+
+  if (contentId.startsWith("taklive:")) {
+    const uid = contentId.slice("taklive:".length);
+    const object = getTakLiveObjectByUid(uid);
+    const layer = state.takRuntime.layersByUid.get(uid);
+    if (!object) {
+      return null;
+    }
+    const anchor = buildLookupAnchorFromLeafletLayer(layer);
+    return finalizeLookupRecord({
+      id: contentId,
+      contentId,
+      name: baseEntry.name,
+      subtitle: baseEntry.subtitle,
+      kind: baseEntry.kind,
+      path,
+      aliases: [...new Set([
+        baseEntry.name,
+        object.name,
+        object.uid,
+        object.cotType,
+        object.objectClass,
+      ].map((value) => String(value ?? "").trim()).filter(Boolean))],
+      hidden,
+      lat: anchor.lat,
+      lon: anchor.lon,
+      bounds: anchor.bounds,
+      source: "map-content",
+    });
+  }
+
+  if (contentId.startsWith("viewshed:")) {
+    const viewshed = state.viewsheds.find((item) => `viewshed:${item.id}` === contentId);
+    if (!viewshed) {
+      return null;
+    }
+    const bounds = buildLookupBoundsFromLeafletBounds(viewshed.bounds);
+    return finalizeLookupRecord({
+      id: contentId,
+      contentId,
+      name: baseEntry.name,
+      subtitle: baseEntry.subtitle,
+      kind: baseEntry.kind,
+      path,
+      aliases: [...new Set([
+        baseEntry.name,
+        viewshed.asset?.name,
+        viewshed.propagationModelLabel,
+      ].map((value) => String(value ?? "").trim()).filter(Boolean))],
+      hidden,
+      lat: bounds ? (bounds.southWest.lat + bounds.northEast.lat) / 2 : null,
+      lon: bounds ? (bounds.southWest.lon + bounds.northEast.lon) / 2 : null,
+      bounds,
+      source: "map-content",
+    });
+  }
+
+  if (contentId.startsWith("terrain:")) {
+    const terrain = state.terrains.find((item) => `terrain:${item.id}` === contentId);
+    const layer = terrain ? state.terrainCoverageLayers.get(terrain.id) : null;
+    if (!terrain || !layer) {
+      return null;
+    }
+    const anchor = buildLookupAnchorFromLeafletLayer(layer);
+    return finalizeLookupRecord({
+      id: contentId,
+      contentId,
+      name: baseEntry.name,
+      subtitle: baseEntry.subtitle,
+      kind: baseEntry.kind,
+      path,
+      aliases: [...new Set([
+        baseEntry.name,
+        terrain.name,
+        terrain.sourceLabel,
+      ].map((value) => String(value ?? "").trim()).filter(Boolean))],
+      hidden,
+      lat: anchor.lat,
+      lon: anchor.lon,
+      bounds: anchor.bounds,
+      source: "map-content",
+    });
+  }
+
+  if (contentId === "planning-region") {
+    const anchor = buildLookupAnchorFromLeafletLayer(state.planning.regionLayer);
+    return finalizeLookupRecord({
+      id: contentId,
+      contentId,
+      name: baseEntry.name,
+      subtitle: baseEntry.subtitle,
+      kind: baseEntry.kind,
+      path,
+      aliases: [baseEntry.name, "Planning Region"],
+      hidden,
+      lat: anchor.lat,
+      lon: anchor.lon,
+      bounds: anchor.bounds,
+      source: "map-content",
+    });
+  }
+
+  if (contentId === "planning-results") {
+    const bounds = L.latLngBounds([]);
+    state.planning.recommendations.forEach((recommendation) => {
+      if (Number.isFinite(Number(recommendation?.tx?.lat)) && Number.isFinite(Number(recommendation?.tx?.lon))) {
+        bounds.extend([recommendation.tx.lat, recommendation.tx.lon]);
+      }
+      if (Number.isFinite(Number(recommendation?.rx?.lat)) && Number.isFinite(Number(recommendation?.rx?.lon))) {
+        bounds.extend([recommendation.rx.lat, recommendation.rx.lon]);
+      }
+    });
+    const recordBounds = buildLookupBoundsFromLeafletBounds(bounds);
+    return finalizeLookupRecord({
+      id: contentId,
+      contentId,
+      name: baseEntry.name,
+      subtitle: baseEntry.subtitle,
+      kind: baseEntry.kind,
+      path,
+      aliases: [baseEntry.name, "Planning Results"],
+      hidden,
+      lat: recordBounds ? (recordBounds.southWest.lat + recordBounds.northEast.lat) / 2 : null,
+      lon: recordBounds ? (recordBounds.southWest.lon + recordBounds.northEast.lon) / 2 : null,
+      bounds: recordBounds,
+      source: "map-content",
+    });
+  }
+
+  return null;
 }
 
 function extractLookupPoints(value, points = []) {
@@ -13103,6 +13316,82 @@ function buildLookupPlaceId(result) {
   return `lookup:${name}:${latKey}:${lonKey}`;
 }
 
+let _mapLookupRecordsCache = {
+  dirty: true,
+  records: [],
+};
+
+function markMapLookupRecordsDirty() {
+  _mapLookupRecordsCache.dirty = true;
+}
+
+function normalizeLookupRecordBounds(bounds) {
+  if (!bounds) {
+    return null;
+  }
+  const south = Number(bounds.southWest?.lat ?? bounds.south);
+  const west = Number(bounds.southWest?.lon ?? bounds.west);
+  const north = Number(bounds.northEast?.lat ?? bounds.north);
+  const east = Number(bounds.northEast?.lon ?? bounds.east);
+  if (![south, west, north, east].every(Number.isFinite)) {
+    return null;
+  }
+  return {
+    southWest: { lat: Math.min(south, north), lon: Math.min(west, east) },
+    northEast: { lat: Math.max(south, north), lon: Math.max(west, east) },
+  };
+}
+
+function buildLookupBoundsFromLeafletBounds(bounds) {
+  if (!bounds?.isValid?.()) {
+    return null;
+  }
+  return normalizeLookupRecordBounds({
+    southWest: bounds.getSouthWest?.(),
+    northEast: bounds.getNorthEast?.(),
+  });
+}
+
+function buildLookupAnchorFromLeafletLayer(layer) {
+  if (!layer) {
+    return { lat: null, lon: null, bounds: null };
+  }
+  if (typeof layer.getBounds === "function") {
+    const bounds = buildLookupBoundsFromLeafletBounds(layer.getBounds());
+    if (bounds) {
+      return {
+        lat: (bounds.southWest.lat + bounds.northEast.lat) / 2,
+        lon: (bounds.southWest.lon + bounds.northEast.lon) / 2,
+        bounds,
+      };
+    }
+  }
+  if (typeof layer.getLatLng === "function") {
+    const point = layer.getLatLng();
+    const lat = Number(point?.lat);
+    const lon = Number(point?.lng ?? point?.lon);
+    if (Number.isFinite(lat) && Number.isFinite(lon)) {
+      return { lat, lon, bounds: null };
+    }
+  }
+  return { lat: null, lon: null, bounds: null };
+}
+
+function finalizeLookupRecord(record) {
+  if (!record) {
+    return null;
+  }
+  const aliasText = Array.isArray(record.aliases) ? record.aliases.join(" ") : "";
+  const fields = [record.name, record.subtitle, record.path, aliasText];
+  return {
+    ...record,
+    bounds: normalizeLookupRecordBounds(record.bounds),
+    searchName: normalizeMapContentsSearchText(record.name),
+    searchText: normalizeMapContentsSearchText(fields.join(" ")),
+    searchAcronym: buildSearchAcronym(fields.join(" ")),
+  };
+}
+
 function cacheRecentPlaceLookup(query, result) {
   if (!result) {
     return;
@@ -13141,22 +13430,27 @@ function cacheRecentPlaceLookup(query, result) {
     state.ai.recentPlaceLookups.unshift(next);
     state.ai.recentPlaceLookups = state.ai.recentPlaceLookups.slice(0, 40);
   }
+  markMapLookupRecordsDirty();
 }
 
 function getRecentPlaceLookupRecords() {
   return (state.ai.recentPlaceLookups ?? [])
     .filter((entry) => Number.isFinite(Number(entry.lat)) && Number.isFinite(Number(entry.lon)))
-    .map((entry) => ({
+    .map((entry) => finalizeLookupRecord({
       ...entry,
       lat: Number(entry.lat),
       lon: Number(entry.lon),
-    }));
+    }))
+    .filter(Boolean);
 }
 
 function buildUnifiedLookupRecords() {
+  if (!_mapLookupRecordsCache.dirty) {
+    return _mapLookupRecordsCache.records;
+  }
   const mapRecords = getMapContentEntries()
     .filter((entry) => entry.id && !entry.id.startsWith("folder:"))
-    .map((entry) => buildCompactMapContentRecord(entry.id))
+    .map((entry) => buildCompactMapContentRecord(entry.id, entry))
     .filter(Boolean);
   const seen = new Set(mapRecords.map((record) => record.id));
   const merged = [...mapRecords];
@@ -13167,6 +13461,10 @@ function buildUnifiedLookupRecords() {
     seen.add(record.id);
     merged.push(record);
   });
+  _mapLookupRecordsCache = {
+    dirty: false,
+    records: merged,
+  };
   return merged;
 }
 
@@ -13321,18 +13619,27 @@ function buildLookupSearchVariants(term) {
 }
 
 function computeMapLookupMatchScore(term, contentId, record) {
-  const aliasText = Array.isArray(record.aliases) ? record.aliases.join(" ") : "";
-  const fields = [record.name, record.subtitle, record.path, aliasText];
-  const combined = normalizeMapContentsSearchText(fields.join(" "));
-  const acronym = buildSearchAcronym(fields.join(" "));
   const variants = buildLookupSearchVariants(term);
   if (!variants.length) {
     return -1;
   }
+  const fields = [
+    record.name,
+    record.subtitle,
+    record.path,
+    Array.isArray(record.aliases) ? record.aliases.join(" ") : "",
+  ];
+  const combined = record.searchText ?? normalizeMapContentsSearchText(fields.join(" "));
+  const acronym = record.searchAcronym ?? buildSearchAcronym(combined);
+  const searchName = record.searchName ?? normalizeMapContentsSearchText(record.name);
   let bestScore = -1;
   for (const normalizedTerm of variants) {
-    if (normalizeMapContentsSearchText(record.name) === normalizedTerm) {
+    if (searchName === normalizedTerm) {
       bestScore = Math.max(bestScore, 120);
+      continue;
+    }
+    if (searchName.startsWith(normalizedTerm)) {
+      bestScore = Math.max(bestScore, 108);
       continue;
     }
     if (combined.startsWith(normalizedTerm)) {
@@ -13486,7 +13793,7 @@ async function fetchRemoteLookupMatches(term, limit = 6) {
   if (!query) {
     return [];
   }
-  const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=${Math.max(1, Math.min(limit, 6))}&addressdetails=1`;
+  const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=${Math.max(1, Math.min(limit, 8))}&addressdetails=1`;
   const resp = await fetch(url, {
     headers: {
       "Accept-Language": "en",
@@ -13507,19 +13814,30 @@ async function fetchRemoteLookupMatches(term, limit = 6) {
       : null;
     const displayName = String(item.display_name || query).trim();
     const shortName = displayName.split(",")[0]?.trim() || query;
-    return {
+    return finalizeLookupRecord({
       kind: "place",
       source: "geocoder",
       name: shortName,
       displayName,
       sub: displayName,
       query,
+      aliases: [shortName, displayName, query],
       lat: Number(item.lat),
       lon: Number(item.lon),
       bounds,
       zoom: bounds ? 14 : 14,
-    };
-  }).filter((item) => Number.isFinite(item.lat) && Number.isFinite(item.lon));
+    });
+  })
+    .filter((item) => item && Number.isFinite(item.lat) && Number.isFinite(item.lon))
+    .sort((left, right) => {
+      const leftScore = computeMapLookupMatchScore(query, left.id ?? left.name, left);
+      const rightScore = computeMapLookupMatchScore(query, right.id ?? right.name, right);
+      if (rightScore !== leftScore) {
+        return rightScore - leftScore;
+      }
+      return String(left.name ?? "").localeCompare(String(right.name ?? ""));
+    })
+    .slice(0, Math.max(1, Math.min(limit, 8)));
   results.forEach((result) => cacheRecentPlaceLookup(query, result));
   return results;
 }
@@ -17446,6 +17764,7 @@ function resolveMapContentId(reference) {
     return null;
   }
   renderSiteStudyContentOptions();
+  markMapLookupRecordsDirty();
   const entries = getMapContentEntries();
   const direct = entries.find((entry) => entry.id === normalizedReference);
   if (direct) {
@@ -20229,11 +20548,25 @@ async function toggle3dView() {
   if (!state.view3dEnabled) removeCesium3dTerrainPopup();
 
   if (state.view3dEnabled) {
-    await initCesiumIfNeeded();
-    await syncCesiumScene();
-    syncCesiumEntities();
-    updateCesiumCompass();
-    scheduleTerrainOverlayRefresh({ force: true, delay: 120 });
+    try {
+      await initCesiumIfNeeded();
+      if (!state.cesiumViewer) {
+        throw new Error("Cesium viewer unavailable.");
+      }
+      await syncCesiumScene();
+      syncCesiumEntities();
+      updateCesiumCompass();
+      scheduleTerrainOverlayRefresh({ force: true, delay: 120 });
+    } catch (_) {
+      state.view3dEnabled = false;
+      dom.view3dToggleBtn.textContent = "3D View";
+      dom.cesiumContainer.classList.add("hidden");
+      dom.cesiumCompassBtn.classList.add("hidden");
+      dom.map.style.visibility = "visible";
+      setStatus("3D view unavailable. Cesium failed to initialize.", true);
+      updatePlacementInteractionState();
+      return;
+    }
   } else if (state.cesiumViewer) {
     // Sync camera back to Leaflet when returning to 2D
     const carto = window.Cesium.Cartographic.fromCartesian(
@@ -20252,13 +20585,17 @@ async function toggle3dView() {
 
 async function initCesiumIfNeeded() {
   await ensureCesiumLoaded();
+  const CesiumLib = window.Cesium;
+  if (!CesiumLib?.Viewer) {
+    throw new Error("Cesium failed to initialize.");
+  }
   if (state.cesiumViewer) {
     state.cesiumViewer.resize();
     updatePlacementInteractionState();
     return;
   }
 
-  state.cesiumViewer = new window.Cesium.Viewer("cesiumContainer", {
+  state.cesiumViewer = new CesiumLib.Viewer("cesiumContainer", {
     animation: false,
     timeline: false,
     baseLayerPicker: false,
@@ -20269,7 +20606,7 @@ async function initCesiumIfNeeded() {
     fullscreenButton: false,
     infoBox: false,
     selectionIndicator: false,
-    terrainProvider: new window.Cesium.EllipsoidTerrainProvider(),
+    terrainProvider: new CesiumLib.EllipsoidTerrainProvider(),
   });
   state.cesiumViewer.scene.globe.depthTestAgainstTerrain = true;
   updatePlacementInteractionState();
@@ -20290,7 +20627,7 @@ async function initCesiumIfNeeded() {
     _gridRafId = requestAnimationFrame(() => { _gridRafId = null; syncCesiumEntities(); });
   });
 
-  const handler = new window.Cesium.ScreenSpaceEventHandler(state.cesiumViewer.scene.canvas);
+  const handler = new CesiumLib.ScreenSpaceEventHandler(state.cesiumViewer.scene.canvas);
   handler.setInputAction(async (click) => {
     removeCesium3dTerrainPopup();
     if (!state.placingAsset && !state.placingTactical) return;
@@ -20307,7 +20644,7 @@ async function initCesiumIfNeeded() {
     } else {
       placePendingTacticalAt({ lat, lng: lon }, "3D scene");
     }
-  }, window.Cesium.ScreenSpaceEventType.LEFT_CLICK);
+  }, CesiumLib.ScreenSpaceEventType.LEFT_CLICK);
 
   handler.setInputAction(async (click) => {
     const cartesian = await pickCesiumScenePosition(click.position);
@@ -20316,7 +20653,7 @@ async function initCesiumIfNeeded() {
     const lat = window.Cesium.Math.toDegrees(carto.latitude);
     const lon = window.Cesium.Math.toDegrees(carto.longitude);
     showCesium3dTerrainPopup(lat, lon, click.position);
-  }, window.Cesium.ScreenSpaceEventType.RIGHT_CLICK);
+  }, CesiumLib.ScreenSpaceEventType.RIGHT_CLICK);
 }
 
 async function pickCesiumScenePosition(screenPosition) {
@@ -21401,6 +21738,7 @@ let _geocoderDebounceTimer = null;
 let _geocoderActiveIndex = -1;
 let _geocoderResults = [];
 let _geocoderResultsElOverride = null;
+let _geocoderSearchToken = 0;
 
 function getGeocoderResultsEl() {
   return _geocoderResultsElOverride ?? document.getElementById("mapGeoSearchResults");
@@ -21411,6 +21749,7 @@ function hideGeocoderResults() {
   if (el) el.innerHTML = "";
   _geocoderResults = [];
   _geocoderActiveIndex = -1;
+  _geocoderSearchToken += 1;
 }
 
 function showGeocoderStatus(msg) {
@@ -21425,7 +21764,7 @@ function showGeocoderStatus(msg) {
 
 function renderGeocoderResults(results) {
   _geocoderResults = results;
-  _geocoderActiveIndex = -1;
+  _geocoderActiveIndex = results.length ? 0 : -1;
   const el = getGeocoderResultsEl();
   if (!el) return;
   if (!results.length) { el.innerHTML = `<div class="map-search-geocoder-status">No results found.</div>`; return; }
@@ -21449,12 +21788,13 @@ function renderGeocoderResults(results) {
   el.querySelectorAll(".map-search-geocoder-item").forEach((item) => {
     item.addEventListener("mousedown", (e) => {
       e.preventDefault();
-      navigateToGeocoderResult(_geocoderResults[Number(item.dataset.idx)]);
+      void navigateToGeocoderResult(_geocoderResults[Number(item.dataset.idx)]);
       hideGeocoderResults();
       const geoInput = document.getElementById("mapGeoSearchInput");
       if (geoInput) { geoInput.value = ""; document.getElementById("mapGeoSearchClearBtn")?.classList.add("hidden"); }
     });
   });
+  setGeocoderActiveIndex(_geocoderActiveIndex);
 }
 
 function setGeocoderActiveIndex(idx) {
@@ -21466,8 +21806,50 @@ function setGeocoderActiveIndex(idx) {
   if (idx >= 0 && items[idx]) items[idx].scrollIntoView({ block: "nearest" });
 }
 
-function navigateToGeocoderResult(result) {
-  if (!result) return;
+function normalizeGeocoderBounds(bounds) {
+  if (!bounds) {
+    return null;
+  }
+  const south = Number(bounds.south ?? bounds.southWest?.lat);
+  const west = Number(bounds.west ?? bounds.southWest?.lon);
+  const north = Number(bounds.north ?? bounds.northEast?.lat);
+  const east = Number(bounds.east ?? bounds.northEast?.lon);
+  if (![south, west, north, east].every(Number.isFinite)) {
+    return null;
+  }
+  return {
+    south: Math.min(south, north),
+    west: Math.min(west, east),
+    north: Math.max(south, north),
+    east: Math.max(west, east),
+  };
+}
+
+function resolveGeocoderTarget(result) {
+  const bounds = normalizeGeocoderBounds(result?.bounds);
+  const lat = Number(result?.lat);
+  const lon = Number(result?.lon ?? result?.lng);
+  if (bounds) {
+    return {
+      lat: Number.isFinite(lat) ? lat : (bounds.north + bounds.south) / 2,
+      lon: Number.isFinite(lon) ? lon : (bounds.east + bounds.west) / 2,
+      bounds,
+      zoom: result?.zoom ?? 16,
+    };
+  }
+  if (Number.isFinite(lat) && Number.isFinite(lon)) {
+    return {
+      lat,
+      lon,
+      bounds: null,
+      zoom: result?.zoom ?? 14,
+    };
+  }
+  return null;
+}
+
+async function navigateToGeocoderResult(result) {
+  if (!result || !state.map) return;
   if (!result.contentId || result.source === "geocoder") {
     cacheRecentPlaceLookup(result.query || result.name, result);
   }
@@ -21475,18 +21857,21 @@ function navigateToGeocoderResult(result) {
     focusMapContent(result.contentId);
     return;
   }
-  if (result.bounds) {
-    const { north, south, east, west } = result.bounds;
-    state.map.fitBounds([[south, west], [north, east]], { maxZoom: result.zoom ?? 16, animate: true });
-  } else {
-    state.map.setView([result.lat, result.lon], result.zoom ?? 14, { animate: true });
+  const target = resolveGeocoderTarget(result);
+  if (!target) {
+    setStatus("Selected search result does not have a valid location.", true);
+    return;
   }
-  if (state.cesiumViewer && state.view3dEnabled) {
+  if (target.bounds) {
+    const { north, south, east, west } = target.bounds;
+    state.map.fitBounds([[south, west], [north, east]], { maxZoom: target.zoom, animate: true });
+  } else {
+    state.map.setView([target.lat, target.lon], target.zoom, { animate: true });
+  }
+  if (state.cesiumViewer && state.view3dEnabled && window.Cesium?.Cartesian3) {
     const C = window.Cesium;
-    const lat = result.lat ?? (result.bounds ? (result.bounds.north + result.bounds.south) / 2 : 0);
-    const lon = result.lon ?? (result.bounds ? (result.bounds.east + result.bounds.west) / 2 : 0);
     state.cesiumViewer.camera.flyTo({
-      destination: C.Cartesian3.fromDegrees(lon, lat, 8000),
+      destination: C.Cartesian3.fromDegrees(target.lon, target.lat, 8000),
       duration: 1.5,
     });
   }
@@ -21541,7 +21926,7 @@ function tryParseCoordinateSearch(raw) {
   return null;
 }
 
-async function runGeocoderSearch(query) {
+async function runGeocoderSearchLegacy(query) {
   const q = query.trim();
   if (!q) { hideGeocoderResults(); return; }
 
@@ -21579,7 +21964,7 @@ function initMapGeoSearch() {
     updateClear();
     if (!val) { hideGeocoderResults(); return; }
     clearTimeout(_geocoderDebounceTimer);
-    _geocoderDebounceTimer = setTimeout(() => runGeocoderSearch(val), 400);
+    _geocoderDebounceTimer = setTimeout(() => void runGeocoderSearch(val), 220);
   });
 
   clearBtn?.addEventListener("click", () => {
@@ -21597,10 +21982,11 @@ function initMapGeoSearch() {
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setGeocoderActiveIndex(Math.max(_geocoderActiveIndex - 1, 0));
-    } else if (e.key === "Enter" && _geocoderActiveIndex >= 0) {
+    } else if (e.key === "Enter" && (_geocoderActiveIndex >= 0 || _geocoderResults.length)) {
       e.preventDefault();
       e.stopImmediatePropagation();
-      navigateToGeocoderResult(_geocoderResults[_geocoderActiveIndex]);
+      const chosenIndex = _geocoderActiveIndex >= 0 ? _geocoderActiveIndex : 0;
+      void navigateToGeocoderResult(_geocoderResults[chosenIndex]);
       hideGeocoderResults();
       input.value = "";
       updateClear();
@@ -21616,6 +22002,47 @@ function initMapGeoSearch() {
 
   // Point geocoder helpers at the new results element
   _geocoderResultsElOverride = resultsEl;
+}
+
+async function runGeocoderSearch(query) {
+  const q = query.trim();
+  if (!q) { hideGeocoderResults(); return; }
+  const searchToken = ++_geocoderSearchToken;
+
+  const local = tryParseCoordinateSearch(q);
+  if (local) {
+    if (searchToken === _geocoderSearchToken) {
+      renderGeocoderResults(local);
+    }
+    return;
+  }
+
+  const localMatches = await searchLookupTargets(q, { allowRemote: false, limit: 8 });
+  if (searchToken !== _geocoderSearchToken) {
+    return;
+  }
+  if (localMatches.length) {
+    renderGeocoderResults(localMatches);
+  } else {
+    showGeocoderStatus("Searching…");
+  }
+
+  try {
+    const results = await searchLookupTargets(q, { allowRemote: true, limit: 8 });
+    const activeQuery = document.getElementById("mapGeoSearchInput")?.value.trim();
+    if (searchToken !== _geocoderSearchToken || activeQuery !== q) {
+      return;
+    }
+    if (!results.length) {
+      showGeocoderStatus("No results found.");
+      return;
+    }
+    renderGeocoderResults(results);
+  } catch (_) {
+    if (searchToken === _geocoderSearchToken) {
+      showGeocoderStatus("Search unavailable — check connection.");
+    }
+  }
 }
 
 function setMapContentFolderId(contentId, folderId) {
@@ -21772,6 +22199,7 @@ function getMapContentsSearchIndex(entries) {
 }
 
 function renderMapContents() {
+  markMapLookupRecordsDirty();
   if (!dom.mapContentsList) {
     console.error("[renderMapContents] dom.mapContentsList is null — element not found");
     return;
