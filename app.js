@@ -2172,6 +2172,7 @@ const state = {
   terrainReadyIds: new Set(),
   terrainCacheResolvers: new Map(),
   ionTerrainCache: new Map(),
+  osmBuildingFootprintCache: new Map(),
   cesiumPointElevationCache: new Map(),
   centerElevationRequestId: null,
   cesiumTerrainProviderKey: null,
@@ -8554,8 +8555,8 @@ function usesCesiumOsmBuildings() {
   return Boolean(state.settings.cesiumOsmBuildingsEnabled && dom.cesiumIonToken.value.trim());
 }
 
-function usesCesiumBuildingsInPropagation(propagationModel = dom.propagationModel.value) {
-  return simulationUsesBuildingModel(propagationModel) && usesConfiguredCesiumTerrain() && usesCesiumOsmBuildings();
+function usesOsmBuildingsInPropagation(propagationModel = dom.propagationModel.value) {
+  return Boolean(simulationUsesBuildingModel(propagationModel) && state.settings.cesiumOsmBuildingsEnabled);
 }
 
 function getBuildingMaterialModel() {
@@ -19464,8 +19465,8 @@ function updateTerrainSummary() {
   if (!terrain) {
     const propagationModel = dom.propagationModel.value;
     const hasCesiumTerrain = usesConfiguredCesiumTerrain();
-    const propagationSummary = usesCesiumBuildingsInPropagation(propagationModel)
-      ? `Terrain-aware propagation uses streamed Cesium terrain (quantized mesh) plus OSM buildings using the ${getBuildingMaterialModel().label} material preset.`
+    const propagationSummary = usesOsmBuildingsInPropagation(propagationModel)
+      ? `Terrain-aware propagation uses terrain sampling plus OSM building footprints using the ${getBuildingMaterialModel().label} material preset.`
       : simulationUsesTerrainModel(propagationModel)
         ? (hasCesiumTerrain
           ? (simulationUsesAtmosphericModel(propagationModel)
@@ -19766,12 +19767,16 @@ function cacheTerrainInWorker(terrain) {
   const baseElevations = terrain.baseElevations?.slice?.(0) ?? null;
   const nodataMask = terrain.nodataMask?.slice?.(0) ?? null;
   const sourceMask = terrain.sourceMask?.slice?.(0) ?? null;
+  const osmBuildingCellOffsets = terrain.osmBuildingDataset?.cellOffsets?.slice?.(0) ?? null;
+  const osmBuildingCellIndexes = terrain.osmBuildingDataset?.cellBuildingIndexes?.slice?.(0) ?? null;
   return new Promise((resolve) => {
     state.terrainCacheResolvers.set(terrain.id, resolve);
     const transferables = [elevations.buffer];
     if (baseElevations) transferables.push(baseElevations.buffer);
     if (nodataMask) transferables.push(nodataMask.buffer);
     if (sourceMask) transferables.push(sourceMask.buffer);
+    if (osmBuildingCellOffsets) transferables.push(osmBuildingCellOffsets.buffer);
+    if (osmBuildingCellIndexes) transferables.push(osmBuildingCellIndexes.buffer);
     state.worker.postMessage(
       {
         type: "terrain:cache",
@@ -19794,6 +19799,15 @@ function cacheTerrainInWorker(terrain) {
           terrainCompleteness: terrain.terrainCompleteness ?? "full",
           osmBuildingsEnabled: Boolean(terrain.osmBuildingsEnabled),
           buildingMaterialPreset: terrain.buildingMaterialPreset ?? state.settings.buildingMaterialPreset,
+          osmBuildingDataset: terrain.osmBuildingDataset
+            ? {
+              source: terrain.osmBuildingDataset.source ?? "overpass",
+              footprintCount: terrain.osmBuildingDataset.footprintCount ?? terrain.osmBuildingDataset.footprints?.length ?? 0,
+              footprints: terrain.osmBuildingDataset.footprints ?? [],
+              cellOffsets: osmBuildingCellOffsets,
+              cellBuildingIndexes: osmBuildingCellIndexes,
+            }
+            : null,
         },
       },
       transferables,
@@ -21240,7 +21254,7 @@ async function resolveTerrainIdForSimulation(asset) {
   return await ensureIonTerrainGrid(
     bounds,
     Number(dom.gridMeters.value),
-    `sim:${asset.id}:${radiusMeters}:${dom.gridMeters.value}:${propagationModel}:${usesCesiumBuildingsInPropagation(propagationModel) ? "buildings" : "terrain"}:${state.settings.buildingMaterialPreset}:${buildLoadedTerrainCacheKey()}:${buildCesiumTerrainProviderKey()}`,
+    `sim:${asset.id}:${radiusMeters}:${dom.gridMeters.value}:${propagationModel}:${usesOsmBuildingsInPropagation(propagationModel) ? "buildings" : "terrain"}:${state.settings.buildingMaterialPreset}:${buildLoadedTerrainCacheKey()}:${buildCesiumTerrainProviderKey()}`,
   );
 }
 
@@ -21251,7 +21265,7 @@ async function resolveTerrainIdForPlanning(polygon, gridMeters) {
 
   const bounds = boundsFromPolygon(polygon);
   const propagationModel = dom.propagationModel.value;
-  const key = `plan:${polygon.map((point) => `${point.lat.toFixed(4)},${point.lon.toFixed(4)}`).join("|")}:${gridMeters}:${propagationModel}:${usesCesiumBuildingsInPropagation(propagationModel) ? "buildings" : "terrain"}:${state.settings.buildingMaterialPreset}:${buildLoadedTerrainCacheKey()}:${buildCesiumTerrainProviderKey()}`;
+  const key = `plan:${polygon.map((point) => `${point.lat.toFixed(4)},${point.lon.toFixed(4)}`).join("|")}:${gridMeters}:${propagationModel}:${usesOsmBuildingsInPropagation(propagationModel) ? "buildings" : "terrain"}:${state.settings.buildingMaterialPreset}:${buildLoadedTerrainCacheKey()}:${buildCesiumTerrainProviderKey()}`;
   return await ensureIonTerrainGrid(bounds, gridMeters, key);
 }
 
@@ -21276,8 +21290,8 @@ async function ensureIonTerrainGrid(bounds, gridMeters, cacheKey) {
   const hasCesiumTerrain = usesConfiguredCesiumTerrain();
   setStatus(hasLocalTerrain && hasCesiumTerrain
     ? "Blending local terrain with streamed Cesium terrain for propagation..."
-    : usesCesiumBuildingsInPropagation()
-      ? "Sampling Cesium terrain and OSM buildings for propagation..."
+    : usesOsmBuildingsInPropagation()
+      ? "Preparing terrain and OSM buildings for propagation..."
       : hasLocalTerrain
         ? "Preparing local terrain for propagation..."
         : "Sampling Cesium terrain for propagation...");
@@ -21294,7 +21308,7 @@ async function sampleCesiumTerrainGrid(bounds, gridMeters, cacheKey) {
   await ensureCesiumLoaded();
   const requestId = state.simulationProgress.requestId;
   const propagationModel = dom.propagationModel.value;
-  const includeBuildings = usesCesiumBuildingsInPropagation(propagationModel);
+  const includeBuildings = usesOsmBuildingsInPropagation(propagationModel);
   const cesiumMode = getEffectiveCesiumTerrainMode();
   const canUseCesium = cesiumMode === "cesium-world" || cesiumMode === "custom";
   throwIfSimulationCanceled(requestId);
@@ -21383,95 +21397,32 @@ async function sampleCesiumTerrainGrid(bounds, gridMeters, cacheKey) {
 
   const elevations = new Float32Array(baseElevations);
   let sampledSurfaceType = "terrain";
+  let osmBuildingDataset = null;
 
-  if (includeBuildings && provider) {
-    updateSimulationTerrainPrepProgress(0.62, "Sampling OSM building surface...", "62%");
-    await initCesiumIfNeeded();
-    await syncCesiumScene();
-    const scene = state.cesiumViewer?.scene;
-    if (scene && typeof scene.sampleHeightMostDetailed === "function") {
-      try {
-        const centerLon = (bounds.sw.lon + bounds.ne.lon) / 2;
-        const centerLat = (bounds.sw.lat + bounds.ne.lat) / 2;
-        state.cesiumViewer.camera.setView({
-          destination: window.Cesium.Cartesian3.fromDegrees(centerLon, centerLat, Math.max(2000, zoomToAltitude(state.map.getZoom()))),
-        });
-        const latProbeOffset = latStepDeg * 0.35;
-        const lonProbeOffset = lonStepDeg * 0.35;
-        const surfaceProbePositions = [];
-        const probeIndexMap = [];
-
-        allPositions.forEach((position, index) => {
-          if (nodataMask[index] === 1) {
-            return;
-          }
-          const lonDeg = window.Cesium.Math.toDegrees(position.longitude);
-          const latDeg = window.Cesium.Math.toDegrees(position.latitude);
-          const probes = [
-            [lonDeg, latDeg],
-            [lonDeg - lonProbeOffset, latDeg],
-            [lonDeg + lonProbeOffset, latDeg],
-            [lonDeg, latDeg - latProbeOffset],
-            [lonDeg, latDeg + latProbeOffset],
-          ];
-          probes.forEach(([probeLon, probeLat]) => {
-            surfaceProbePositions.push(window.Cesium.Cartographic.fromDegrees(probeLon, probeLat));
-            probeIndexMap.push(index);
-          });
-        });
-
-        const maxSurfaceHeights = new Float32Array(rows * cols);
-        maxSurfaceHeights.fill(Number.NEGATIVE_INFINITY);
-        let useDetailedSurfaceSampling = true;
-        let usedSurfaceFallback = false;
-        await withCesiumPropagationSamplingScene(async () => {
-          const surfaceBatchSize = Math.max(128, Math.min(768, cols * 4));
-          for (let start = 0; start < surfaceProbePositions.length; start += surfaceBatchSize) {
-            throwIfSimulationCanceled(requestId);
-            const batch = surfaceProbePositions.slice(start, start + surfaceBatchSize);
-            const { samples: surfaceSamples, usedDetailed } = await sampleCesiumSurfaceBatch(scene, batch, {
-              allowDetailed: useDetailedSurfaceSampling,
-              timeoutMs: 2200,
-            });
-            if (!usedDetailed) {
-              useDetailedSurfaceSampling = false;
-              usedSurfaceFallback = true;
-            }
-            surfaceSamples.forEach((position, batchIndex) => {
-              const probeIndex = start + batchIndex;
-              const cellIndex = probeIndexMap[probeIndex];
-              if (!Number.isFinite(position?.height)) {
-                return;
-              }
-              maxSurfaceHeights[cellIndex] = Math.max(maxSurfaceHeights[cellIndex], position.height);
-            });
-            const fraction = (start + batch.length) / surfaceProbePositions.length;
-            updateSimulationTerrainPrepProgress(
-              0.62 + fraction * 0.26,
-              "Sampling OSM building surface...",
-              usedSurfaceFallback
-                ? `${Math.round(fraction * 100)}% of building probes (fast fallback)`
-                : `${Math.round(fraction * 100)}% of building probes`,
-            );
-            await yieldToMainThread();
-          }
-        });
-
-        maxSurfaceHeights.forEach((height, index) => {
-          if (Number.isFinite(height) && nodataMask[index] === 0) {
-            elevations[index] = Math.max(elevations[index], height);
-          }
-        });
-        sampledSurfaceType = "terrain+buildings";
-      } catch {
-        sampledSurfaceType = "terrain";
+  if (includeBuildings) {
+    updateSimulationTerrainPrepProgress(0.62, "Fetching OSM building footprints...", "62%");
+    try {
+      const footprints = await getOsmBuildingFootprintsForBounds(bounds);
+      throwIfSimulationCanceled(requestId);
+      osmBuildingDataset = buildOsmBuildingDatasetForTerrain(footprints, {
+        origin: { lat: bounds.sw.lat, lon: bounds.sw.lon },
+        rows,
+        cols,
+        latStepDeg,
+        lonStepDeg,
+      });
+      if (osmBuildingDataset?.footprintCount) {
+        sampledSurfaceType = "terrain+osm-footprints";
       }
+    } catch {
+      osmBuildingDataset = null;
+      sampledSurfaceType = "terrain";
     }
   }
 
   updateSimulationTerrainPrepProgress(
     includeBuildings ? 0.92 : 0.86,
-    includeBuildings ? "Finalizing terrain + building grid..." : "Finalizing terrain grid...",
+    includeBuildings ? "Finalizing terrain + building dataset..." : "Finalizing terrain grid...",
     includeBuildings ? "30%" : "29%",
   );
 
@@ -21486,6 +21437,7 @@ async function sampleCesiumTerrainGrid(bounds, gridMeters, cacheKey) {
     : cesiumSampleCount
       ? "cesium-only"
       : "local-only";
+  const hasOsmBuildingDataset = Boolean(osmBuildingDataset?.footprintCount);
   let sourceType = terrainCoverageMode === "hybrid"
     ? "hybrid"
     : Array.from(sourceTypesUsed)[0] ?? (cesiumMode === "custom" ? "cesium-custom" : "dted");
@@ -21496,10 +21448,10 @@ async function sampleCesiumTerrainGrid(bounds, gridMeters, cacheKey) {
   return {
     id: `ion:${cacheKey}:${includeBuildings ? "buildings" : "terrain"}:${state.settings.buildingMaterialPreset}`,
     name: terrainCoverageMode === "hybrid"
-      ? (includeBuildings ? "Hybrid Terrain + OSM Buildings" : "Hybrid Terrain")
+      ? (hasOsmBuildingDataset ? "Hybrid Terrain + OSM Buildings" : "Hybrid Terrain")
       : terrainCoverageMode === "local-only"
         ? "Local Terrain Mosaic"
-        : (includeBuildings
+        : (hasOsmBuildingDataset
           ? "Cesium Terrain + OSM Buildings"
           : (dom.terrainSourceSelect.value === "custom" ? "Custom Cesium Terrain" : "Cesium World Terrain")),
     origin: { lat: bounds.sw.lat, lon: bounds.sw.lon },
@@ -21518,7 +21470,8 @@ async function sampleCesiumTerrainGrid(bounds, gridMeters, cacheKey) {
     terrainCoverageMode,
     terrainCompleteness,
     buildingMaterialPreset: state.settings.buildingMaterialPreset,
-    osmBuildingsEnabled: includeBuildings,
+    osmBuildingsEnabled: hasOsmBuildingDataset,
+    osmBuildingDataset,
   };
 }
 
@@ -28521,7 +28474,7 @@ async function fetchOsmBuildings(bbox) {
   way["building"](${bbox.south},${bbox.west},${bbox.north},${bbox.east});
   relation["building"](${bbox.south},${bbox.west},${bbox.north},${bbox.east});
 );
-out body;>;out skel qt;`;
+out geom;`;
 
   const res = await fetch("https://overpass-api.de/api/interpreter", {
     method: "POST",
@@ -28530,32 +28483,279 @@ out body;>;out skel qt;`;
   });
   if (!res.ok) throw new Error(`Overpass API HTTP ${res.status}`);
   const osm = await res.json();
+  const features = [];
+  const normalizeRing = (geometry) => {
+    const ring = (geometry || [])
+      .map((point) => [Number(point?.lon), Number(point?.lat)])
+      .filter(([lon, lat]) => Number.isFinite(lon) && Number.isFinite(lat));
+    if (ring.length < 3) return null;
+    const [firstLon, firstLat] = ring[0];
+    const [lastLon, lastLat] = ring[ring.length - 1];
+    if (firstLon !== lastLon || firstLat !== lastLat) {
+      ring.push([firstLon, firstLat]);
+    }
+    return ring.length >= 4 ? ring : null;
+  };
 
-  // Convert OSM to simple GeoJSON FeatureCollection
-  const nodes = {};
-  osm.elements.filter((e) => e.type === "node").forEach((n) => { nodes[n.id] = [n.lon, n.lat]; });
-
-  const features = osm.elements
-    .filter((e) => e.type === "way" && e.nodes && e.tags?.building)
-    .map((way) => {
-      const coords = way.nodes.map((id) => nodes[id]).filter(Boolean);
-      if (coords.length < 3) return null;
-      if (coords[0][0] !== coords[coords.length - 1][0] || coords[0][1] !== coords[coords.length - 1][1]) {
-        coords.push(coords[0]);
+  (osm.elements || []).forEach((element) => {
+    if (!element?.tags?.building) {
+      return;
+    }
+    if (element.type === "way") {
+      const outer = normalizeRing(element.geometry);
+      if (!outer) {
+        return;
       }
-      return {
+      features.push({
         type: "Feature",
-        properties: { ...way.tags, osm_id: way.id },
-        geometry: { type: "Polygon", coordinates: [coords] },
-      };
-    })
-    .filter(Boolean);
+        properties: { ...element.tags, osm_id: element.id },
+        geometry: { type: "Polygon", coordinates: [outer] },
+      });
+      return;
+    }
+    if (element.type === "relation" && Array.isArray(element.members)) {
+      const outers = [];
+      const inners = [];
+      element.members.forEach((member) => {
+        if (member?.type !== "way") {
+          return;
+        }
+        const ring = normalizeRing(member.geometry);
+        if (!ring) {
+          return;
+        }
+        if (member.role === "inner") {
+          inners.push(ring);
+        } else {
+          outers.push(ring);
+        }
+      });
+      outers.forEach((outer, index) => {
+        features.push({
+          type: "Feature",
+          properties: { ...element.tags, osm_id: `${element.id}:${index}` },
+          geometry: { type: "Polygon", coordinates: [outer, ...inners] },
+        });
+      });
+    }
+  });
 
   return { type: "FeatureCollection", features };
 }
 
 function bboxKey(bbox) {
   return `${bbox.south.toFixed(4)}_${bbox.west.toFixed(4)}_${bbox.north.toFixed(4)}_${bbox.east.toFixed(4)}`;
+}
+
+function boundsToBbox(bounds) {
+  return {
+    south: bounds.sw.lat,
+    west: bounds.sw.lon,
+    north: bounds.ne.lat,
+    east: bounds.ne.lon,
+  };
+}
+
+function parseOsmLengthMeters(value) {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value !== "string") {
+    return null;
+  }
+  const raw = value.trim().toLowerCase();
+  if (!raw) {
+    return null;
+  }
+  const numeric = Number.parseFloat(raw.replace(/,/g, ""));
+  if (!Number.isFinite(numeric)) {
+    return null;
+  }
+  if (/\b(ft|feet|foot)\b/.test(raw) || raw.endsWith("'")) {
+    return numeric * 0.3048;
+  }
+  return numeric;
+}
+
+function estimateOsmBuildingHeightMeters(properties = {}) {
+  const explicitHeight = parseOsmLengthMeters(properties.height) ?? parseOsmLengthMeters(properties["building:height"]);
+  const explicitMinHeight = parseOsmLengthMeters(properties.min_height);
+  const explicitLevels = Number.parseFloat(properties["building:levels"]);
+  const explicitMinLevels = Number.parseFloat(properties["building:min_level"]);
+  const minHeightM = clamp(
+    explicitMinHeight ?? (Number.isFinite(explicitMinLevels) ? explicitMinLevels * 3.2 : 0),
+    0,
+    120,
+  );
+  const levelHeightM = Number.isFinite(explicitLevels) ? explicitLevels * 3.2 : null;
+  const heightM = clamp(
+    explicitHeight ?? levelHeightM ?? 10,
+    minHeightM + 2.5,
+    350,
+  );
+  return {
+    heightM,
+    minHeightM,
+  };
+}
+
+function flattenOsmRingCoordinates(ring) {
+  const flat = [];
+  (ring || []).forEach((coordinate) => {
+    const lon = Number(coordinate?.[0]);
+    const lat = Number(coordinate?.[1]);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+      return;
+    }
+    flat.push(lat, lon);
+  });
+  if (flat.length < 8) {
+    return null;
+  }
+  const firstLat = flat[0];
+  const firstLon = flat[1];
+  const lastLat = flat[flat.length - 2];
+  const lastLon = flat[flat.length - 1];
+  if (firstLat !== lastLat || firstLon !== lastLon) {
+    flat.push(firstLat, firstLon);
+  }
+  return flat.length >= 8 ? flat : null;
+}
+
+function computeFlatRingBounds(flatRing) {
+  let minLat = Number.POSITIVE_INFINITY;
+  let maxLat = Number.NEGATIVE_INFINITY;
+  let minLon = Number.POSITIVE_INFINITY;
+  let maxLon = Number.NEGATIVE_INFINITY;
+  for (let index = 0; index < flatRing.length; index += 2) {
+    const lat = flatRing[index];
+    const lon = flatRing[index + 1];
+    minLat = Math.min(minLat, lat);
+    maxLat = Math.max(maxLat, lat);
+    minLon = Math.min(minLon, lon);
+    maxLon = Math.max(maxLon, lon);
+  }
+  return [minLat, minLon, maxLat, maxLon];
+}
+
+function normalizeOsmBuildingFootprints(geojson) {
+  const footprints = [];
+  (geojson?.features || []).forEach((feature) => {
+    const geometry = feature?.geometry;
+    const properties = feature?.properties || {};
+    const { heightM, minHeightM } = estimateOsmBuildingHeightMeters(properties);
+    const appendPolygon = (coordinates) => {
+      const outerRing = flattenOsmRingCoordinates(coordinates?.[0]);
+      if (!outerRing) {
+        return;
+      }
+      const holes = (coordinates || [])
+        .slice(1)
+        .map((ring) => flattenOsmRingCoordinates(ring))
+        .filter(Boolean);
+      footprints.push({
+        id: String(properties.osm_id ?? `building:${footprints.length}`),
+        bbox: computeFlatRingBounds(outerRing),
+        outerRing,
+        holes,
+        heightM,
+        minHeightM,
+      });
+    };
+    if (geometry?.type === "Polygon") {
+      appendPolygon(geometry.coordinates);
+    } else if (geometry?.type === "MultiPolygon") {
+      (geometry.coordinates || []).forEach((polygon) => appendPolygon(polygon));
+    }
+  });
+  return footprints;
+}
+
+function coordinateRangeToGridIndexRange(minCoord, maxCoord, originCoord, stepDeg, limit) {
+  if (!Number.isFinite(minCoord) || !Number.isFinite(maxCoord) || !Number.isFinite(originCoord) || !Number.isFinite(stepDeg) || !limit) {
+    return null;
+  }
+  const a = (minCoord - originCoord) / stepDeg;
+  const b = (maxCoord - originCoord) / stepDeg;
+  const low = Math.min(a, b);
+  const high = Math.max(a, b);
+  if (high < 0 || low > (limit - 1)) {
+    return null;
+  }
+  const start = clamp(Math.floor(low), 0, limit - 1);
+  const end = clamp(Math.ceil(high), 0, limit - 1);
+  return {
+    start: Math.min(start, end),
+    end: Math.max(start, end),
+  };
+}
+
+function buildOsmBuildingDatasetForTerrain(footprints, terrain) {
+  if (!Array.isArray(footprints) || !footprints.length || !terrain?.rows || !terrain?.cols) {
+    return null;
+  }
+  const cellLists = Array.from({ length: terrain.rows * terrain.cols }, () => []);
+  const normalizedFootprints = [];
+  footprints.forEach((footprint) => {
+    if (!Array.isArray(footprint?.outerRing) || footprint.outerRing.length < 8 || !Array.isArray(footprint?.bbox) || footprint.bbox.length !== 4) {
+      return;
+    }
+    const [minLat, minLon, maxLat, maxLon] = footprint.bbox;
+    const rowRange = coordinateRangeToGridIndexRange(minLat, maxLat, terrain.origin.lat, terrain.latStepDeg, terrain.rows);
+    const colRange = coordinateRangeToGridIndexRange(minLon, maxLon, terrain.origin.lon, terrain.lonStepDeg, terrain.cols);
+    if (!rowRange || !colRange) {
+      return;
+    }
+    const normalizedIndex = normalizedFootprints.length;
+    normalizedFootprints.push({
+      id: footprint.id,
+      bbox: footprint.bbox,
+      outerRing: footprint.outerRing,
+      holes: footprint.holes ?? [],
+      heightM: footprint.heightM,
+      minHeightM: footprint.minHeightM,
+    });
+    for (let row = rowRange.start; row <= rowRange.end; row += 1) {
+      for (let col = colRange.start; col <= colRange.end; col += 1) {
+        cellLists[row * terrain.cols + col].push(normalizedIndex);
+      }
+    }
+  });
+  if (!normalizedFootprints.length) {
+    return null;
+  }
+
+  const cellOffsets = new Uint32Array(cellLists.length + 1);
+  const cellBuildingIndexes = new Uint32Array(cellLists.reduce((sum, cell) => sum + cell.length, 0));
+  let cursor = 0;
+  cellLists.forEach((cell, index) => {
+    cellOffsets[index] = cursor;
+    cell.forEach((buildingIndex) => {
+      cellBuildingIndexes[cursor] = buildingIndex;
+      cursor += 1;
+    });
+  });
+  cellOffsets[cellLists.length] = cursor;
+
+  return {
+    source: "overpass",
+    footprintCount: normalizedFootprints.length,
+    footprints: normalizedFootprints,
+    cellOffsets,
+    cellBuildingIndexes,
+  };
+}
+
+async function getOsmBuildingFootprintsForBounds(bounds) {
+  const bbox = boundsToBbox(bounds);
+  const key = bboxKey(bbox);
+  if (state.osmBuildingFootprintCache.has(key)) {
+    return state.osmBuildingFootprintCache.get(key);
+  }
+  const geojson = await fetchOsmBuildings(bbox);
+  const footprints = normalizeOsmBuildingFootprints(geojson);
+  state.osmBuildingFootprintCache.set(key, footprints);
+  return footprints;
 }
 
 async function runOfflineDownload(mode) {

@@ -39,6 +39,37 @@ struct TerrainGrid {
     osm_buildings_enabled: bool,
     #[serde(default = "default_building_material")]
     building_material_preset: String,
+    #[serde(default)]
+    osm_building_dataset: Option<OsmBuildingDataset>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
+struct OsmBuildingDataset {
+    #[serde(default)]
+    footprint_count: usize,
+    #[serde(default)]
+    footprints: Vec<OsmBuildingFootprint>,
+    #[serde(default)]
+    cell_offsets: Vec<u32>,
+    #[serde(default)]
+    cell_building_indexes: Vec<u32>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
+struct OsmBuildingFootprint {
+    #[serde(default)]
+    id: String,
+    bbox: Vec<f64>,
+    outer_ring: Vec<f64>,
+    #[serde(default)]
+    holes: Vec<Vec<f64>>,
+    height_m: f64,
+    #[serde(default)]
+    min_height_m: f64,
 }
 
 /// RF endpoint passed in from JS for link, terrain-trace, and path-profile calculations.
@@ -96,6 +127,7 @@ struct WeatherModel {
 struct TraceTerrainResult {
     line_of_sight: bool,
     max_obstruction_m: f64,
+    terrain_max_obstruction_m: f64,
     building_path_meters: f64,
     building_hit_samples: usize,
     max_building_obstruction_m: f64,
@@ -500,6 +532,71 @@ fn sample_terrain_field_inner(lat: f64, lon: f64, terrain: &TerrainGrid, field_n
     }
 }
 
+fn terrain_grid_cell_index(lat: f64, lon: f64, terrain: &TerrainGrid) -> Option<(usize, usize)> {
+    let row = ((lat - terrain.origin.lat) / terrain.lat_step_deg).floor() as isize;
+    let col = ((lon - terrain.origin.lon) / terrain.lon_step_deg).floor() as isize;
+    if row < 0 || col < 0 || row as usize >= terrain.rows || col as usize >= terrain.cols {
+        return None;
+    }
+    Some((row as usize, col as usize))
+}
+
+fn get_building_candidate_indexes(
+    row: usize,
+    col: usize,
+    terrain: &TerrainGrid,
+    dataset: &OsmBuildingDataset,
+) -> Vec<usize> {
+    let cell_index = row * terrain.cols + col;
+    if dataset.cell_offsets.len() > cell_index + 1 && !dataset.cell_building_indexes.is_empty() {
+        let start = dataset.cell_offsets[cell_index] as usize;
+        let end = dataset.cell_offsets[cell_index + 1] as usize;
+        if end <= start || start >= dataset.cell_building_indexes.len() {
+            return Vec::new();
+        }
+        let end = end.min(dataset.cell_building_indexes.len());
+        return dataset.cell_building_indexes[start..end]
+            .iter()
+            .copied()
+            .map(|index| index as usize)
+            .collect();
+    }
+    (0..dataset.footprints.len()).collect()
+}
+
+fn point_in_flat_bbox(lat: f64, lon: f64, bbox: &[f64]) -> bool {
+    bbox.len() == 4
+        && lat >= bbox[0]
+        && lat <= bbox[2]
+        && lon >= bbox[1]
+        && lon <= bbox[3]
+}
+
+fn point_in_flat_ring(lat: f64, lon: f64, ring: &[f64]) -> bool {
+    if ring.len() < 8 || ring.len() % 2 != 0 {
+        return false;
+    }
+    let mut inside = false;
+    let mut j = ring.len() - 2;
+    let mut i = 0;
+    while i < ring.len() {
+        let yi = ring[i];
+        let xi = ring[i + 1];
+        let yj = ring[j];
+        let xj = ring[j + 1];
+        let denom = if (yj - yi).abs() <= f64::EPSILON { f64::EPSILON } else { yj - yi };
+        let intersect =
+            (yi > lat) != (yj > lat)
+            && lon < ((xj - xi) * (lat - yi)) / denom + xi;
+        if intersect {
+            inside = !inside;
+        }
+        j = i;
+        i += 2;
+    }
+    inside
+}
+
 /// Samples the active terrain surface elevation at one point.
 ///
 /// Inputs:
@@ -522,45 +619,81 @@ fn sample_terrain_base(lat: f64, lon: f64, terrain: &TerrainGrid) -> Option<f64>
     sample_terrain_field_inner(lat, lon, terrain, "baseElevations")
 }
 
-/// Samples the effective obstructing surface used for LOS tests.
-///
-/// Inputs:
-/// - `lat`, `lon`: decimal-degree sample location.
-/// - `terrain`: terrain raster and optional building-overlay settings.
-/// Output: maximum sampled obstruction height near the requested point.
-/// Reference:
-/// - Base terrain comes from bilinear raster sampling.
-/// - The surrounding-point max search is a project-local heuristic meant to avoid undersampling
-///   narrow building footprints within coarse cells.
-fn sample_surface_obstruction(lat: f64, lon: f64, terrain: &TerrainGrid) -> Option<f64> {
+#[derive(Clone, Copy, Debug)]
+struct BuildingSample {
+    base_height: f64,
+    top_height: f64,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ObstructionSample {
+    terrain_height: f64,
+    surface_height: f64,
+    building_base_height: f64,
+    building_top_height: f64,
+    building_height: f64,
+}
+
+/// Samples the OSM building volume at one point, if a footprint contains the sample location.
+fn sample_building_at_point(lat: f64, lon: f64, terrain: &TerrainGrid, ground_height: f64) -> Option<BuildingSample> {
     if !terrain.osm_buildings_enabled {
-        return sample_terrain(lat, lon, terrain);
+        return None;
     }
+    let dataset = terrain.osm_building_dataset.as_ref()?;
+    if dataset.footprints.is_empty() {
+        return None;
+    }
+    let (row, col) = terrain_grid_cell_index(lat, lon, terrain)?;
+    let candidate_indexes = get_building_candidate_indexes(row, col, terrain, dataset);
 
-    let cell_lat_offset = terrain.lat_step_deg.abs() * 0.42;
-    let cell_lon_offset = terrain.lon_step_deg.abs() * 0.42;
-    let sample_points = [
-        (lat, lon),
-        (lat + cell_lat_offset, lon),
-        (lat - cell_lat_offset, lon),
-        (lat, lon + cell_lon_offset),
-        (lat, lon - cell_lon_offset),
-        (lat + cell_lat_offset * 0.7, lon + cell_lon_offset * 0.7),
-        (lat + cell_lat_offset * 0.7, lon - cell_lon_offset * 0.7),
-        (lat - cell_lat_offset * 0.7, lon + cell_lon_offset * 0.7),
-        (lat - cell_lat_offset * 0.7, lon - cell_lon_offset * 0.7),
-    ];
-
-    let mut max_height = sample_terrain(lat, lon, terrain);
-    for (sample_lat, sample_lon) in sample_points {
-        if let Some(sampled) = sample_terrain(sample_lat, sample_lon, terrain) {
-            max_height = Some(match max_height {
-                Some(current) => current.max(sampled),
-                None => sampled,
-            });
+    let mut best: Option<BuildingSample> = None;
+    for building_index in candidate_indexes {
+        let Some(footprint) = dataset.footprints.get(building_index) else {
+            continue;
+        };
+        if !point_in_flat_bbox(lat, lon, &footprint.bbox) {
+            continue;
         }
+        if !point_in_flat_ring(lat, lon, &footprint.outer_ring) {
+            continue;
+        }
+        if footprint.holes.iter().any(|hole| point_in_flat_ring(lat, lon, hole)) {
+            continue;
+        }
+        let min_height_m = footprint.min_height_m.max(0.0);
+        let height_m = footprint.height_m.max(min_height_m + 2.0);
+        let candidate = BuildingSample {
+            base_height: ground_height + min_height_m,
+            top_height: ground_height + height_m,
+        };
+        best = Some(match best {
+            Some(current) if current.top_height >= candidate.top_height => current,
+            _ => candidate,
+        });
     }
-    max_height
+    best
+}
+
+/// Samples terrain and explicit building obstruction terms separately at one point.
+fn sample_obstruction_components(lat: f64, lon: f64, terrain: &TerrainGrid) -> Option<ObstructionSample> {
+    let terrain_height = sample_terrain(lat, lon, terrain)?;
+    let ground_height = sample_terrain_base(lat, lon, terrain).unwrap_or(terrain_height);
+    let building = sample_building_at_point(lat, lon, terrain, ground_height);
+    let building_base_height = building.map(|entry| entry.base_height).unwrap_or(ground_height);
+    let building_top_height = building.map(|entry| entry.top_height).unwrap_or(ground_height);
+    let building_height = (building_top_height - building_base_height).max(0.0);
+    let surface_height = if building_height > 0.0 {
+        terrain_height.max(building_top_height)
+    } else {
+        terrain_height
+    };
+    Some(ObstructionSample {
+        terrain_height,
+        surface_height,
+        building_base_height,
+        building_top_height,
+        building_height,
+    })
 }
 
 /// Walks the path between two endpoints and measures terrain/building obstruction against the LOS ray.
@@ -590,6 +723,7 @@ fn trace_terrain_inner(source: &Endpoint, target: &Endpoint, tx_height_m: f64, r
     let step_distance_meters = total_distance_meters / steps as f64;
 
     let mut max_obstruction_m = 0.0;
+    let mut terrain_max_obstruction_m = 0.0;
     let mut building_path_meters = 0.0;
     let mut building_hit_samples = 0usize;
     let mut max_building_obstruction_m: f64 = 0.0;
@@ -599,22 +733,30 @@ fn trace_terrain_inner(source: &Endpoint, target: &Endpoint, tx_height_m: f64, r
       let t = step as f64 / steps as f64;
       let lat = lerp(source.lat, target.lat, t);
       let lon = lerp(source.lon, target.lon, t);
-      let Some(terrain_height) = sample_surface_obstruction(lat, lon, terrain) else {
+      let Some(obstruction_sample) = sample_obstruction_components(lat, lon, terrain) else {
           continue;
       };
-      let base_height = sample_terrain_base(lat, lon, terrain).unwrap_or(terrain_height);
       sampled_count += 1;
       let los_height = lerp(source_alt, target_alt, t);
       let earth_curve_drop = earth_curvature_drop_meters(total_distance_km * t);
-      let obstruction = terrain_height - (los_height - earth_curve_drop);
-      if obstruction > max_obstruction_m {
-          max_obstruction_m = obstruction;
+      let los_reference_height = los_height - earth_curve_drop;
+      let total_obstruction = obstruction_sample.surface_height - los_reference_height;
+      let terrain_obstruction = obstruction_sample.terrain_height - los_reference_height;
+      if total_obstruction > max_obstruction_m {
+          max_obstruction_m = total_obstruction;
       }
-      let building_height = (terrain_height - base_height).max(0.0);
-      if building_height > 2.0 && obstruction > 0.0 {
+      if terrain_obstruction > terrain_max_obstruction_m {
+          terrain_max_obstruction_m = terrain_obstruction;
+      }
+      let building_obstruction = if los_reference_height >= obstruction_sample.building_base_height {
+          obstruction_sample.building_top_height - los_reference_height
+      } else {
+          0.0
+      };
+      if obstruction_sample.building_height > 2.0 && building_obstruction > 0.0 {
           building_path_meters += step_distance_meters;
           building_hit_samples += 1;
-          max_building_obstruction_m = max_building_obstruction_m.max(obstruction.min(building_height));
+          max_building_obstruction_m = max_building_obstruction_m.max(building_obstruction.min(obstruction_sample.building_height));
       }
     }
 
@@ -629,6 +771,7 @@ fn trace_terrain_inner(source: &Endpoint, target: &Endpoint, tx_height_m: f64, r
     TraceTerrainResult {
         line_of_sight: if terrain_completeness == "none" { true } else { max_obstruction_m <= 0.0 },
         max_obstruction_m: max_obstruction_m.max(0.0),
+        terrain_max_obstruction_m: terrain_max_obstruction_m.max(0.0),
         building_path_meters,
         building_hit_samples,
         max_building_obstruction_m,
@@ -678,6 +821,7 @@ fn simulate_link_inner(
             .unwrap_or(TraceTerrainResult {
                 line_of_sight: true,
                 max_obstruction_m: 0.0,
+                terrain_max_obstruction_m: 0.0,
                 building_path_meters: 0.0,
                 building_hit_samples: 0,
                 max_building_obstruction_m: 0.0,
@@ -688,6 +832,7 @@ fn simulate_link_inner(
         TraceTerrainResult {
             line_of_sight: true,
             max_obstruction_m: 0.0,
+            terrain_max_obstruction_m: 0.0,
             building_path_meters: 0.0,
             building_hit_samples: 0,
             max_building_obstruction_m: 0.0,
@@ -703,7 +848,7 @@ fn simulate_link_inner(
         0.0
     };
     let diffraction_db = if include_terrain {
-        diffraction_penalty(terrain_profile.max_obstruction_m, distance_km, frequency_mhz)
+        diffraction_penalty(terrain_profile.terrain_max_obstruction_m, distance_km, frequency_mhz)
     } else {
         0.0
     };
@@ -797,6 +942,7 @@ fn build_path_profile_inner(
     let mut min_fresnel_clearance_m = f64::INFINITY;
     let mut min_required_fresnel_clearance_m = f64::INFINITY;
     let mut max_obstruction_m = 0.0;
+    let mut terrain_max_obstruction_m = 0.0;
     let mut max_building_obstruction_m: f64 = 0.0;
     let mut building_hit_samples = 0usize;
     let mut building_path_meters = 0.0;
@@ -806,12 +952,11 @@ fn build_path_profile_inner(
         let t = step as f64 / steps as f64;
         let lat = lerp(source.lat, target.lat, t);
         let lon = lerp(source.lon, target.lon, t);
-        let surface_height = terrain
-            .and_then(|terrain| sample_surface_obstruction(lat, lon, terrain))
+        let obstruction_sample = terrain
+            .and_then(|terrain| sample_obstruction_components(lat, lon, terrain));
+        let surface_height = obstruction_sample
+            .map(|sample| sample.surface_height)
             .unwrap_or(0.0);
-        let base_height = terrain
-            .and_then(|terrain| sample_terrain_base(lat, lon, terrain))
-            .unwrap_or(surface_height);
         let los_height = lerp(source_alt, target_alt, t);
         let earth_curve_drop = earth_curvature_drop_meters(distance_km * t);
         let clearance_m = (los_height - earth_curve_drop) - surface_height;
@@ -820,8 +965,23 @@ fn build_path_profile_inner(
         let fresnel_radius_m = ((wavelength_m * d1 * d2) / (d1 + d2).max(1.0)).max(0.0).sqrt();
         let fresnel_clearance_m = clearance_m - fresnel_radius_m;
         let required_fresnel_clearance_m = clearance_m - (fresnel_radius_m * fresnel_fraction);
-        let obstruction = (surface_height - (los_height - earth_curve_drop)).max(0.0);
-        let building_height = (surface_height - base_height).max(0.0);
+        let los_reference_height = los_height - earth_curve_drop;
+        let obstruction = (surface_height - los_reference_height).max(0.0);
+        let terrain_obstruction = obstruction_sample
+            .map(|sample| (sample.terrain_height - los_reference_height).max(0.0))
+            .unwrap_or(0.0);
+        let building_height = obstruction_sample
+            .map(|sample| sample.building_height)
+            .unwrap_or(0.0);
+        let building_obstruction = obstruction_sample
+            .map(|sample| {
+                if los_reference_height >= sample.building_base_height {
+                    (sample.building_top_height - los_reference_height).max(0.0)
+                } else {
+                    0.0
+                }
+            })
+            .unwrap_or(0.0);
 
         if clearance_m < min_clearance_m {
             min_clearance_m = clearance_m;
@@ -836,16 +996,20 @@ fn build_path_profile_inner(
         if obstruction > max_obstruction_m {
             max_obstruction_m = obstruction;
         }
-        if building_height > 2.0 && obstruction > 0.0 {
+        if terrain_obstruction > terrain_max_obstruction_m {
+            terrain_max_obstruction_m = terrain_obstruction;
+        }
+        if building_height > 2.0 && building_obstruction > 0.0 {
             building_hit_samples += 1;
             building_path_meters += step_distance_meters;
-            max_building_obstruction_m = max_building_obstruction_m.max(obstruction.min(building_height));
+            max_building_obstruction_m = max_building_obstruction_m.max(building_obstruction.min(building_height));
         }
     }
 
     let terrain_profile = TraceTerrainResult {
         line_of_sight: min_clearance_m > 0.0,
         max_obstruction_m: max_obstruction_m.max(0.0),
+        terrain_max_obstruction_m: terrain_max_obstruction_m.max(0.0),
         building_path_meters,
         building_hit_samples,
         max_building_obstruction_m,
