@@ -10444,25 +10444,75 @@ function renderSettingsDocumentation() {
   const headings = [...dom.settingsDocumentationContent.querySelectorAll("h1, h2, h3")];
   const slugCounts = new Map();
   dom.settingsDocumentationNav.innerHTML = "";
+
+  // Assign IDs to all headings
   headings.forEach((heading) => {
     const baseSlug = slugifySettingsDocHeading(heading.textContent);
     const nextCount = (slugCounts.get(baseSlug) || 0) + 1;
     slugCounts.set(baseSlug, nextCount);
-    const slug = nextCount > 1 ? `${baseSlug}-${nextCount}` : baseSlug;
-    heading.id = `settings-doc-${slug}`;
+    heading.id = `settings-doc-${nextCount > 1 ? `${baseSlug}-${nextCount}` : baseSlug}`;
+  });
+
+  // Section color palette for h1/h2 section cards
+  const SECTION_COLORS = ["#3b82f6","#10b981","#f59e0b","#8b5cf6","#ef4444","#06b6d4","#f97316"];
+  let sectionIndex = 0;
+  let currentCard = null;
+  let currentSubList = null;
+  const allLinks = [];
+
+  function makeLink(heading) {
     const link = document.createElement("a");
     link.href = `#${heading.id}`;
     link.textContent = heading.textContent || "Section";
-    link.dataset.depth = heading.tagName === "H1" ? "1" : heading.tagName === "H2" ? "2" : "3";
     link.addEventListener("click", (event) => {
       event.preventDefault();
       heading.scrollIntoView({ block: "start", behavior: "smooth" });
-      dom.settingsDocumentationNav.querySelectorAll("a").forEach((entry) => entry.classList.remove("is-active"));
+      allLinks.forEach((l) => l.classList.remove("is-active"));
       link.classList.add("is-active");
     });
-    dom.settingsDocumentationNav.appendChild(link);
+    allLinks.push(link);
+    return link;
+  }
+
+  headings.forEach((heading) => {
+    const depth = heading.tagName === "H1" ? 1 : heading.tagName === "H2" ? 2 : 3;
+    if (depth <= 2) {
+      // New section card
+      currentCard = document.createElement("div");
+      currentCard.className = "docs-nav-section";
+      const color = SECTION_COLORS[sectionIndex % SECTION_COLORS.length];
+      sectionIndex++;
+      currentCard.style.setProperty("--section-color", color);
+      const header = document.createElement("div");
+      header.className = "docs-nav-section-header";
+      const link = makeLink(heading);
+      link.className = "docs-nav-section-link";
+      header.appendChild(link);
+      currentCard.appendChild(header);
+      currentSubList = null;
+      dom.settingsDocumentationNav.appendChild(currentCard);
+    } else {
+      // h3 — sub-item under current section card
+      if (!currentCard) {
+        currentCard = document.createElement("div");
+        currentCard.className = "docs-nav-section";
+        currentCard.style.setProperty("--section-color", SECTION_COLORS[0]);
+        dom.settingsDocumentationNav.appendChild(currentCard);
+      }
+      if (!currentSubList) {
+        currentSubList = document.createElement("ul");
+        currentSubList.className = "docs-nav-sub-list";
+        currentCard.appendChild(currentSubList);
+      }
+      const li = document.createElement("li");
+      const link = makeLink(heading);
+      link.className = "docs-nav-sub-link";
+      li.appendChild(link);
+      currentSubList.appendChild(li);
+    }
   });
-  dom.settingsDocumentationNav.querySelector("a")?.classList.add("is-active");
+
+  allLinks[0]?.classList.add("is-active");
   _settingsDocumentationRendered = true;
 }
 
@@ -28981,12 +29031,16 @@ async function renderTopologyView(options = {}) {
 
     if (standaloneEntries.length) {
       const placedUnitPositions = [...unitPos.values()];
-      const maxUnitX = placedUnitPositions.length ? Math.max(...placedUnitPositions.map((pos) => pos.x)) : 320;
-      const standaloneX = maxUnitX + SLOT_W * 1.2;
+      const maxY = placedUnitPositions.length ? Math.max(...placedUnitPositions.map((pos) => pos.y)) : 0;
+      const minX = placedUnitPositions.length ? Math.min(...placedUnitPositions.map((pos) => pos.x)) : 260;
+      const standaloneStartY = maxY + CARD_H + 260;
+      const standaloneColCount = Math.max(1, Math.ceil(Math.sqrt(standaloneEntries.length)));
       standaloneEntries.forEach((entry, index) => {
+        const col = index % standaloneColCount;
+        const row = Math.floor(index / standaloneColCount);
         unitPos.set(entry.key, {
-          x: standaloneX,
-          y: 220 + index * (CARD_H + 120),
+          x: minX + col * SLOT_W,
+          y: standaloneStartY + row * SLOT_H,
         });
       });
     }
