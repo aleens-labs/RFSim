@@ -1770,6 +1770,14 @@ const dom = {
   terrainHeatmapOpacityValue: document.querySelector("#terrainHeatmapOpacityValue"),
   terrainHeatmapSampleSize: document.querySelector("#terrainHeatmapSampleSize"),
   terrainHeatmapSampleSizeValue: document.querySelector("#terrainHeatmapSampleSizeValue"),
+  terrainContourBtn: document.querySelector("#terrainContourBtn"),
+  terrainContourDropdown: document.querySelector("#terrainContourDropdown"),
+  terrainContourInterval: document.querySelector("#terrainContourInterval"),
+  terrainContourIntervalValue: document.querySelector("#terrainContourIntervalValue"),
+  terrainContourLineColorInput: document.querySelector("#terrainContourLineColorInput"),
+  terrainContourLabelColorInput: document.querySelector("#terrainContourLabelColorInput"),
+  terrainContourLinePalette: document.querySelector("#terrainContourLinePalette"),
+  terrainContourLabelPalette: document.querySelector("#terrainContourLabelPalette"),
   mapContentsSearchInput: document.querySelector("#mapContentsSearchInput"),
   mapContentsSearchClearBtn: document.querySelector("#mapContentsSearchClearBtn"),
   mapGeoSearchInput: document.querySelector("#mapGeoSearchInput"),
@@ -2055,6 +2063,21 @@ const state = {
     sampleBudget: 576,
     layer2d: null,
     sample: null,
+    refreshTimer: null,
+    requestId: 0,
+    lastBoundsKey: "",
+    inFlight: false,
+    pendingRefresh: null,
+  },
+  terrainContours: {
+    enabled: false,
+    intervalIndex: 3,
+    sampleBudget: 1536,
+    lineColor: "#7dd3fc",
+    labelColor: "#f8fafc",
+    layer2d: null,
+    sample: null,
+    model: null,
     refreshTimer: null,
     requestId: 0,
     lastBoundsKey: "",
@@ -6442,7 +6465,7 @@ async function init() {
     }
   });
   state.map.on("moveend zoomend resize", updateMapOverlayMetrics);
-  state.map.on("moveend zoomend resize", () => scheduleTerrainHeatmapRefresh());
+  state.map.on("moveend zoomend resize", () => scheduleTerrainOverlayRefresh());
   state.map.on("moveend zoomend", saveMapViewPosition);
   window.addEventListener("beforeunload", flushPendingAutosave);
   document.addEventListener("visibilitychange", () => {
@@ -6491,7 +6514,7 @@ async function init() {
     });
     syncCesiumEntities();
     updateCesiumCompass();
-    scheduleTerrainHeatmapRefresh({ force: true, delay: 120 });
+    scheduleTerrainOverlayRefresh({ force: true, delay: 120 });
   });
   state.map.on(L.Draw.Event.CREATED, onPlanningRegionCreated);
   attachSimulationWorkerListener();
@@ -6721,6 +6744,7 @@ function wireEvents() {
   dom.workspaceProjectDeleteBtn?.addEventListener("click", () => onWorkspaceProjectDelete().catch((error) => setStatus(error.message, true)));
   document.addEventListener("click", closeTopBarMenus);
   document.addEventListener("click", closeTerrainHeatmapDropdown);
+  document.addEventListener("click", closeTerrainContourDropdown);
   document.addEventListener("click", closeMapContentsMenu);
   document.addEventListener("click", closeRenamePopover);
   addModalBackdropClose(dom.shapeStyleModal, () => closeShapeStylePanel({ stopEditing: false }));
@@ -6730,9 +6754,21 @@ function wireEvents() {
   dom.terrainHeatmapDropdown?.addEventListener("contextmenu", (event) => event.stopPropagation());
   dom.terrainHeatmapOpacity?.addEventListener("input", onTerrainHeatmapOpacityInput);
   dom.terrainHeatmapSampleSize?.addEventListener("input", onTerrainHeatmapSampleSizeInput);
+  dom.terrainContourBtn?.addEventListener("click", onTerrainContourToggleClick);
+  dom.terrainContourBtn?.addEventListener("contextmenu", onTerrainContourButtonContextMenu);
+  dom.terrainContourDropdown?.addEventListener("click", (event) => event.stopPropagation());
+  dom.terrainContourDropdown?.addEventListener("contextmenu", (event) => event.stopPropagation());
+  dom.terrainContourInterval?.addEventListener("input", onTerrainContourIntervalInput);
+  dom.terrainContourLineColorInput?.addEventListener("input", (event) => setTerrainContourColor("line", event.currentTarget.value));
+  dom.terrainContourLabelColorInput?.addEventListener("input", (event) => setTerrainContourColor("label", event.currentTarget.value));
+  dom.terrainContourLinePalette?.addEventListener("click", onTerrainContourPaletteClick);
+  dom.terrainContourLabelPalette?.addEventListener("click", onTerrainContourPaletteClick);
   updateTerrainHeatmapOpacityUi();
   updateTerrainHeatmapSampleSizeUi();
   updateTerrainHeatmapButtonUi();
+  updateTerrainContourIntervalUi();
+  updateTerrainContourButtonUi();
+  syncTerrainContourPaletteUi();
   dom.addMapFolderBtn.addEventListener("click", addMapContentFolder);
   dom.addTacticalItemBtn?.addEventListener("click", openTacticalPaletteModal);
   dom.tacticalPaletteCloseBtn?.addEventListener("click", closeTacticalPaletteModal);
@@ -8480,7 +8516,7 @@ function onCesiumIonTokenChanged() {
   updateMapOverlayMetrics();
   updateTerrainSummary();
   updateTerrainMenuValue();
-  scheduleTerrainHeatmapRefresh({ force: true, delay: 120 });
+  scheduleTerrainOverlayRefresh({ force: true, delay: 120 });
   if (state.ui?.currentView === "topology") {
     renderTopologyView();
   }
@@ -8495,7 +8531,7 @@ function onTerrainSourceSettingsChanged() {
   updateMapOverlayMetrics();
   updateTerrainSummary();
   updateTerrainMenuValue();
-  scheduleTerrainHeatmapRefresh({ force: true, delay: 120 });
+  scheduleTerrainOverlayRefresh({ force: true, delay: 120 });
   if (state.ui?.currentView === "topology") {
     renderTopologyView();
   }
@@ -11222,6 +11258,9 @@ const TERRAIN_HEATMAP_SAMPLE_BUDGET_MIN = 256;
 const TERRAIN_HEATMAP_SAMPLE_BUDGET_MAX = 3072;
 const TERRAIN_HEATMAP_SAMPLE_BUDGET_STEP = 64;
 const TERRAIN_HEATMAP_SAMPLE_BUDGET_DEFAULT = 576;
+const TERRAIN_CONTOUR_INTERVAL_OPTIONS = [10, 20, 50, 100, 200, 250, 500, 1000];
+const TERRAIN_CONTOUR_SAMPLE_BUDGET = 1536;
+const TERRAIN_CONTOUR_LABEL_LIMIT = 28;
 
 function normalizeTerrainHeatmapSampleBudget(value) {
   const numeric = Number(value);
@@ -11234,6 +11273,20 @@ function normalizeTerrainHeatmapSampleBudget(value) {
     TERRAIN_HEATMAP_SAMPLE_BUDGET_MAX,
   );
   return Math.round(clamped / TERRAIN_HEATMAP_SAMPLE_BUDGET_STEP) * TERRAIN_HEATMAP_SAMPLE_BUDGET_STEP;
+}
+
+function normalizeTerrainContourIntervalIndex(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return 3;
+  }
+  return clamp(Math.round(numeric), 0, TERRAIN_CONTOUR_INTERVAL_OPTIONS.length - 1);
+}
+
+function getTerrainContourIntervalM() {
+  return TERRAIN_CONTOUR_INTERVAL_OPTIONS[
+    normalizeTerrainContourIntervalIndex(state.terrainContours.intervalIndex)
+  ] ?? 100;
 }
 
 function closeTerrainHeatmapDropdown() {
@@ -11394,12 +11447,13 @@ function getTerrainHeatmapViewportSize() {
   return size ? { x: size.x, y: size.y } : { x: 1280, y: 720 };
 }
 
-function getTerrainHeatmapGridProfile(bounds) {
+function getTerrainViewportGridProfile(bounds, totalCells, options = {}) {
   const size = getTerrainHeatmapViewportSize();
   const aspect = clamp((size.x || 1280) / Math.max(size.y || 720, 1), 0.7, 2.4);
-  const totalCells = normalizeTerrainHeatmapSampleBudget(state.terrainHeatmap.sampleBudget);
-  const maxCols = Math.round(Math.sqrt(TERRAIN_HEATMAP_SAMPLE_BUDGET_MAX * 2.4));
-  const maxRows = Math.round(Math.sqrt(TERRAIN_HEATMAP_SAMPLE_BUDGET_MAX / 0.7));
+  const maxCells = Number(options.maxCells) || TERRAIN_HEATMAP_SAMPLE_BUDGET_MAX;
+  const defaultCells = Number(options.defaultCells) || TERRAIN_HEATMAP_SAMPLE_BUDGET_DEFAULT;
+  const maxCols = Math.round(Math.sqrt(maxCells * 2.4));
+  const maxRows = Math.round(Math.sqrt(maxCells / 0.7));
   const cols = clamp(Math.round(Math.sqrt(totalCells * aspect)), 16, maxCols);
   const rows = clamp(Math.round(totalCells / cols), 12, maxRows);
   const latSpan = Math.max(0.0001, bounds.ne.lat - bounds.sw.lat);
@@ -11412,7 +11466,7 @@ function getTerrainHeatmapGridProfile(bounds) {
     ((latStepDeg * 111320) + (lonStepDeg * 111320 * Math.cos(centerLat * Math.PI / 180))) / 2
   );
   const zoomEstimate = getCurrentTerrainHeatmapZoomEstimate();
-  const sampleFactor = totalCells / TERRAIN_HEATMAP_SAMPLE_BUDGET_DEFAULT;
+  const sampleFactor = totalCells / defaultCells;
   const terrainLevel = clamp(
     Math.round(zoomEstimate) + (sampleFactor >= 1.5 ? 0 : 1),
     5,
@@ -11428,6 +11482,24 @@ function getTerrainHeatmapGridProfile(bounds) {
     terrainLevel,
     zoomEstimate,
   };
+}
+
+function getTerrainHeatmapGridProfile(bounds) {
+  return getTerrainViewportGridProfile(
+    bounds,
+    normalizeTerrainHeatmapSampleBudget(state.terrainHeatmap.sampleBudget),
+    {
+      maxCells: TERRAIN_HEATMAP_SAMPLE_BUDGET_MAX,
+      defaultCells: TERRAIN_HEATMAP_SAMPLE_BUDGET_DEFAULT,
+    },
+  );
+}
+
+function getTerrainContourGridProfile(bounds) {
+  return getTerrainViewportGridProfile(bounds, TERRAIN_CONTOUR_SAMPLE_BUDGET, {
+    maxCells: Math.max(TERRAIN_CONTOUR_SAMPLE_BUDGET, TERRAIN_HEATMAP_SAMPLE_BUDGET_MAX),
+    defaultCells: TERRAIN_HEATMAP_SAMPLE_BUDGET_DEFAULT,
+  });
 }
 
 async function sampleCesiumTerrainGridForHeatmap(bounds, profile) {
@@ -11655,6 +11727,7 @@ async function setTerrainHeatmapEnabled(enabled) {
 
 function onTerrainHeatmapToggleClick(event) {
   event.preventDefault();
+  closeTerrainContourDropdown();
   closeTerrainHeatmapDropdown();
   setTerrainHeatmapEnabled(!state.terrainHeatmap.enabled).catch((error) => {
     setStatus(error.message || "Terrain heatmap toggle failed.", true);
@@ -11664,6 +11737,7 @@ function onTerrainHeatmapToggleClick(event) {
 function onTerrainHeatmapButtonContextMenu(event) {
   event.preventDefault();
   event.stopPropagation();
+  closeTerrainContourDropdown();
   updateTerrainHeatmapOpacityUi();
   updateTerrainHeatmapSampleSizeUi();
   dom.terrainHeatmapDropdown?.classList.toggle("hidden");
@@ -11688,6 +11762,412 @@ function onTerrainHeatmapSampleSizeInput(event) {
   if (state.terrainHeatmap.enabled) {
     scheduleTerrainHeatmapRefresh({ force: true, delay: 60 });
   }
+}
+
+function closeTerrainContourDropdown() {
+  dom.terrainContourDropdown?.classList.add("hidden");
+}
+
+function updateTerrainContourButtonUi() {
+  const button = dom.terrainContourBtn;
+  if (!button) return;
+  button.setAttribute("aria-pressed", state.terrainContours.enabled ? "true" : "false");
+}
+
+function updateTerrainContourIntervalUi() {
+  const index = normalizeTerrainContourIntervalIndex(state.terrainContours.intervalIndex);
+  state.terrainContours.intervalIndex = index;
+  if (dom.terrainContourInterval) {
+    dom.terrainContourInterval.value = String(index);
+    updateRangeTrack(dom.terrainContourInterval);
+  }
+  if (dom.terrainContourIntervalValue) {
+    dom.terrainContourIntervalValue.textContent = `${TERRAIN_CONTOUR_INTERVAL_OPTIONS[index]} m`;
+  }
+}
+
+function syncTerrainContourPaletteUi() {
+  const lineColor = (state.terrainContours.lineColor || "#7dd3fc").toLowerCase();
+  const labelColor = (state.terrainContours.labelColor || "#f8fafc").toLowerCase();
+  if (dom.terrainContourLineColorInput) dom.terrainContourLineColorInput.value = lineColor;
+  if (dom.terrainContourLabelColorInput) dom.terrainContourLabelColorInput.value = labelColor;
+  dom.terrainContourLinePalette?.querySelectorAll(".terrain-color-swatch").forEach((button) => {
+    button.classList.toggle("is-active", String(button.dataset.color || "").toLowerCase() === lineColor);
+  });
+  dom.terrainContourLabelPalette?.querySelectorAll(".terrain-color-swatch").forEach((button) => {
+    button.classList.toggle("is-active", String(button.dataset.color || "").toLowerCase() === labelColor);
+  });
+}
+
+function terrainContourPathLengthMeters(points) {
+  let meters = 0;
+  for (let index = 1; index < points.length; index += 1) {
+    meters += haversineKm(points[index - 1].lat, points[index - 1].lon, points[index].lat, points[index].lon) * 1000;
+  }
+  return meters;
+}
+
+function interpolateContourLabelPoint(points, distanceMeters) {
+  if (!points.length) return null;
+  if (points.length === 1) return { lat: points[0].lat, lon: points[0].lon };
+  let remaining = distanceMeters;
+  for (let index = 1; index < points.length; index += 1) {
+    const start = points[index - 1];
+    const end = points[index];
+    const segmentMeters = haversineKm(start.lat, start.lon, end.lat, end.lon) * 1000;
+    if (!Number.isFinite(segmentMeters) || segmentMeters <= 0.0001) continue;
+    if (remaining <= segmentMeters) {
+      const t = remaining / segmentMeters;
+      return {
+        lat: start.lat + ((end.lat - start.lat) * t),
+        lon: start.lon + ((end.lon - start.lon) * t),
+      };
+    }
+    remaining -= segmentMeters;
+  }
+  const tail = points[points.length - 1];
+  return { lat: tail.lat, lon: tail.lon };
+}
+
+function buildTerrainContourModel(sample, intervalM) {
+  if (!sample || !Number.isFinite(intervalM) || intervalM <= 0) {
+    return { paths: [], labels: [] };
+  }
+  const { rows, cols, elevations, nodataMask, latitudes, longitudes, minElevationM, maxElevationM, sampleDistanceMeters } = sample;
+  const startLevel = Math.ceil(minElevationM / intervalM) * intervalM;
+  const endLevel = Math.floor(maxElevationM / intervalM) * intervalM;
+  if (!Number.isFinite(startLevel) || !Number.isFinite(endLevel) || endLevel < startLevel) {
+    return { paths: [], labels: [] };
+  }
+
+  const paths = [];
+  const epsilon = intervalM * 1e-4;
+
+  const addTriangleSegment = (level, a, b, c, segments) => {
+    const points = [];
+    const seen = new Set();
+    const pushEdgePoint = (first, second) => {
+      const v1 = first.value;
+      const v2 = second.value;
+      if (!Number.isFinite(v1) || !Number.isFinite(v2)) return;
+      if ((level < Math.min(v1, v2)) || (level > Math.max(v1, v2)) || Math.abs(v1 - v2) < 1e-6) {
+        return;
+      }
+      const t = clamp((level - v1) / (v2 - v1), 0, 1);
+      const lat = first.lat + ((second.lat - first.lat) * t);
+      const lon = first.lon + ((second.lon - first.lon) * t);
+      const key = `${lat.toFixed(6)}:${lon.toFixed(6)}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      points.push({ lat, lon });
+    };
+    pushEdgePoint(a, b);
+    pushEdgePoint(b, c);
+    pushEdgePoint(c, a);
+    if (points.length >= 2) {
+      segments.push([points[0], points[1]]);
+    }
+  };
+
+  const stitchSegments = (segments) => {
+    const nodeMap = new Map();
+    const segmentEntries = segments.map(([start, end], index) => {
+      const startKey = `${start.lat.toFixed(6)}:${start.lon.toFixed(6)}`;
+      const endKey = `${end.lat.toFixed(6)}:${end.lon.toFixed(6)}`;
+      if (!nodeMap.has(startKey)) nodeMap.set(startKey, { point: start, neighbors: [] });
+      if (!nodeMap.has(endKey)) nodeMap.set(endKey, { point: end, neighbors: [] });
+      nodeMap.get(startKey).neighbors.push(index);
+      nodeMap.get(endKey).neighbors.push(index);
+      return { startKey, endKey };
+    });
+    const visited = new Set();
+    const chains = [];
+
+    const walk = (seedIndex, seedKey) => {
+      const chain = [];
+      let currentKey = seedKey;
+      let segmentIndex = seedIndex;
+      while (segmentIndex != null && !visited.has(segmentIndex)) {
+        visited.add(segmentIndex);
+        const segment = segmentEntries[segmentIndex];
+        const nextKey = segment.startKey === currentKey ? segment.endKey : segment.startKey;
+        if (!chain.length) {
+          chain.push(nodeMap.get(currentKey).point);
+        }
+        chain.push(nodeMap.get(nextKey).point);
+        const nextSegment = nodeMap.get(nextKey).neighbors.find((candidate) => !visited.has(candidate));
+        currentKey = nextKey;
+        segmentIndex = nextSegment ?? null;
+      }
+      return chain;
+    };
+
+    nodeMap.forEach((node, key) => {
+      if (node.neighbors.length !== 1) return;
+      const seed = node.neighbors.find((index) => !visited.has(index));
+      if (seed == null) return;
+      chains.push(walk(seed, key));
+    });
+
+    segmentEntries.forEach((segment, index) => {
+      if (visited.has(index)) return;
+      chains.push(walk(index, segment.startKey));
+    });
+
+    return chains.map((points) =>
+      points.filter((point, index, array) => index === 0
+        || point.lat !== array[index - 1].lat
+        || point.lon !== array[index - 1].lon)
+    );
+  };
+
+  for (let level = startLevel; level <= endLevel + 0.001; level += intervalM) {
+    const effectiveLevel = level + epsilon;
+    const segments = [];
+    for (let row = 0; row < rows - 1; row += 1) {
+      for (let col = 0; col < cols - 1; col += 1) {
+        const i00 = (row * cols) + col;
+        const i10 = i00 + 1;
+        const i01 = i00 + cols;
+        const i11 = i01 + 1;
+        if (nodataMask[i00] || nodataMask[i10] || nodataMask[i01] || nodataMask[i11]) continue;
+        const p00 = { lat: latitudes[i00], lon: longitudes[i00], value: elevations[i00] };
+        const p10 = { lat: latitudes[i10], lon: longitudes[i10], value: elevations[i10] };
+        const p01 = { lat: latitudes[i01], lon: longitudes[i01], value: elevations[i01] };
+        const p11 = { lat: latitudes[i11], lon: longitudes[i11], value: elevations[i11] };
+        addTriangleSegment(effectiveLevel, p00, p10, p11, segments);
+        addTriangleSegment(effectiveLevel, p00, p11, p01, segments);
+      }
+    }
+    const minUsefulLength = Math.max(sampleDistanceMeters * 1.4, intervalM * 2.2);
+    stitchSegments(segments).forEach((points) => {
+      if (points.length < 2) return;
+      const lengthMeters = terrainContourPathLengthMeters(points);
+      if (!Number.isFinite(lengthMeters) || lengthMeters < minUsefulLength) return;
+      paths.push({
+        levelM: Math.round(level),
+        points,
+        lengthMeters,
+      });
+    });
+  }
+
+  const labels = [];
+  [...paths]
+    .sort((left, right) => right.lengthMeters - left.lengthMeters)
+    .slice(0, TERRAIN_CONTOUR_LABEL_LIMIT)
+    .forEach((path) => {
+      const position = interpolateContourLabelPoint(path.points, path.lengthMeters * 0.52);
+      if (!position) return;
+      labels.push({
+        lat: position.lat,
+        lon: position.lon,
+        text: formatElevation(path.levelM),
+      });
+    });
+
+  return { paths, labels };
+}
+
+function syncTerrainContour2dLayer() {
+  if (!state.map) return;
+  const existing = state.terrainContours.layer2d;
+  const model = state.terrainContours.model;
+  const shouldShow = Boolean(state.terrainContours.enabled && model?.paths?.length);
+  if (!shouldShow) {
+    if (existing) {
+      state.map.removeLayer(existing);
+      state.terrainContours.layer2d = null;
+    }
+    return;
+  }
+  if (!existing) {
+    state.terrainContours.layer2d = new CanvasTerrainContourLayer({
+      pane: "pane-terrain",
+      model,
+      lineColor: state.terrainContours.lineColor,
+      labelColor: state.terrainContours.labelColor,
+    });
+    state.terrainContours.layer2d.addTo(state.map);
+    return;
+  }
+  existing.setOptions({
+    model,
+    lineColor: state.terrainContours.lineColor,
+    labelColor: state.terrainContours.labelColor,
+  });
+}
+
+function syncTerrainContour3dIfVisible() {
+  if (state.view3dEnabled && state.cesiumViewer) {
+    syncCesiumEntities();
+  }
+}
+
+async function refreshTerrainContours(options = {}) {
+  if (!state.terrainContours.enabled) return;
+  if (state.terrainContours.inFlight) {
+    state.terrainContours.pendingRefresh = {
+      force: Boolean(options.force) || Boolean(state.terrainContours.pendingRefresh?.force),
+    };
+    return;
+  }
+  if (!usesConfiguredCesiumTerrain()) {
+    state.terrainContours.enabled = false;
+    state.terrainContours.sample = null;
+    state.terrainContours.model = null;
+    syncTerrainContour2dLayer();
+    syncTerrainContour3dIfVisible();
+    updateTerrainContourButtonUi();
+    throw new Error("Enable Cesium terrain first to use contour lines.");
+  }
+  const bounds = getCurrentTerrainHeatmapBounds();
+  if (!bounds) return;
+  const profile = getTerrainContourGridProfile(bounds);
+  const boundsKey = `${buildTerrainHeatmapBoundsKey(bounds)}:${profile.rows}x${profile.cols}:${profile.totalCells}:L${profile.terrainLevel}`;
+  if (!options.force && boundsKey === state.terrainContours.lastBoundsKey && state.terrainContours.sample) {
+    state.terrainContours.model = buildTerrainContourModel(state.terrainContours.sample, getTerrainContourIntervalM());
+    syncTerrainContour2dLayer();
+    syncTerrainContour3dIfVisible();
+    return;
+  }
+
+  state.terrainContours.inFlight = true;
+  const requestId = ++state.terrainContours.requestId;
+  try {
+    const sample = await sampleCesiumTerrainGridForHeatmap(bounds, profile);
+    if (requestId !== state.terrainContours.requestId || !state.terrainContours.enabled) {
+      return;
+    }
+    state.terrainContours.sample = sample;
+    state.terrainContours.lastBoundsKey = boundsKey;
+    state.terrainContours.model = buildTerrainContourModel(sample, getTerrainContourIntervalM());
+    syncTerrainContour2dLayer();
+    syncTerrainContour3dIfVisible();
+    updateTerrainContourButtonUi();
+  } finally {
+    state.terrainContours.inFlight = false;
+    const pending = state.terrainContours.pendingRefresh;
+    state.terrainContours.pendingRefresh = null;
+    if (pending && state.terrainContours.enabled) {
+      scheduleTerrainContourRefresh({ ...pending, delay: 0 });
+    }
+  }
+}
+
+function scheduleTerrainContourRefresh(options = {}) {
+  if (!state.terrainContours.enabled) return;
+  if (state.terrainContours.refreshTimer) {
+    clearTimeout(state.terrainContours.refreshTimer);
+  }
+  const delay = Number.isFinite(options.delay) ? options.delay : 220;
+  state.terrainContours.refreshTimer = setTimeout(() => {
+    state.terrainContours.refreshTimer = null;
+    if (state.terrainContours.inFlight) {
+      state.terrainContours.pendingRefresh = {
+        force: Boolean(options.force) || Boolean(state.terrainContours.pendingRefresh?.force),
+      };
+      return;
+    }
+    refreshTerrainContours({ force: options.force }).catch((error) => {
+      setStatus(error.message || "Terrain contour refresh failed.", true);
+    });
+  }, delay);
+}
+
+async function setTerrainContoursEnabled(enabled) {
+  if (!enabled) {
+    state.terrainContours.enabled = false;
+    state.terrainContours.sample = null;
+    state.terrainContours.model = null;
+    state.terrainContours.lastBoundsKey = "";
+    state.terrainContours.pendingRefresh = null;
+    if (state.terrainContours.refreshTimer) {
+      clearTimeout(state.terrainContours.refreshTimer);
+      state.terrainContours.refreshTimer = null;
+    }
+    closeTerrainContourDropdown();
+    syncTerrainContour2dLayer();
+    syncTerrainContour3dIfVisible();
+    updateTerrainContourButtonUi();
+    return;
+  }
+  if (!usesConfiguredCesiumTerrain()) {
+    setStatus("Enable Cesium terrain first to use terrain contours.", true);
+    return;
+  }
+  state.terrainContours.enabled = true;
+  updateTerrainContourButtonUi();
+  updateTerrainContourIntervalUi();
+  syncTerrainContourPaletteUi();
+  try {
+    await refreshTerrainContours({ force: true });
+  } catch (error) {
+    state.terrainContours.enabled = false;
+    state.terrainContours.sample = null;
+    state.terrainContours.model = null;
+    state.terrainContours.lastBoundsKey = "";
+    updateTerrainContourButtonUi();
+    syncTerrainContour2dLayer();
+    syncTerrainContour3dIfVisible();
+    throw error;
+  }
+}
+
+function onTerrainContourToggleClick(event) {
+  event.preventDefault();
+  closeTerrainHeatmapDropdown();
+  setTerrainContoursEnabled(!state.terrainContours.enabled).catch((error) => {
+    setStatus(error.message || "Terrain contour toggle failed.", true);
+  });
+}
+
+function onTerrainContourButtonContextMenu(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  closeTerrainHeatmapDropdown();
+  updateTerrainContourIntervalUi();
+  syncTerrainContourPaletteUi();
+  dom.terrainContourDropdown?.classList.toggle("hidden");
+}
+
+function onTerrainContourIntervalInput(event) {
+  const nextIndex = normalizeTerrainContourIntervalIndex(event.currentTarget.value);
+  if (nextIndex === state.terrainContours.intervalIndex) {
+    updateTerrainContourIntervalUi();
+    return;
+  }
+  state.terrainContours.intervalIndex = nextIndex;
+  updateTerrainContourIntervalUi();
+  if (state.terrainContours.sample) {
+    state.terrainContours.model = buildTerrainContourModel(state.terrainContours.sample, getTerrainContourIntervalM());
+    syncTerrainContour2dLayer();
+    syncTerrainContour3dIfVisible();
+  }
+}
+
+function setTerrainContourColor(target, color) {
+  const normalized = String(color || "").trim() || (target === "label" ? "#f8fafc" : "#7dd3fc");
+  if (target === "label") {
+    state.terrainContours.labelColor = normalized;
+  } else {
+    state.terrainContours.lineColor = normalized;
+  }
+  syncTerrainContourPaletteUi();
+  syncTerrainContour2dLayer();
+  syncTerrainContour3dIfVisible();
+}
+
+function onTerrainContourPaletteClick(event) {
+  const swatch = event.target.closest(".terrain-color-swatch");
+  if (!swatch) return;
+  event.preventDefault();
+  setTerrainContourColor(swatch.dataset.target === "label" ? "label" : "line", swatch.dataset.color);
+}
+
+function scheduleTerrainOverlayRefresh(options = {}) {
+  scheduleTerrainHeatmapRefresh(options);
+  scheduleTerrainContourRefresh(options);
 }
 
 function syncContentVisibility(contentId) {
@@ -19201,7 +19681,7 @@ async function toggle3dView() {
     await syncCesiumScene();
     syncCesiumEntities();
     updateCesiumCompass();
-    scheduleTerrainHeatmapRefresh({ force: true, delay: 120 });
+    scheduleTerrainOverlayRefresh({ force: true, delay: 120 });
   } else if (state.cesiumViewer) {
     // Sync camera back to Leaflet when returning to 2D
     const carto = window.Cesium.Cartographic.fromCartesian(
@@ -19214,7 +19694,7 @@ async function toggle3dView() {
       state.map.setView([lat, lng], Math.min(Math.max(zoom, 2), 18), { animate: false });
     }
   }
-  scheduleTerrainHeatmapRefresh({ force: true, delay: 120 });
+  scheduleTerrainOverlayRefresh({ force: true, delay: 120 });
   updatePlacementInteractionState();
 }
 
@@ -19246,7 +19726,7 @@ async function initCesiumIfNeeded() {
     updateCesiumCompass();
     updateCesiumPhotorealisticTilesVisibility();
     updateCesiumOsmBuildingsVisibility();
-    scheduleTerrainHeatmapRefresh({ delay: 320 });
+    scheduleTerrainOverlayRefresh({ delay: 320 });
   });
 
   // Redraw terrain-clamped gridlines when the 3D camera moves.
@@ -24583,6 +25063,63 @@ function _syncCesiumEntitiesImmediate() {
     }
   }
 
+  // --- TERRAIN CONTOURS ---
+  if (state.terrainContours.enabled && state.terrainContours.model?.paths?.length) {
+    const contourColor = C.Color.fromCssColorString(state.terrainContours.lineColor || "#7dd3fc").withAlpha(0.96);
+    const contourInstances = [];
+    state.terrainContours.model.paths.forEach((path, index) => {
+      if (!path.points || path.points.length < 2) return;
+      const positions = [];
+      path.points.forEach((point) => {
+        positions.push(point.lon, point.lat);
+      });
+      if (positions.length < 4) return;
+      contourInstances.push(new C.GeometryInstance({
+        id: `terrain-contour:${index}`,
+        geometry: new C.GroundPolylineGeometry({
+          positions: C.Cartesian3.fromDegreesArray(positions),
+          width: 2.2,
+          vertexFormat: C.PolylineColorAppearance.VERTEX_FORMAT,
+        }),
+        attributes: {
+          color: C.ColorGeometryInstanceAttribute.fromColor(contourColor),
+        },
+      }));
+    });
+
+    if (contourInstances.length) {
+      const primitive = new C.GroundPolylinePrimitive({
+        geometryInstances: contourInstances,
+        appearance: new C.PolylineColorAppearance({
+          translucent: true,
+        }),
+        asynchronous: true,
+        releaseGeometryInstances: true,
+      });
+      viewer.scene.primitives.add(primitive);
+      viewer._managedPrimitives.push(primitive);
+    }
+
+    const labelFillColor = C.Color.fromCssColorString(state.terrainContours.labelColor || "#f8fafc");
+    state.terrainContours.model.labels?.forEach((label, index) => {
+      safeAddEntity({
+        id: `managed:terrain-contour-label:${index}`,
+        position: C.Cartesian3.fromDegrees(label.lon, label.lat, 0),
+        label: buildCesiumLabelOptions({
+          lat: label.lat,
+          lon: label.lon,
+          text: label.text,
+          font: "12px Bahnschrift",
+          fillColor: labelFillColor,
+          outlineColor: C.Color.fromCssColorString("#08131c"),
+          outlineWidth: 2,
+          backgroundColor: C.Color.fromCssColorString("#08131c").withAlpha(0.76),
+          baseOffsetY: -10,
+        }),
+      });
+    });
+  }
+
   // --- VIEWSHEDS ---
   state.viewsheds.filter((v) => isVisible(`viewshed:${v.id}`)).forEach((viewshed) => {
     const { latitudes, longitudes, rssi, lineOfSight, layer } = viewshed;
@@ -26406,6 +26943,109 @@ const CanvasTerrainHeatmapLayer = L.Layer.extend({
     }
 
     context.putImageData(imgData, x0, y0);
+  },
+});
+
+const CanvasTerrainContourLayer = L.Layer.extend({
+  initialize(options) {
+    this.options = options;
+    this._canvas = null;
+    this._frame = null;
+  },
+
+  onAdd(map) {
+    this._map = map;
+    this._canvas = L.DomUtil.create("canvas", "leaflet-terrain-contour-canvas");
+    const pane = map.getPane(this.options.pane || "overlayPane");
+    pane.appendChild(this._canvas);
+    map.on("moveend zoomend resize", this._scheduleRedraw, this);
+    this._scheduleRedraw();
+  },
+
+  onRemove(map) {
+    map.off("moveend zoomend resize", this._scheduleRedraw, this);
+    if (this._frame !== null) {
+      window.cancelAnimationFrame(this._frame);
+      this._frame = null;
+    }
+    if (this._canvas?.parentNode) {
+      this._canvas.parentNode.removeChild(this._canvas);
+    }
+    this._canvas = null;
+  },
+
+  setOptions(options = {}) {
+    Object.assign(this.options, options);
+    this._scheduleRedraw();
+  },
+
+  _scheduleRedraw() {
+    if (this._frame !== null) return;
+    this._frame = window.requestAnimationFrame(() => {
+      this._frame = null;
+      this._redraw();
+    });
+  },
+
+  _drawLabel(context, point, text) {
+    const metrics = context.measureText(text);
+    const width = metrics.width + 10;
+    const height = 18;
+    const x = clamp(point.x - (width / 2), 4, this._canvas.width - width - 4);
+    const y = clamp(point.y - (height / 2), 6, this._canvas.height - height - 6);
+    context.save();
+    context.fillStyle = "rgba(8, 13, 24, 0.78)";
+    context.fillRect(x, y, width, height);
+    context.strokeStyle = "rgba(148, 163, 184, 0.18)";
+    context.lineWidth = 1;
+    context.strokeRect(x + 0.5, y + 0.5, width - 1, height - 1);
+    context.fillStyle = this.options.labelColor || "#f8fafc";
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    context.fillText(text, x + (width / 2), y + (height / 2) + 0.5);
+    context.restore();
+  },
+
+  _redraw() {
+    if (!this._map || !this._canvas) return;
+    const size = this._map.getSize();
+    const topLeft = this._map.containerPointToLayerPoint([0, 0]);
+    this._canvas.width = size.x;
+    this._canvas.height = size.y;
+    this._canvas.style.width = `${size.x}px`;
+    this._canvas.style.height = `${size.y}px`;
+    this._canvas.style.position = "absolute";
+    this._canvas.style.pointerEvents = "none";
+    L.DomUtil.setPosition(this._canvas, topLeft);
+
+    const context = this._canvas.getContext("2d");
+    context.clearRect(0, 0, size.x, size.y);
+    const model = this.options.model;
+    if (!model?.paths?.length) return;
+
+    context.lineCap = "round";
+    context.lineJoin = "round";
+    context.strokeStyle = this.options.lineColor || "#7dd3fc";
+    context.lineWidth = 1.6;
+    context.globalAlpha = 0.95;
+    context.font = "600 11px Bahnschrift, Arial";
+
+    model.paths.forEach((path) => {
+      if (!path.points?.length) return;
+      context.beginPath();
+      path.points.forEach((point, index) => {
+        const xy = this._map.latLngToLayerPoint([point.lat, point.lon]).subtract(topLeft);
+        if (index === 0) context.moveTo(xy.x, xy.y);
+        else context.lineTo(xy.x, xy.y);
+      });
+      context.stroke();
+    });
+
+    model.labels?.forEach((label) => {
+      const point = this._map.latLngToLayerPoint([label.lat, label.lon]).subtract(topLeft);
+      if (point.x < -20 || point.y < -20 || point.x > size.x + 20 || point.y > size.y + 20) return;
+      this._drawLabel(context, point, label.text);
+    });
   },
 });
 
