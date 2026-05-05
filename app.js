@@ -125,6 +125,79 @@ const BUILDING_MATERIAL_MODELS = {
   },
 };
 
+const EXTERNAL_RESOURCE_URLS = {
+  leafletDrawScript: "https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js",
+  leafletDrawStyle: "https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css",
+  jsZipScript: "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js",
+  geoTiffScript: "https://cdn.jsdelivr.net/npm/geotiff@2.1.3/dist-browser/geotiff.js",
+  cesiumScript: "https://cesium.com/downloads/cesiumjs/releases/1.124/Build/Cesium/Cesium.js",
+  cesiumWidgetsStyle: "https://cesium.com/downloads/cesiumjs/releases/1.124/Build/Cesium/Widgets/widgets.css",
+  cesiumBaseUrl: "https://cesium.com/downloads/cesiumjs/releases/1.124/Build/Cesium/",
+};
+
+const _externalScriptPromises = new Map();
+const _externalStylePromises = new Map();
+let _analyticsInitialized = false;
+
+function loadExternalScript(src) {
+  if (_externalScriptPromises.has(src)) {
+    return _externalScriptPromises.get(src);
+  }
+  const existing = document.querySelector(`script[src="${src}"]`);
+  if (existing) {
+    const pending = new Promise((resolve, reject) => {
+      if (existing.dataset.loaded === "true") {
+        resolve();
+        return;
+      }
+      existing.addEventListener("load", () => {
+        existing.dataset.loaded = "true";
+        resolve();
+      }, { once: true });
+      existing.addEventListener("error", () => reject(new Error(`Failed to load script: ${src}`)), { once: true });
+    });
+    _externalScriptPromises.set(src, pending);
+    return pending;
+  }
+
+  const promise = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = src;
+    script.async = true;
+    script.addEventListener("load", () => {
+      script.dataset.loaded = "true";
+      resolve();
+    }, { once: true });
+    script.addEventListener("error", () => reject(new Error(`Failed to load script: ${src}`)), { once: true });
+    document.head.appendChild(script);
+  });
+  _externalScriptPromises.set(src, promise);
+  return promise;
+}
+
+function loadExternalStylesheet(href) {
+  if (_externalStylePromises.has(href)) {
+    return _externalStylePromises.get(href);
+  }
+  const existing = document.querySelector(`link[rel="stylesheet"][href="${href}"]`);
+  if (existing) {
+    const promise = Promise.resolve();
+    _externalStylePromises.set(href, promise);
+    return promise;
+  }
+
+  const promise = new Promise((resolve, reject) => {
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = href;
+    link.addEventListener("load", resolve, { once: true });
+    link.addEventListener("error", () => reject(new Error(`Failed to load stylesheet: ${href}`)), { once: true });
+    document.head.appendChild(link);
+  });
+  _externalStylePromises.set(href, promise);
+  return promise;
+}
+
 // ─── State schema versioning ──────────────────────────────────────────────────
 // Bump this integer whenever the serialized state shape changes in a way that
 // requires a migration. applySavedMapState() runs migrateStatePayload() first
@@ -2101,6 +2174,7 @@ const state = {
   cesiumPointElevationCache: new Map(),
   centerElevationRequestId: null,
   cesiumTerrainProviderKey: null,
+  planningDrawHandlerBound: false,
   relocatingImportedItemId: null,
   relocatingCircleItemId: null,
   worker: createSimulationWorker(),
@@ -2236,6 +2310,7 @@ const state = {
     requestInFlight: false,
     mapViewCaptureInFlight: false,
     recentPlaceLookups: [],
+    recentActionObjects: [],
     agentProfileId: "general",
     agentProfileConfidence: 0,
     agentProfileReason: "No specialist mode inferred yet.",
@@ -4693,6 +4768,57 @@ const AI_VIEW_PROFILES = {
   },
 };
 
+async function ensureLeafletDrawLoaded() {
+  if (window.L?.Draw) {
+    if (!state.planningDrawHandlerBound && state.map) {
+      state.map.on(window.L.Draw.Event.CREATED, onPlanningRegionCreated);
+      state.planningDrawHandlerBound = true;
+    }
+    return;
+  }
+  await loadExternalStylesheet(EXTERNAL_RESOURCE_URLS.leafletDrawStyle);
+  await loadExternalScript(EXTERNAL_RESOURCE_URLS.leafletDrawScript);
+  if (!window.L?.Draw) {
+    throw new Error("Leaflet Draw failed to initialize.");
+  }
+  if (!state.planningDrawHandlerBound && state.map) {
+    state.map.on(window.L.Draw.Event.CREATED, onPlanningRegionCreated);
+    state.planningDrawHandlerBound = true;
+  }
+}
+
+async function ensureJsZipLoaded() {
+  if (window.JSZip) {
+    return;
+  }
+  await loadExternalScript(EXTERNAL_RESOURCE_URLS.jsZipScript);
+  if (!window.JSZip) {
+    throw new Error("JSZip failed to initialize.");
+  }
+}
+
+async function ensureGeoTiffLoaded() {
+  if (window.GeoTIFF) {
+    return;
+  }
+  await loadExternalScript(EXTERNAL_RESOURCE_URLS.geoTiffScript);
+  if (!window.GeoTIFF) {
+    throw new Error("GeoTIFF failed to initialize.");
+  }
+}
+
+async function ensureCesiumLoaded() {
+  if (window.Cesium) {
+    return;
+  }
+  window.CESIUM_BASE_URL = EXTERNAL_RESOURCE_URLS.cesiumBaseUrl;
+  await loadExternalStylesheet(EXTERNAL_RESOURCE_URLS.cesiumWidgetsStyle);
+  await loadExternalScript(EXTERNAL_RESOURCE_URLS.cesiumScript);
+  if (!window.Cesium) {
+    throw new Error("Cesium failed to initialize.");
+  }
+}
+
 const AI_AGENT_PROFILES = {
   general: {
     label: "General",
@@ -6516,7 +6642,6 @@ async function init() {
     updateCesiumCompass();
     scheduleTerrainOverlayRefresh({ force: true, delay: 120 });
   });
-  state.map.on(L.Draw.Event.CREATED, onPlanningRegionCreated);
   attachSimulationWorkerListener();
   state.planning.markersLayer.addTo(state.map);
   state.siteStudy.markersLayer.addTo(state.map);
@@ -6904,7 +7029,14 @@ function wireEvents() {
   updateMapContentsSearchUi();
   initGeocoderOnSearchInput();
   initMapGeoSearch();
-  initAnalytics();
+  dom.workspaceAnalyticsBtn?.addEventListener("click", () => {
+    if (!isAnalyticsAdmin()) {
+      return;
+    }
+    ensureAnalyticsInitialized();
+    closeWorkspaceMenu();
+    openAnalyticsModal();
+  });
   initOfflineDownload();
   dom.takIdentityBtn?.addEventListener("click", openTakIdentityModal);
   dom.takIdentityCloseBtn?.addEventListener("click", closeTakIdentityModal);
@@ -8239,6 +8371,7 @@ function buildCesiumTerrainProviderKey() {
 }
 
 async function sampleCesiumTerrainElevation(lat, lon) {
+  await ensureCesiumLoaded();
   const cacheKey = `${buildCesiumTerrainProviderKey()}:terrain:${lat.toFixed(6)},${lon.toFixed(6)}`;
   const cached = state.cesiumPointElevationCache.get(cacheKey);
   if (cached !== undefined) {
@@ -11574,6 +11707,7 @@ function getTerrainContourGridProfile(bounds) {
 }
 
 async function sampleCesiumTerrainGridForHeatmap(bounds, profile) {
+  await ensureCesiumLoaded();
   const provider = await getConfiguredCesiumTerrainProvider();
   if (!provider) {
     throw new Error("Cesium terrain is not configured.");
@@ -14814,8 +14948,10 @@ async function callAiPlanningAssistant(prompt, images = [], files = [], contextI
     "  remove-asset          → assetId (exact id)",
     "  place-marker          → lat, lon, name?, color? (#hex), size? (pt, default 24, range 8–64), outlineColor? (#hex), outlineWidth? (px) — drops a styled point marker on the map. USE THIS (not draw-shape) whenever the user asks to mark a city, location, landmark, or place a point/pin/marker.",
     "  draw-shape            → shapeType (circle|rectangle|polyline|polygon), name?, color?, coordinates [{lat,lon}], radiusM? (circle only), fillOpacity?, weight?",
-    "  update-shape          → shapeId or name (use exact item name or id), newName?, color?, fillOpacity?, weight?, lineStyle?, radiusM? (resize circle by regenerating from its center), coordinates?",
+    "  update-shape          → shapeId or name (use exact item name or id), newName?, color?, fillOpacity?, weight?, lineStyle?, radiusM? (resize circle by regenerating from its center), coordinates?, lat?, lon?, size?, icon?, outlineColor?, outlineWidth? — also updates point markers",
     "  remove-shape          → shapeId or name",
+    "  update-unit           → unitId or name, newName?/label?, designator?, affiliation?, unitType?, size?, x?, y?",
+    "  remove-unit           → unitId or name",
     "  set-planning-parameters → txAssetId?, rxAssetId?, gridMeters?, minSeparation?, enemyWeight?, separationWeight?, floorM?, ceilingM?",
     "  set-planning-region   → polygon [{lat,lon}], name?",
     "  run-simulation        → assetId OR placedIndex (0-based index into assets placed THIS batch), propagationModel?, radiusKm?, gridMeters?, receiverHeight?, opacity?",
@@ -14935,10 +15071,12 @@ async function callAiPlanningAssistant(prompt, images = [], files = [], contextI
     "- For RF planning questions referencing a linked item (e.g. 'best relay IVO OP Crampton'): find the item's coordinates, assess terrain/LOS from that point, and recommend + place the relay using check-los and add-asset.",
     "- IVO / 'in vicinity of' / 'near' / 'at' / 'around' a named place: find that place in importedItems[], get its coordinates, use them as the reference point. Place assets using contentRef=contentId + placementMode='near' or extract the lat/lon and use them directly.",
     "- When the user says 'the linked shape', 'that shape', 'the context shape', 'make it red', or refers to a shape without naming it, they mean the first item in explicitAiContextObjects[]. Use its 'name' field directly as the 'name' value in update-shape/remove-shape. Do NOT use the contentId string.",
+    "- recentAiActionObjects[] contains the exact objects from the MOST RECENT AI edit batch. When the user says 'what you just drew', 'those points', 'that route', 'modify your previous action', or similar, use those exact ids/names/contentIds.",
+    "- If the user refers to multiple recent objects, emit one update action per target. Do not collapse multiple points and lines into one vague action.",
     "- Example: explicitAiContextObjects = [{contentId:'imported:abc',name:'OP CRAMPTON'}], user says 'best relay IVO OP Crampton' → find 'OP CRAMPTON' in importedItems[], get geometry.coordinates {lat,lon}, use check-los to find elevated terrain nearby, place relay with add-asset near those coords, run-simulation.",
     "- For direct coordinate questions, search mapLookupIndex[] first. It contains compact coordinate records for map contents and recent searched places with {contentId, name, aliases, lat, lon, bounds, source}.",
     "- Prompts like 'where is X', 'give me the grid coordinate of X', 'what are the coordinates for X', or 'find X' should resolve from mapLookupIndex[] before you say the item is missing.",
-    "- update-shape supports: color (#hex), fillOpacity (0–1), weight (px), lineStyle (solid|dashed|dotted), newName (rename), radiusM (resize circle by center+radius), coordinates (replace geometry).",
+    "- update-shape supports: color (#hex), fillOpacity (0–1), weight (px), lineStyle (solid|dashed|dotted), newName (rename), radiusM (resize circle by center+radius), coordinates (replace geometry), and for point markers also lat/lon, size, icon, outlineColor, outlineWidth.",
     "",
     "KMZ/KML ITEM STRUCTURE — importedItems[] uses two tiers:",
     "  Tier 1 (_detail='full' or no _detail field): explicitly linked context items — has full geometry + properties. Use these directly for RF actions and coordinate extraction.",
@@ -15173,14 +15311,16 @@ async function callAiPlanningAssistant(prompt, images = [], files = [], contextI
       "Answer briefly and precisely.",
       "If no map or simulation changes are needed, reply in plain text.",
       "If changes are needed, return JSON only with {\"assistantMessage\":\"string\",\"actions\":[...]}",
-      "Supported action types: set-map-view, focus-map-content, set-settings, set-weather, set-imagery, set-emitter-form, add-asset, update-asset, remove-asset, place-marker, draw-shape, update-shape, remove-shape, set-planning-parameters, set-planning-region, set-site-study, run-simulation, run-planning, run-site-study, inspect-site-candidate, promote-site-candidate, toggle-3d, check-los, sample-terrain, generate-document.",
+      "Supported action types: set-map-view, focus-map-content, set-settings, set-weather, set-imagery, set-emitter-form, add-asset, update-asset, remove-asset, place-marker, draw-shape, update-shape, remove-shape, update-unit, remove-unit, set-planning-parameters, set-planning-region, set-site-study, run-simulation, run-planning, run-site-study, inspect-site-candidate, promote-site-candidate, toggle-3d, check-los, sample-terrain, generate-document.",
       "place-marker: {\"type\":\"place-marker\",\"lat\":N,\"lon\":N,\"name\":\"string\",\"color\":\"#hex\",\"size\":pt,\"outlineColor\":\"#hex\",\"outlineWidth\":px}. Use this — NOT draw-shape — whenever the user asks to mark a city, location, landmark, or place a point/pin/marker. color sets dot color, size sets dot size in pt (8–64, default 24). One action per location. NEVER use draw-shape circle for this.",
       "draw-shape: {\"type\":\"draw-shape\",\"shapeType\":\"circle|rectangle|polyline|polygon\",\"name\":\"string\",\"color\":\"#hex\",\"fillOpacity\":0.0-1.0,\"weight\":pixels,\"radiusM\":meters(circle only),\"coordinates\":[{\"lat\":N,\"lon\":N}]}. For circles: shapeType=circle, coordinates[0] is center, radiusM is radius. ALWAYS use this when user asks to draw/highlight a circle area, polygon, or line.",
       "sample-terrain: {\"type\":\"sample-terrain\",\"points\":[{\"lat\":N,\"lon\":N,\"name\":\"string\"}],\"bounds\":{\"north\":N,\"south\":N,\"east\":N,\"west\":N},\"gridN\":5}. Use when user asks about elevation, highest/lowest point, or terrain height.",
       "generate-document: {\"type\":\"generate-document\",\"docType\":\"pace|soi|ceoi|aar|spectrum|route-narrative|coa|relay-topology|analysis|visual\",\"format\":\"report|html\",\"title\":\"string\",\"content\":\"string\"}. Default format='report' (markdown content, downloads as formatted HTML report). Use format='html' only for interactive visuals (full HTML doc with embedded CSS/JS). For analysis reports be thorough: multiple sections, specific values, quantified findings. Never truncate. Always use this action — never write docs in assistantMessage.",
-      "update-shape: {\"type\":\"update-shape\",\"name\":\"<exact shape name>\",\"color\":\"#hex\",\"fillOpacity\":0-1,\"weight\":px,\"lineStyle\":\"solid|dashed|dotted\",\"newName\":\"string\",\"radiusM\":meters}. When user says 'make it/that red' or refers to a linked shape, use the name from explicitAiContextObjects[0].name. NEVER use the contentId as the name.",
+      "update-shape: {\"type\":\"update-shape\",\"name\":\"<exact shape name>\",\"color\":\"#hex\",\"fillOpacity\":0-1,\"weight\":px,\"lineStyle\":\"solid|dashed|dotted\",\"newName\":\"string\",\"radiusM\":meters,\"coordinates\":[{\"lat\":N,\"lon\":N}],\"lat\":N,\"lon\":N,\"size\":pt}. Use for lines/polygons AND point markers. When user says 'make it/that red' or refers to a linked shape, use the name from explicitAiContextObjects[0].name. For follow-up edits to your previous action, use exact references from recentAiActionObjects[].",
+      "update-unit: {\"type\":\"update-unit\",\"unitId\":\"id-or-name\",\"newName\":\"string\",\"designator\":\"string\",\"affiliation\":\"friendly|enemy|neutral|unknown\",\"unitType\":\"infantry\",\"size\":\"company\"}. Use when user asks to modify a TO unit.",
       "Use exact ids from the scenario summary.",
       "For newly added assets in the same reply, use placedIndex in run-simulation instead of assetId.",
+      "recentAiActionObjects in the scenario summary lists the exact items from your previous AI edit batch. When the user asks you to modify what you just placed or drew, use those exact references and emit one update per target.",
       "Do not invent tools, URLs, or ids.",
       "If terrainLosMatrix is present, use it when discussing LOS or relay placement.",
       `CURRENT VIEW: ${activeViewProfile.label}`,
@@ -16000,6 +16140,7 @@ function buildAiScenarioSummary() {
       const name = getMapContentName(cid);
       return { contentId: cid, name };
     }).filter((o) => o.name),
+    recentAiActionObjects: (state.ai.recentActionObjects ?? []).slice(-12),
     drawnShapes: importedItems.filter((item) => item?.drawn),
     // Pre-computed terrain LOS matrix for all current asset pairs
     terrainLosMatrix: buildLosMatrix(state.assets),
@@ -16118,12 +16259,13 @@ function enrichAiResponseWithLinks(text, placedAssets = []) {
 async function executeAiActions(actions) {
   const results = [];
   const placedAssetIds = [];
+  const touchedObjects = [];
   const terrainSampleResults = [];
   const hasAddAsset = actions.some((a) => a.type === "add-asset");
   for (const action of actions) {
     // Suppress set-emitter-form noise when add-asset is also in the batch
     if (action.type === "set-emitter-form" && hasAddAsset) continue;
-    const result = await executeAiAction(action, { placedAssetIds });
+    const result = await executeAiAction(action, { placedAssetIds, touchedObjects });
     if (result) {
       if (action.type === "sample-terrain") {
         terrainSampleResults.push(result);
@@ -16134,6 +16276,9 @@ async function executeAiActions(actions) {
   }
 
   const placedAssets = placedAssetIds.map((id) => state.assets.find((a) => a.id === id)).filter(Boolean);
+  if (touchedObjects.length > 0) {
+    state.ai.recentActionObjects = touchedObjects.slice(-20);
+  }
 
   // After all placements, run a LOS check on newly placed assets and append warnings
   if (placedAssetIds.length >= 2) {
@@ -16172,7 +16317,7 @@ async function executeAiActions(actions) {
   return { results, placedAssets, terrainSampleResults };
 }
 
-async function executeAiAction(action, { placedAssetIds = [] } = {}) {
+async function executeAiAction(action, { placedAssetIds = [], touchedObjects = [] } = {}) {
   if (!action || typeof action.type !== "string") {
     return "I couldn't apply one action because it was malformed.";
   }
@@ -16339,6 +16484,7 @@ async function executeAiAction(action, { placedAssetIds = [] } = {}) {
     scheduleTopoRefresh();
     // Track so subsequent run-simulation actions in this batch can target it
     placedAssetIds.push(newAsset.id);
+    rememberAiActionObject(touchedObjects, buildAiRecentActionObject("asset", newAsset));
     const relationLabel = placementRelation
       ? placementRelation.replace(/-/g, " ")
       : "near";
@@ -16348,7 +16494,7 @@ async function executeAiAction(action, { placedAssetIds = [] } = {}) {
 
   if (action.type === "update-asset") {
     const assetReference = action.assetId ?? action.name;
-    const asset = findAssetByReference(assetReference);
+    const asset = resolveAssetReference(assetReference);
     if (!asset) {
       return `I couldn't update the asset${assetReference ? ` "${assetReference}"` : ""} because it was not found.`;
     }
@@ -16378,15 +16524,17 @@ async function executeAiAction(action, { placedAssetIds = [] } = {}) {
     if (isTakStreamingEnabledForContent(`asset:${asset.id}`)) {
       void publishTakContentById(`asset:${asset.id}`);
     }
+    rememberAiActionObject(touchedObjects, buildAiRecentActionObject("asset", asset));
     return `Updated ${asset.name}.`;
   }
 
   if (action.type === "remove-asset") {
     const assetReference = action.assetId ?? action.name;
-    const asset = findAssetByReference(assetReference);
+    const asset = resolveAssetReference(assetReference);
     if (!asset) {
       return `I couldn't remove the asset${assetReference ? ` "${assetReference}"` : ""} because it was not found.`;
     }
+    forgetAiRecentActionObject("asset", asset.id);
     removeAsset(asset.id);
     return `Removed ${asset.name}.`;
   }
@@ -16627,13 +16775,14 @@ async function executeAiAction(action, { placedAssetIds = [] } = {}) {
     };
     const index = state.importedItems.filter((i) => i.drawn).length;
     const pointName = action.name ?? `Marker ${index + 1}`;
-    addDrawnFeature({
+    const item = addDrawnFeature({
       name: pointName,
       geometryType: "Point",
       coordinates: [lat, lon],
       properties: {},
       markerStyle,
     });
+    rememberAiActionObject(touchedObjects, buildAiRecentActionObject("marker", item));
     return `Placed marker "${pointName}" at ${lat.toFixed(5)}, ${lon.toFixed(5)}.`;
   }
 
@@ -16655,14 +16804,15 @@ async function executeAiAction(action, { placedAssetIds = [] } = {}) {
       const pt = toLatLng(rawCoords[0]);
       const markerStyle = { icon: "dot", color: action.color ?? "#ffffff", size: 24, outlineColor: "#0b1220", outlineWidth: 2 };
       const index = state.importedItems.filter((i) => i.drawn).length;
-      const pointName = action.name ?? `Point ${index + 1}`;
-      addDrawnFeature({
+      const pointName = (typeof action.name === "string" && action.name.trim()) ? action.name.trim() : `Point ${index + 1}`;
+      const item = addDrawnFeature({
         name: pointName,
         geometryType: "Point",
         coordinates: [pt.lat, pt.lng],
         properties: {},
         markerStyle,
       });
+      rememberAiActionObject(touchedObjects, buildAiRecentActionObject("marker", item));
       return `Placed point marker "${pointName}" at ${pt.lat.toFixed(5)}, ${pt.lng.toFixed(5)}.`;
     } else if (shapeType === "circle") {
       const center = toLatLng(rawCoords[0]);
@@ -16687,37 +16837,61 @@ async function executeAiAction(action, { placedAssetIds = [] } = {}) {
     }
 
     const index = state.importedItems.filter((i) => i.drawn).length;
-    addDrawnFeature({
-      name: `${labelPrefix} ${index + 1}`,
+    const shapeName = (typeof action.name === "string" && action.name.trim()) ? action.name.trim() : `${labelPrefix} ${index + 1}`;
+    const item = addDrawnFeature({
+      name: shapeName,
       geometryType,
       coordinates: coords,
       properties: {},
       shapeStyle,
     });
-    return `Drew ${geometryType.toLowerCase()} shape "${labelPrefix}".`;
+    rememberAiActionObject(touchedObjects, buildAiRecentActionObject(geometryType === "Point" ? "marker" : "shape", item));
+    return `Drew ${geometryType.toLowerCase()} shape "${shapeName}".`;
   }
 
   if (action.type === "update-shape") {
     const ref = action.shapeId ?? action.name;
-    const item = state.importedItems.find((i) =>
-      i.drawn && (
-        i.id === ref ||
-        i.name === ref ||
-        `imported:${i.id}` === ref
-      )
-    ) ?? state.importedItems.find((i) => i.drawn && i.name?.toLowerCase() === ref?.toLowerCase());
+    const item = getDrawnImportedItemByReference(ref);
     if (!item) return `I couldn't update the shape "${ref}" because it was not found.`;
-    if (typeof action.color === "string") {
-      item.shapeStyle.color = action.color;
-      item.shapeStyle.fillColor = action.color;
-    }
-    if (["solid", "dashed", "dotted"].includes(action.lineStyle)) item.shapeStyle.lineStyle = action.lineStyle;
-    if (Number.isFinite(Number(action.fillOpacity))) item.shapeStyle.fillOpacity = Number(action.fillOpacity);
-    if (Number.isFinite(Number(action.weight))) item.shapeStyle.weight = Number(action.weight);
-    applyShapeStyleToLayer(item);
-    if (Array.isArray(action.coordinates) && action.coordinates.length >= 2) {
-      const pts = action.coordinates.map((c) => [Number(c.lat ?? c[0]), Number(c.lon ?? c.lng ?? c[1])]);
-      item.layer.setLatLngs(pts);
+    if (item.geometryType === "Point") {
+      item.markerStyle = normalizeDrawnPointMarkerStyle({
+        ...(item.markerStyle ?? {}),
+        ...(typeof action.color === "string" ? { color: action.color } : {}),
+        ...(POINT_ICONS.includes(action.icon) ? { icon: action.icon } : {}),
+        ...(Number.isFinite(Number(action.size)) ? { size: Number(action.size) } : {}),
+        ...(typeof action.outlineColor === "string" ? { outlineColor: action.outlineColor } : {}),
+        ...(Number.isFinite(Number(action.outlineWidth)) ? { outlineWidth: Number(action.outlineWidth) } : {}),
+      });
+      const pointIcon = buildImportedPointIcon(item.markerStyle);
+      if (pointIcon) {
+        item.layer.setIcon(pointIcon);
+      }
+      const pointRef = Array.isArray(action.coordinates) && action.coordinates.length >= 1
+        ? action.coordinates[0]
+        : (Number.isFinite(Number(action.lat)) && Number.isFinite(Number(action.lon))
+          ? { lat: Number(action.lat), lon: Number(action.lon) }
+          : null);
+      if (pointRef) {
+        const lat = Number(pointRef.lat ?? pointRef[0]);
+        const lon = Number(pointRef.lon ?? pointRef.lng ?? pointRef[1]);
+        if (Number.isFinite(lat) && Number.isFinite(lon)) {
+          item.layer.setLatLng([lat, lon]);
+        }
+      }
+    } else {
+      item.shapeStyle = normalizeImportedShapeStyle(item.geometryType, item.shapeStyle);
+      if (typeof action.color === "string") {
+        item.shapeStyle.color = action.color;
+        item.shapeStyle.fillColor = action.color;
+      }
+      if (["solid", "dashed", "dotted"].includes(action.lineStyle)) item.shapeStyle.lineStyle = action.lineStyle;
+      if (Number.isFinite(Number(action.fillOpacity))) item.shapeStyle.fillOpacity = Number(action.fillOpacity);
+      if (Number.isFinite(Number(action.weight))) item.shapeStyle.weight = Number(action.weight);
+      applyShapeStyleToLayer(item);
+      if (Array.isArray(action.coordinates) && action.coordinates.length >= 2) {
+        const pts = action.coordinates.map((c) => [Number(c.lat ?? c[0]), Number(c.lon ?? c.lng ?? c[1])]);
+        item.layer.setLatLngs(pts);
+      }
     }
     // Resize circle by regenerating polygon from stored center + new radius
     if (Number.isFinite(Number(action.radiusM)) && action.radiusM > 0) {
@@ -16744,22 +16918,82 @@ async function executeAiAction(action, { placedAssetIds = [] } = {}) {
     // Rename shape
     if (typeof action.newName === "string" && action.newName.trim()) {
       item.name = action.newName.trim();
-      renderMapContents();
     }
+    renderMapContents();
     applyItemLabel(item);
     saveMapState();
     syncCesiumEntities();
+    rememberAiActionObject(touchedObjects, buildAiRecentActionObject(item.geometryType === "Point" ? "marker" : "shape", item));
     return `Updated shape "${item.name}".`;
   }
 
   if (action.type === "remove-shape") {
     const ref = action.shapeId ?? action.name;
-    const item = state.importedItems.find((i) =>
-      i.drawn && (i.id === ref || i.name === ref || `imported:${i.id}` === ref)
-    ) ?? state.importedItems.find((i) => i.drawn && i.name?.toLowerCase() === ref?.toLowerCase());
+    const item = getDrawnImportedItemByReference(ref);
     if (!item) return `I couldn't remove the shape "${ref}" because it was not found.`;
+    forgetAiRecentActionObject(item.geometryType === "Point" ? "marker" : "shape", item.id);
     removeImportedItem(item.id);
     return `Removed shape "${ref}".`;
+  }
+
+  if (action.type === "update-unit") {
+    const unitReference = action.unitId ?? action.name ?? action.label ?? action.designator;
+    const unit = resolveToUnitReference(unitReference);
+    if (!unit) {
+      return `I couldn't update the unit${unitReference ? ` "${unitReference}"` : ""} because it was not found.`;
+    }
+    if (typeof action.label === "string") {
+      unit.label = action.label.trim();
+    }
+    if (typeof action.newName === "string" && action.newName.trim()) {
+      unit.label = action.newName.trim();
+    }
+    if (typeof action.designator === "string") {
+      unit.designator = action.designator.trim();
+    }
+    if (typeof action.affiliation === "string" && action.affiliation.trim()) {
+      unit.affiliation = action.affiliation.trim();
+    }
+    if (typeof action.unitType === "string" && action.unitType.trim()) {
+      unit.type = normalizeToUnitType(action.unitType.trim());
+    }
+    if (typeof action.size === "string" && action.size.trim()) {
+      unit.size = action.size.trim();
+    }
+    if (Number.isFinite(Number(action.x))) {
+      unit.x = Number(action.x);
+    }
+    if (Number.isFinite(Number(action.y))) {
+      unit.y = Number(action.y);
+    }
+    unit.type = normalizeToUnitType(unit.type);
+    unit.label = (unit.label || "").trim() || (unit.designator || "").trim() || buildDefaultToUnitLabel(unit.size, unit.type);
+    renderToView();
+    syncTacticalObjectFromPlanUnit(unit.id);
+    saveMapState();
+    rememberAiActionObject(touchedObjects, buildAiRecentActionObject("unit", unit));
+    return `Updated unit "${unit.label}".`;
+  }
+
+  if (action.type === "remove-unit") {
+    const unitReference = action.unitId ?? action.name ?? action.label ?? action.designator;
+    const unit = resolveToUnitReference(unitReference);
+    if (!unit) {
+      return `I couldn't remove the unit${unitReference ? ` "${unitReference}"` : ""} because it was not found.`;
+    }
+    const linkedTactical = getTacticalObjectByPlanUnitId(unit.id);
+    if (linkedTactical) {
+      deleteTacticalObject(linkedTactical.id, { silent: true });
+    }
+    _toState.units = _toState.units.filter((entry) => entry.id !== unit.id);
+    _toState.links = _toState.links.filter((link) => link.parentId !== unit.id && link.childId !== unit.id);
+    if (_toState.selectedUnit === unit.id) {
+      clearToSelection();
+    }
+    renderToView();
+    saveMapState();
+    forgetAiRecentActionObject("unit", unit.id);
+    return `Removed unit "${unit.label || unit.designator || unit.id}".`;
   }
 
   // Check LOS between a set of candidate coordinates before committing to placement.
@@ -16950,6 +17184,240 @@ function findAssetByReference(reference) {
   const byUnit = state.assets.find((a) => a.unit && a.unit.toLowerCase() === refLow);
   if (byUnit) return byUnit;
   return null;
+}
+
+const AI_RECENT_REFERENCE_TOKENS = new Set([
+  "",
+  "it",
+  "them",
+  "that",
+  "those",
+  "this",
+  "these",
+  "last",
+  "latest",
+  "recent",
+  "new",
+  "newest",
+  "previous",
+  "prior",
+  "what you just drew",
+  "what you just placed",
+  "what you just created",
+  "what you just did",
+  "the last one",
+  "the last ones",
+  "the previous one",
+  "the previous ones",
+]);
+
+function normalizeAiRecentReference(reference) {
+  return String(reference ?? "").trim().toLowerCase();
+}
+
+function isImplicitRecentAiReference(reference) {
+  return AI_RECENT_REFERENCE_TOKENS.has(normalizeAiRecentReference(reference));
+}
+
+function buildAiRecentActionObject(kind, source) {
+  if (!source) return null;
+  if (kind === "asset") {
+    return {
+      kind,
+      id: String(source.id ?? ""),
+      assetId: String(source.id ?? ""),
+      contentId: source.id ? `asset:${source.id}` : "",
+      name: String(source.name ?? "").trim(),
+      unit: String(source.unit ?? "").trim(),
+      emitterType: String(source.type ?? "").trim(),
+    };
+  }
+  if (kind === "shape" || kind === "marker") {
+    return {
+      kind,
+      id: String(source.id ?? ""),
+      itemId: String(source.id ?? ""),
+      contentId: source.id ? `imported:${source.id}` : "",
+      name: String(source.name ?? "").trim(),
+      geometryType: String(source.geometryType ?? "").trim(),
+    };
+  }
+  if (kind === "unit") {
+    return {
+      kind,
+      id: String(source.id ?? ""),
+      unitId: Number(source.id),
+      name: String(source.label ?? source.designator ?? "").trim(),
+      label: String(source.label ?? "").trim(),
+      designator: String(source.designator ?? "").trim(),
+      affiliation: String(source.affiliation ?? "").trim(),
+      unitType: String(source.type ?? "").trim(),
+      size: String(source.size ?? "").trim(),
+    };
+  }
+  return null;
+}
+
+function rememberAiActionObject(collection, descriptor) {
+  if (!Array.isArray(collection) || !descriptor?.kind || !descriptor?.id) {
+    return;
+  }
+  const key = `${descriptor.kind}:${descriptor.id}`;
+  const existingIndex = collection.findIndex((entry) => `${entry.kind}:${entry.id}` === key);
+  if (existingIndex !== -1) {
+    collection.splice(existingIndex, 1);
+  }
+  collection.push({ ...descriptor });
+}
+
+function forgetAiRecentActionObject(kind, id) {
+  if (!kind || !id) {
+    return;
+  }
+  const key = `${kind}:${id}`;
+  state.ai.recentActionObjects = (state.ai.recentActionObjects ?? []).filter(
+    (entry) => `${entry.kind}:${entry.id}` !== key,
+  );
+}
+
+function isLiveAiRecentActionObject(entry) {
+  if (!entry?.kind || !entry?.id) {
+    return false;
+  }
+  if (entry.kind === "asset") {
+    return state.assets.some((asset) => asset.id === entry.id);
+  }
+  if (entry.kind === "shape" || entry.kind === "marker") {
+    return state.importedItems.some((item) => item.id === entry.id && item.drawn);
+  }
+  if (entry.kind === "unit") {
+    return _toState.units.some((unit) => String(unit.id) === String(entry.id));
+  }
+  return false;
+}
+
+function getRecentAiActionObjects(kinds = []) {
+  const allowedKinds = Array.isArray(kinds) && kinds.length ? new Set(kinds) : null;
+  const live = (state.ai.recentActionObjects ?? []).filter(isLiveAiRecentActionObject);
+  if (live.length !== (state.ai.recentActionObjects ?? []).length) {
+    state.ai.recentActionObjects = live;
+  }
+  return live.filter((entry) => !allowedKinds || allowedKinds.has(entry.kind));
+}
+
+function matchesAiRecentActionObject(entry, reference) {
+  if (!entry) {
+    return false;
+  }
+  const ref = normalizeAiRecentReference(reference);
+  if (!ref) {
+    return true;
+  }
+  const fields = [
+    entry.id,
+    entry.assetId,
+    entry.itemId,
+    entry.unitId,
+    entry.contentId,
+    entry.name,
+    entry.label,
+    entry.designator,
+    entry.unit,
+  ]
+    .filter((value) => value !== undefined && value !== null && String(value).trim())
+    .map((value) => String(value).trim().toLowerCase());
+  if (fields.includes(ref)) {
+    return true;
+  }
+  return fields.some((value) => value.includes(ref) || ref.includes(value));
+}
+
+function resolveRecentAiActionObject(kinds = [], reference = "") {
+  const candidates = getRecentAiActionObjects(kinds);
+  if (!candidates.length) {
+    return null;
+  }
+  if (!reference || isImplicitRecentAiReference(reference)) {
+    return candidates[candidates.length - 1] ?? null;
+  }
+  const ref = normalizeAiRecentReference(reference);
+  for (let index = candidates.length - 1; index >= 0; index -= 1) {
+    if (matchesAiRecentActionObject(candidates[index], ref)) {
+      return candidates[index];
+    }
+  }
+  return null;
+}
+
+function resolveAssetReference(reference) {
+  const direct = findAssetByReference(reference);
+  if (direct) {
+    return direct;
+  }
+  const recent = resolveRecentAiActionObject(["asset"], reference);
+  return recent?.assetId ? state.assets.find((asset) => asset.id === recent.assetId) ?? null : null;
+}
+
+function getDrawnImportedItemByReference(reference) {
+  const direct = getImportedItemByReference(reference);
+  if (direct?.drawn) {
+    return direct;
+  }
+  const ref = normalizeContentReference(reference);
+  if (ref) {
+    const refLow = ref.toLowerCase();
+    const exact = state.importedItems.find((item) =>
+      item.drawn && (
+        item.id === ref
+        || `imported:${item.id}` === ref
+        || item.name === ref
+        || item.name?.toLowerCase() === refLow
+      )
+    );
+    if (exact) {
+      return exact;
+    }
+    const fuzzy = state.importedItems.find((item) =>
+      item.drawn
+      && item.name
+      && (item.name.toLowerCase().includes(refLow) || refLow.includes(item.name.toLowerCase()))
+    );
+    if (fuzzy) {
+      return fuzzy;
+    }
+  }
+  const recent = resolveRecentAiActionObject(["shape", "marker"], ref);
+  return recent?.itemId
+    ? state.importedItems.find((item) => item.id === recent.itemId && item.drawn) ?? null
+    : null;
+}
+
+function resolveToUnitReference(reference) {
+  const ref = String(reference ?? "").trim();
+  if (ref) {
+    const refLow = ref.toLowerCase();
+    const direct = _toState.units.find((unit) =>
+      String(unit.id) === ref
+      || unit.label === ref
+      || unit.designator === ref
+      || unit.label?.toLowerCase() === refLow
+      || unit.designator?.toLowerCase() === refLow
+    );
+    if (direct) {
+      return direct;
+    }
+    const fuzzy = _toState.units.find((unit) =>
+      (unit.label && (unit.label.toLowerCase().includes(refLow) || refLow.includes(unit.label.toLowerCase())))
+      || (unit.designator && (unit.designator.toLowerCase().includes(refLow) || refLow.includes(unit.designator.toLowerCase())))
+    );
+    if (fuzzy) {
+      return fuzzy;
+    }
+  }
+  const recent = resolveRecentAiActionObject(["unit"], ref);
+  return recent?.unitId
+    ? _toState.units.find((unit) => unit.id === Number(recent.unitId)) ?? null
+    : null;
 }
 
 function normalizeContentReference(reference) {
@@ -18696,10 +19164,11 @@ async function onTerrainImport(event) {
 }
 
 async function parseGeoTiffTerrain(buffer, fileName) {
-  if (typeof GeoTIFF === "undefined") {
+  await ensureGeoTiffLoaded();
+  if (!window.GeoTIFF) {
     throw new Error("GeoTIFF library not loaded.");
   }
-  const tiff = await GeoTIFF.fromArrayBuffer(buffer);
+  const tiff = await window.GeoTIFF.fromArrayBuffer(buffer);
   const image = await tiff.getImage();
   const bbox = image.getBoundingBox(); // [minX, minY, maxX, maxY] in image CRS
   const width = image.getWidth();
@@ -19232,6 +19701,7 @@ async function exportAssetsKml(asKmz) {
     return;
   }
 
+  await ensureJsZipLoaded();
   const zip = new window.JSZip();
   zip.file("doc.kml", kml);
   const blob = await zip.generateAsync({ type: "blob" });
@@ -19253,6 +19723,7 @@ async function exportAssetsZip() {
       properties: { ...asset, exportedAt: new Date().toISOString() },
     })),
   };
+  await ensureJsZipLoaded();
   const zip = new window.JSZip();
   zip.file(`${slug}.geojson`, JSON.stringify(featureCollection, null, 2));
   zip.file(`${slug}.kml`, buildKmlDocument());
@@ -19508,7 +19979,8 @@ function applyGpsFix(fix, mode) {
   renderMapTakDebugPanel();
 }
 
-function drawPlanningRegion() {
+async function drawPlanningRegion() {
+  await ensureLeafletDrawLoaded();
   new L.Draw.Polygon(state.map, {
     shapeOptions: {
       color: "#d9e4ff",
@@ -19779,6 +20251,7 @@ async function toggle3dView() {
 }
 
 async function initCesiumIfNeeded() {
+  await ensureCesiumLoaded();
   if (state.cesiumViewer) {
     state.cesiumViewer.resize();
     updatePlacementInteractionState();
@@ -20181,6 +20654,7 @@ async function buildTerrainProvider() {
 }
 
 async function getCesiumWorldTerrainProvider() {
+  await ensureCesiumLoaded();
   const token = dom.cesiumIonToken.value.trim();
   if (!token) {
     throw new Error("Enter a Cesium Ion token first.");
@@ -20260,6 +20734,7 @@ async function ensureIonTerrainGrid(bounds, gridMeters, cacheKey) {
 }
 
 async function sampleCesiumTerrainGrid(bounds, gridMeters, cacheKey) {
+  await ensureCesiumLoaded();
   const requestId = state.simulationProgress.requestId;
   const propagationModel = dom.propagationModel.value;
   const includeBuildings = usesCesiumBuildingsInPropagation(propagationModel);
@@ -20491,6 +20966,7 @@ async function sampleCesiumTerrainGrid(bounds, gridMeters, cacheKey) {
 }
 
 async function getConfiguredCesiumTerrainProvider() {
+  await ensureCesiumLoaded();
   const mode = getEffectiveCesiumTerrainMode();
   if (mode !== "cesium-world" && mode !== "custom") {
     return null;
@@ -21968,7 +22444,7 @@ function editMapContent(contentId) {
 
   if (contentId === "planning-region") {
     dom.planningSection.scrollIntoView({ block: "nearest", behavior: "smooth" });
-    drawPlanningRegion();
+    drawPlanningRegion().catch((error) => setStatus(error.message, true));
     return;
   }
 
@@ -22762,7 +23238,7 @@ function buildImportedPointIcon(markerStyle) {
   if (markerStyle && markerStyle.icon) {
     const ms = normalizeDrawnPointMarkerStyle(markerStyle);
     const size = ms.size;
-    const svg = buildDrawnPointSvg(ms.icon, ms.color, size);
+    const svg = buildDrawnPointSvg(ms.icon, ms.color, size, ms.outlineColor, ms.outlineWidth);
     return L.divIcon({
       className: "imported-point-marker drawn-point-marker",
       html: svg,
@@ -22876,7 +23352,6 @@ function cancelDrawing(preserveTacticalTemplate = false) {
 
 function onDrawClick(latlng) {
   const { mode, points } = state.draw;
-  console.log("[draw] onDrawClick mode=", mode, latlng);
 
   if (mode === "point") {
     cancelDrawing();
@@ -23115,6 +23590,7 @@ function addDrawnFeature(feature, folderId = null) {
   if (isTakStreamingEnabledForContent(contentId)) {
     void publishTakContentById(contentId);
   }
+  return item;
 }
 
 // ── Edit-undo helpers ─────────────────────────────────────────────────────────
@@ -24622,6 +25098,7 @@ async function resolveKmlPlacemarkStyle(placemark, styleRegistry, context) {
 }
 
 async function parseArchivePackageFeatures(buffer, fileName, options = {}) {
+  await ensureJsZipLoaded();
   if (!window.JSZip) {
     throw new Error("Archive import requires JSZip to be loaded.");
   }
@@ -27446,7 +27923,10 @@ async function runOfflineDownload(mode) {
 
   // ZIP mode setup
   let zip = null;
-  if (mode === "zip") zip = new JSZip();
+  if (mode === "zip") {
+    await ensureJsZipLoaded();
+    zip = new window.JSZip();
+  }
 
   let done = 0;
   const allTiles = [];
@@ -27951,6 +28431,7 @@ function openAnalyticsModal() {
     closeAnalyticsModal();
     return;
   }
+  ensureAnalyticsInitialized();
   ensureAnalyticsChrome();
   setAnalyticsOpenState(true);
   fetchAndRenderAnalytics();
@@ -28291,16 +28772,12 @@ function drawTokenBarChart() {
   });
 }
 
-function initAnalytics() {
+function ensureAnalyticsInitialized() {
+  if (_analyticsInitialized) {
+    return;
+  }
+  _analyticsInitialized = true;
   ensureAnalyticsChrome();
-  dom.workspaceAnalyticsBtn?.addEventListener("click", () => {
-    if (!isAnalyticsAdmin()) {
-      return;
-    }
-    closeWorkspaceMenu();
-    openAnalyticsModal();
-  });
-
   dom.analyticsModalCloseBtn?.addEventListener("click", closeAnalyticsModal);
   addModalBackdropClose(dom.analyticsModal, closeAnalyticsModal);
   dom.analyticsRefreshBtn?.addEventListener("click", fetchAndRenderAnalytics);
