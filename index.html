@@ -648,59 +648,6 @@
           </div>
 
           <div id="topBarDropdownLayer" class="top-bar-dropdown-layer"></div>
-
-        <section id="planningSection" class="card">
-          <div class="section-title-row">
-            <h2>Site Planning</h2>
-            <div class="button-row">
-              <button id="drawPlanningRegionBtn" class="ghost-button small" type="button">Draw Region</button>
-              <button id="runPlanningBtn" class="primary-button small" type="button">Recommend</button>
-            </div>
-          </div>
-          <div class="two-column">
-            <label class="span-2">
-              Tx Asset
-              <select id="planningTxAsset"></select>
-            </label>
-            <label class="span-2">
-              Rx Asset
-              <select id="planningRxAsset"></select>
-            </label>
-            <label>
-              Candidate Step m
-              <input id="planningGridMeters" type="number" min="50" max="5000" step="50" value="500">
-            </label>
-            <label>
-              Min Separation m
-              <input id="planningMinSeparation" type="number" min="0" max="50000" step="50" value="1500">
-            </label>
-            <label>
-              Detection Weight
-              <input id="planningEnemyWeight" type="number" min="0" step="0.1" value="1.2">
-            </label>
-            <label>
-              Separation Weight
-              <input id="planningSeparationWeight" type="number" min="0" step="0.1" value="0.6">
-            </label>
-            <label>
-              Volume Floor m
-              <input id="planningFloorM" type="number" step="1" value="0">
-            </label>
-            <label>
-              Volume Ceiling m
-              <input id="planningCeilingM" type="number" step="1" value="150">
-            </label>
-          </div>
-          <div id="planningSummary" class="terrain-summary">
-            Draw a planning region, then recommend terrain-aware Tx/Rx placements that maximize friendly connectivity while minimizing enemy intercept probability.
-          </div>
-          <div class="list-shell">
-            <div class="list-header">
-              <span>Recommendations</span>
-            </div>
-            <div id="planningList" class="asset-list"></div>
-          </div>
-          </section>
         </div>
       </aside>
 

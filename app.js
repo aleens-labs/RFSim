@@ -7347,8 +7347,8 @@ function wireEvents() {
   });
   dom.connectGeolocationBtn.addEventListener("click", connectBrowserGeolocation);
   dom.connectUsbGpsBtn.addEventListener("click", connectUsbGps);
-  dom.drawPlanningRegionBtn.addEventListener("click", drawPlanningRegion);
-  dom.runPlanningBtn.addEventListener("click", runPlanning);
+  dom.drawPlanningRegionBtn?.addEventListener("click", drawPlanningRegion);
+  dom.runPlanningBtn?.addEventListener("click", runPlanning);
   dom.runSiteStudyBtn?.addEventListener("click", runSiteStudy);
   [
     dom.siteStudyTypeSelect,
@@ -16411,14 +16411,14 @@ function buildAiScenarioSummary() {
       opacity: Number(dom.viewshedOpacity.value),
     },
     planningDraft: {
-      txAssetId: dom.planningTxAsset.value,
-      rxAssetId: dom.planningRxAsset.value,
-      gridMeters: Number(dom.planningGridMeters.value),
-      minSeparation: Number(dom.planningMinSeparation.value),
-      enemyWeight: Number(dom.planningEnemyWeight.value),
-      separationWeight: Number(dom.planningSeparationWeight.value),
-      floorM: Number(dom.planningFloorM.value),
-      ceilingM: Number(dom.planningCeilingM.value),
+      txAssetId: dom.planningTxAsset?.value || "",
+      rxAssetId: dom.planningRxAsset?.value || "",
+      gridMeters: Number(dom.planningGridMeters?.value ?? 500),
+      minSeparation: Number(dom.planningMinSeparation?.value ?? 1500),
+      enemyWeight: Number(dom.planningEnemyWeight?.value ?? 1.2),
+      separationWeight: Number(dom.planningSeparationWeight?.value ?? 0.6),
+      floorM: Number(dom.planningFloorM?.value ?? 0),
+      ceilingM: Number(dom.planningCeilingM?.value ?? 150),
       hasRegion: Boolean(state.planning.regionLayer),
     },
     siteStudyDraft: {
@@ -16858,6 +16858,9 @@ async function executeAiAction(action, { placedAssetIds = [], touchedObjects = [
   }
 
   if (action.type === "set-planning-parameters") {
+    if (!dom.planningSection) {
+      return "Planning panel is unavailable.";
+    }
     const txAsset = findAssetByReference(action.txAssetId ?? action.txAssetName);
     const rxAsset = findAssetByReference(action.rxAssetId ?? action.rxAssetName);
     if (txAsset) {
@@ -18689,14 +18692,14 @@ function renderAssetPopup(asset) {
 function renderAssets() {
   if (dom.assetList) dom.assetList.innerHTML = "";
   dom.assetSelect.innerHTML = "";
-  dom.planningTxAsset.innerHTML = "";
-  dom.planningRxAsset.innerHTML = "";
+  if (dom.planningTxAsset) dom.planningTxAsset.innerHTML = "";
+  if (dom.planningRxAsset) dom.planningRxAsset.innerHTML = "";
 
   if (!state.assets.length) {
     if (dom.assetList) dom.assetList.innerHTML = `<div class="asset-item">No systems placed yet.</div>`;
     dom.assetSelect.innerHTML = `<option value="">No emitters available</option>`;
-    dom.planningTxAsset.innerHTML = `<option value="">No assets</option>`;
-    dom.planningRxAsset.innerHTML = `<option value="">No assets</option>`;
+    if (dom.planningTxAsset) dom.planningTxAsset.innerHTML = `<option value="">No assets</option>`;
+    if (dom.planningRxAsset) dom.planningRxAsset.innerHTML = `<option value="">No assets</option>`;
     renderSiteStudyAssetOptions();
     renderMapContents();
     return;
@@ -18724,7 +18727,7 @@ function renderAssets() {
     }
 
     const optionLabel = `${index + 1}. ${asset.name} (${asset.unit})`;
-    [dom.assetSelect, dom.planningTxAsset, dom.planningRxAsset].forEach((select) => {
+    [dom.assetSelect, dom.planningTxAsset, dom.planningRxAsset].filter(Boolean).forEach((select) => {
       const option = document.createElement("option");
       option.value = asset.id;
       option.textContent = optionLabel;
@@ -18859,6 +18862,10 @@ function renderViewsheds() {
 }
 
 function renderPlanningResults() {
+  if (!dom.planningList) {
+    renderMapContents();
+    return;
+  }
   dom.planningList.innerHTML = "";
 
   if (!state.planning.recommendations.length) {
@@ -20332,6 +20339,10 @@ function onPlanningRegionCreated(event) {
 }
 
 async function runPlanning() {
+  if (!dom.planningSection) {
+    setStatus("Planning panel has been removed.", true);
+    return;
+  }
   if (!state.planning.regionLayer) {
     setStatus("Draw a planning region first.", true);
     return;
@@ -20434,9 +20445,11 @@ function consumePlanningResult(payload) {
   renderPlanningResults();
   if (payload.recommendations[0]) {
     const best = payload.recommendations[0];
-    dom.planningSummary.textContent =
+    if (dom.planningSummary) {
+      dom.planningSummary.textContent =
       `Top solution uses ${payload.candidateCount} candidate points. Friendly RSSI ${best.friendlyRssiDbm.toFixed(1)} dBm, ` +
       `enemy max ${best.maxEnemyRssiDbm.toFixed(1)} dBm, separation ${formatDistance(best.separationMeters)}.`;
+    }
   }
   syncCesiumEntities();
   renderMapContents();
@@ -22871,14 +22884,22 @@ function editMapContent(contentId) {
   }
 
   if (contentId === "planning-region") {
-    dom.planningSection.scrollIntoView({ block: "nearest", behavior: "smooth" });
-    drawPlanningRegion().catch((error) => setStatus(error.message, true));
+    if (dom.planningSection) {
+      dom.planningSection.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      drawPlanningRegion().catch((error) => setStatus(error.message, true));
+    } else {
+      setStatus("Planning panel has been removed.", true);
+    }
     return;
   }
 
   if (contentId === "planning-results") {
-    dom.planningSection.scrollIntoView({ block: "nearest", behavior: "smooth" });
-    setStatus("Adjust planning inputs and click Recommend to update the planning results.");
+    if (dom.planningSection) {
+      dom.planningSection.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      setStatus("Adjust planning inputs and click Recommend to update the planning results.");
+    } else {
+      setStatus("Planning panel has been removed.", true);
+    }
     return;
   }
 
