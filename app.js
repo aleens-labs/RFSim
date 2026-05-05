@@ -7493,9 +7493,6 @@ function applySavedMapState(rawSaved) {
       : [];
     const maxUnitId = _toState.units.reduce((max, unit) => Math.max(max, Number(unit.id) || 0), 0);
     _toState.nextId = Math.max(Number(saved.plan.nextId) || 1, maxUnitId + 1);
-    _toState.iconRenderer = saved.plan.iconRenderer === TO_ICON_RENDERERS.AIGEN
-      ? TO_ICON_RENDERERS.AIGEN
-      : TO_ICON_RENDERERS.MILSTD;
     clearToSelection();
     closeToEditModal();
     cancelToLink();
@@ -27272,7 +27269,6 @@ const _toState = {
   units: [],       // { id, label, designator, affiliation, type, size, x, y }
   links: [],       // { parentId, childId }
   nextId: 1,
-  iconRenderer: "milstd",
   zoom: 1,
   panX: 0,
   panY: 0,
@@ -27285,10 +27281,6 @@ const _toState = {
   _initialized: false,
 };
 
-const TO_ICON_RENDERERS = {
-  AIGEN: "aigen",
-  MILSTD: "milstd",
-};
 
 const MIL_COLORS = {
   friendly: { frame: "#006bb6", bg: "#aad4f5", text: "#000000" },
@@ -27554,7 +27546,6 @@ function serializeToPlanState() {
       childId: link.childId,
     })),
     nextId: _toState.nextId,
-    iconRenderer: _toState.iconRenderer === TO_ICON_RENDERERS.AIGEN ? TO_ICON_RENDERERS.AIGEN : TO_ICON_RENDERERS.MILSTD,
   };
 }
 
@@ -27675,33 +27666,7 @@ function ms2525Svg(unit) {
 }
 
 function renderToUnitIcon(unit) {
-  return _toState.iconRenderer === TO_ICON_RENDERERS.MILSTD ? milstd2525Svg(unit) : ms2525Svg(unit);
-}
-
-function syncToRendererToggle() {
-  const activeRenderer = _toState.iconRenderer === TO_ICON_RENDERERS.MILSTD ? TO_ICON_RENDERERS.MILSTD : TO_ICON_RENDERERS.AIGEN;
-  document.querySelectorAll(".to-renderer-option").forEach((button) => {
-    const isActive = button.dataset.renderer === activeRenderer;
-    button.classList.toggle("is-active", isActive);
-    button.setAttribute("aria-pressed", isActive ? "true" : "false");
-  });
-}
-
-function setToIconRenderer(renderer) {
-  const nextRenderer = renderer === TO_ICON_RENDERERS.MILSTD ? TO_ICON_RENDERERS.MILSTD : TO_ICON_RENDERERS.AIGEN;
-  if (_toState.iconRenderer === nextRenderer) return;
-  _toState.iconRenderer = nextRenderer;
-  syncToRendererToggle();
-  renderToView();
-  if (!document.getElementById("toPickerModal")?.classList.contains("hidden")) renderToPickerCanvas();
-  saveMapState();
-}
-
-function wireToRendererToggle() {
-  document.querySelectorAll(".to-renderer-option").forEach((button) => {
-    button.addEventListener("click", () => setToIconRenderer(button.dataset.renderer));
-  });
-  syncToRendererToggle();
+  return milstd2525Svg(unit);
 }
 
 function closeToEditModal() {
@@ -27781,8 +27746,6 @@ function initPlanViewIfNeeded() {
   if (unitAffiliationSelect && editAffiliationSelect) editAffiliationSelect.innerHTML = unitAffiliationSelect.innerHTML;
   if (unitTypeSelect && editTypeSelect) editTypeSelect.innerHTML = unitTypeSelect.innerHTML;
   if (unitSizeSelect && editSizeSelect) editSizeSelect.innerHTML = unitSizeSelect.innerHTML;
-  wireToRendererToggle();
-
   // ── Wire toolbar buttons ──
   document.getElementById("toAddUnitBtn")?.addEventListener("click", () => {
     const aff  = document.getElementById("toAffiliation")?.value || "friendly";

@@ -6192,39 +6192,6 @@ body.emitter-modal-open {
   flex-wrap: nowrap;
   flex-shrink: 0;
 }
-.to-renderer-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  padding: 2px;
-  border-radius: 999px;
-  background: rgba(255,255,255,0.82);
-  border: 1px solid rgba(15,23,42,0.12);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.6);
-  flex-shrink: 0;
-}
-.to-renderer-option {
-  appearance: none;
-  border: none;
-  background: transparent;
-  color: #243245;
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  padding: 5px 10px;
-  border-radius: 999px;
-  cursor: pointer;
-  transition: background 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
-}
-.to-renderer-option:hover {
-  background: rgba(15,23,42,0.08);
-}
-.to-renderer-option.is-active {
-  background: #111827;
-  color: #ffffff;
-  box-shadow: 0 4px 12px rgba(15,23,42,0.18);
-}
 .to-toolbar-section-right {
   margin-left: auto;
   flex-shrink: 0;
@@ -6355,32 +6322,22 @@ body.emitter-modal-open {
   -webkit-user-drag: none;
   flex-shrink: 0;
 }
-/* Stacked MIL-STD layers rendered as crisp <img> SVGs.
-   All source SVGs share viewBox="0 0 612 792". The ground frame symbol
-   occupies y=276–516 (240px tall, 360px wide, centered at x=306).
-   We clip to that region by sizing the stack to the symbol's aspect ratio
-   and using a negative margin to hide the blank canvas above/below. */
+/* Stacked MIL-STD layers. All source SVGs share viewBox="0 0 612 792" (portrait).
+   Match that aspect ratio exactly so every layer scales uniformly with no
+   distortion or offset — the card's align-items:center handles centering. */
 .milstd-stack {
   position: relative;
   display: block;
-  width: 110px;
-  height: 74px;
-  overflow: hidden;
+  width: 111px;
+  height: 143px;
   pointer-events: none;
   -webkit-user-drag: none;
 }
 .milstd-layer {
   position: absolute;
-  /* Scale the full 612×792 canvas so that the 360px-wide symbol fills the
-     110px container width: scale = 110/360 = 0.3056.
-     Canvas renders at 612*0.3056=187px wide, 792*0.3056=242px tall.
-     Symbol top edge at y=276 maps to 276*0.3056=84px from canvas top.
-     Shift canvas up by 84px so symbol sits at top of container. */
-  width: 187px;
-  height: 242px;
-  left: 50%;
-  top: -84px;
-  transform: translateX(-50%);
+  inset: 0;
+  width: 100%;
+  height: 100%;
   display: block;
   pointer-events: none;
   -webkit-user-drag: none;
