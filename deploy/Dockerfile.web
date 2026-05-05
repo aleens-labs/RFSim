@@ -7,7 +7,7 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 
 RUN rustup target add wasm32-unknown-unknown
-RUN cargo install wasm-pack
+RUN cargo install wasm-pack --locked
 
 COPY package.json ./package.json
 COPY rust/rf_sim_compute/Cargo.toml ./rust/rf_sim_compute/Cargo.toml
