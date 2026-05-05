@@ -325,10 +325,10 @@ body.theme-light *::-webkit-scrollbar-thumb:hover {
 .top-bar-left {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 0;
-  flex: 0 0 calc(var(--panel-width) + var(--divider-width));
-  width: calc(var(--panel-width) + var(--divider-width));
+  flex: 0 0 clamp(320px, 33vw, 430px);
+  width: clamp(320px, 33vw, 430px);
   min-width: 0;
   padding: 0;
   position: relative;
@@ -340,6 +340,12 @@ body.theme-light *::-webkit-scrollbar-thumb:hover {
   left: 0;
   top: 50%;
   transform: translateY(-50%);
+}
+
+body[data-current-view="plan"] #collapsePanelBtn,
+body[data-current-view="topology"] #collapsePanelBtn,
+body[data-current-view="analyze"] #collapsePanelBtn {
+  display: none;
 }
 
 .status-strip,
@@ -724,11 +730,11 @@ body.theme-light *::-webkit-scrollbar-thumb:hover {
 .title-block {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   min-height: 44px;
-  width: calc(100% - 54px);
-  margin: 0 0 0 54px;
-  padding: 0 18px;
+  width: calc(100% - 42px);
+  margin: 0 0 0 42px;
+  padding: 0 18px 0 56px;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);

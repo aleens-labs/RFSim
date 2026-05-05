@@ -9247,6 +9247,7 @@ function switchView(view, skipAnimation) {
 }
 
 function afterSwitchView(view) {
+  document.body.dataset.currentView = view;
   if (view === "topology") renderTopologyView();
   if (view === "analyze")  renderAnalyzeView();
   if (view === "plan")     initPlanViewIfNeeded();
@@ -9276,6 +9277,7 @@ function initViewModeToggle() {
     });
     dom.viewModeToggle.setAttribute("data-active", "map");
   }
+  document.body.dataset.currentView = "map";
   syncAiUi();
   updateRssiLegendVisibility();
   updateTerrainHeatmapLegendVisibility();
