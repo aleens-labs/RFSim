@@ -2411,11 +2411,11 @@ body:not(.ai-panel-open) .ai-panel {
 /* ── Local model settings panel ─────────────────────────────────────────────── */
 .ai-genai-mil-warning {
   margin-top: 12px;
-  padding: 14px 16px;
-  border: 1px solid #b45309;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
   border-radius: 8px;
-  background: rgba(180, 83, 9, 0.12);
-  color: #fbbf24;
+  background: var(--bg-card-alt);
+  color: var(--text);
   font-size: 12px;
   line-height: 1.5;
 }
@@ -2426,10 +2426,12 @@ body:not(.ai-panel-open) .ai-panel {
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
 }
 
 .ai-genai-mil-warning-header strong {
-  color: #fde68a;
+  color: var(--text);
   font-size: 0.82rem;
   letter-spacing: 0.03em;
 }
@@ -2439,9 +2441,9 @@ body:not(.ai-panel-open) .ai-panel {
   align-items: center;
   padding: 3px 8px;
   border-radius: 999px;
-  border: 1px solid rgba(251, 191, 36, 0.35);
-  background: rgba(251, 191, 36, 0.08);
-  color: #fde68a;
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+  color: var(--muted);
   font-size: 0.68rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -2450,6 +2452,7 @@ body:not(.ai-panel-open) .ai-panel {
 
 .ai-genai-mil-warning p {
   margin: 0;
+  color: var(--text);
 }
 
 .ai-genai-mil-warning-actions {
@@ -2463,10 +2466,35 @@ body:not(.ai-panel-open) .ai-panel {
   text-decoration: none;
 }
 
+.ai-genai-mil-platforms {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.ai-genai-mil-platform {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  background: var(--bg-soft);
+}
+
+.ai-genai-mil-platform-header {
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ai-genai-mil-platform-header strong {
+  font-size: 0.78rem;
+  color: var(--text);
+}
+
 .ai-genai-mil-steps {
   display: grid;
-  gap: 10px;
-  margin-top: 14px;
+  gap: 8px;
+  margin-top: 10px;
 }
 
 .ai-genai-mil-step {
@@ -2474,10 +2502,10 @@ body:not(.ai-panel-open) .ai-panel {
   grid-template-columns: 24px minmax(0, 1fr);
   gap: 10px;
   align-items: start;
-  padding: 10px 12px;
-  border: 1px solid rgba(251, 191, 36, 0.12);
-  border-radius: 8px;
-  background: rgba(0, 0, 0, 0.12);
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-input);
 }
 
 .ai-genai-mil-step-copy {
@@ -2489,7 +2517,8 @@ body:not(.ai-panel-open) .ai-panel {
 
 .ai-genai-mil-step-copy > strong {
   display: block;
-  color: #fde68a;
+  color: var(--text);
+  font-size: 0.78rem;
   margin-bottom: 2px;
 }
 
@@ -2504,18 +2533,21 @@ body:not(.ai-panel-open) .ai-panel {
   width: 24px;
   height: 24px;
   border-radius: 999px;
-  background: rgba(251, 191, 36, 0.16);
-  border: 1px solid rgba(251, 191, 36, 0.26);
-  color: #fde68a;
-  font-size: 0.76rem;
+  background: var(--accent, #3b82f6);
+  color: #ffffff;
+  font-size: 0.72rem;
   font-weight: 700;
+  flex-shrink: 0;
 }
 
 .ai-genai-mil-warning code {
-  background: rgba(255,255,255,0.1);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
   border-radius: 3px;
-  padding: 1px 4px;
+  padding: 1px 5px;
   font-size: 11px;
+  color: var(--text);
+  word-break: break-all;
 }
 .ai-genai-mil-warning.hidden { display: none; }
 
@@ -4832,6 +4864,7 @@ button:focus {
 
 .settings-docs-panel {
   height: 100%;
+  overflow-y: auto;
 }
 
 .settings-docs-shell {
@@ -4993,7 +5026,6 @@ button:focus {
 }
 
 .settings-modal-grid .settings-check-row {
-  grid-column: span 2;
   display: flex;
   flex-direction: row;
   align-items: center;
@@ -5040,25 +5072,69 @@ button:focus {
   grid-template-columns: minmax(0, 1fr) auto;
 }
 
+.tak-settings-section {
+  gap: 8px;
+  padding: 10px 12px;
+}
+
+.tak-settings-section .menu-title-row {
+  margin-bottom: 2px;
+}
+
+.tak-settings-section #takMemberSection {
+  display: grid;
+  gap: 8px;
+}
+
+.tak-settings-grid {
+  grid-template-columns: minmax(0, 1.7fr) minmax(110px, 0.5fr) minmax(110px, 0.55fr);
+  gap: 5px 10px;
+}
+
+.tak-settings-grid .tak-settings-wide,
+.tak-settings-grid .settings-check-row,
+.tak-settings-grid .tak-cert-grid,
+.tak-settings-grid .tak-project-shell,
+.tak-settings-grid #takUsernameRow,
+.tak-settings-grid #takPasswordRow {
+  grid-column: 1 / -1;
+}
+
+.tak-settings-grid .tak-settings-host input,
+.tak-settings-grid .tak-settings-port input,
+.tak-settings-grid .tak-settings-protocol select {
+  max-width: none;
+}
+
+.tak-settings-grid .settings-check-row {
+  min-height: 34px;
+  padding: 4px 8px;
+}
+
 .tak-inline-actions {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
 }
 
 .tak-cert-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: 8px;
 }
 
 .tak-cert-card,
 .tak-project-shell {
   display: grid;
-  gap: 10px;
-  padding: 14px;
+  gap: 6px 10px;
+  padding: 8px 10px;
   border: 1px solid var(--border);
   background: var(--bg-input);
+}
+
+.tak-cert-card {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
 }
 
 .tak-cert-card strong,
@@ -5067,13 +5143,18 @@ button:focus {
   font-size: 0.92rem;
 }
 
+.tak-cert-card strong {
+  grid-column: 1 / -1;
+}
+
 .tak-file-upload {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 36px;
+  min-height: 28px;
   width: fit-content;
   cursor: pointer;
+  padding: 0 10px;
 }
 
 .tak-cert-password-row {
@@ -5090,12 +5171,30 @@ button:focus {
   text-transform: uppercase;
 }
 
+.tak-cert-card .tak-file-upload {
+  grid-column: 1;
+}
+
+.tak-cert-card .tak-cert-summary {
+  grid-column: 2;
+  min-width: 0;
+}
+
+.tak-cert-card button {
+  grid-column: 3;
+  justify-self: end;
+}
+
+.tak-cert-card .tak-cert-password-row {
+  grid-column: 1 / -1;
+}
+
 .tak-cert-summary,
 .tak-project-hint,
 .tak-project-empty {
   color: var(--muted);
-  font-size: 0.82rem;
-  line-height: 1.4;
+  font-size: 0.78rem;
+  line-height: 1.35;
 }
 
 .tak-project-header {
@@ -5108,8 +5207,8 @@ button:focus {
 
 .tak-project-checklist {
   display: grid;
-  gap: 8px;
-  max-height: 220px;
+  gap: 6px;
+  max-height: 120px;
   overflow-y: auto;
 }
 
@@ -5117,7 +5216,7 @@ button:focus {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  padding: 10px 12px;
+  padding: 6px 8px;
   border: 1px solid var(--border);
   background: var(--bg-soft);
   cursor: pointer;
@@ -5165,12 +5264,17 @@ button:focus {
 
 .tak-project-copy strong {
   color: var(--text);
-  font-size: 0.92rem;
+  font-size: 0.86rem;
+}
+
+.tak-project-copy {
+  min-width: 0;
 }
 
 .tak-project-copy span {
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: 0.76rem;
+  line-height: 1.3;
 }
 
 body.settings-modal-open {
@@ -5999,13 +6103,73 @@ body.emitter-modal-open {
 }
 
 .tak-identity-modal {
-  width: min(540px, calc(100vw - 32px));
+  width: min(720px, calc(100vw - 32px));
+}
+
+.tak-identity-body {
+  display: block;
+  padding: 18px 28px 10px;
+}
+
+.tak-identity-form {
+  width: min(620px, 100%);
+  display: grid;
+  gap: 16px;
+}
+
+.tak-identity-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  gap: 18px;
+  align-items: start;
+}
+
+.tak-identity-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.tak-identity-field-full,
+.tak-identity-field-role {
+  max-width: 420px;
+}
+
+.tak-identity-field input,
+.tak-identity-field select {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 0.84rem;
 }
 
 .tak-identity-body .fine-print {
   display: block;
-  margin-top: 4px;
-  margin-bottom: 6px;
+  margin-top: 2px;
+  margin-bottom: 2px;
+  max-width: 420px;
+  line-height: 1.5;
+}
+
+@media (max-width: 720px) {
+  .tak-identity-body {
+    padding: 16px 18px 10px;
+  }
+
+  .tak-identity-form {
+    width: 100%;
+  }
+
+  .tak-identity-row {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
 }
 
 .offline-modal-body {

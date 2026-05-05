@@ -2351,7 +2351,7 @@
         </section>
         </section>
         <section class="settings-tab-panel" data-settings-panel="tak" role="tabpanel" hidden>
-        <section class="settings-modal-section">
+        <section class="settings-modal-section tak-settings-section">
           <div class="menu-title-row">
             <strong>TAK Integration</strong>
           </div>
@@ -2359,8 +2359,8 @@
             TAK Integration requires a logged-in account and server-backed projects.
           </div>
           <div id="takMemberSection" class="hidden">
-            <div class="settings-modal-grid">
-              <label class="settings-span-2">
+            <div class="settings-modal-grid tak-settings-grid">
+              <label class="settings-span-2 tak-settings-wide">
                 Saved TAK Servers
                 <div class="settings-saved-key-row tak-profile-row">
                   <select id="takSavedProfileSelect">
@@ -2372,19 +2372,19 @@
                   </div>
                 </div>
               </label>
-              <label class="settings-span-2">
+              <label class="settings-span-2 tak-settings-wide">
                 Description
                 <input id="takProfileLabelInput" type="text" placeholder="RF Sim">
               </label>
-              <label>
+              <label class="tak-settings-host">
                 Server Host IP
                 <input id="takServerHostInput" type="text" placeholder="18.118.133.90">
               </label>
-              <label>
+              <label class="tak-settings-port">
                 Port
                 <input id="takServerPortInput" type="number" min="1" max="65535" value="8089">
               </label>
-              <label>
+              <label class="tak-settings-protocol">
                 Protocol
                 <select id="takTransportSelect">
                   <option value="ssl">SSL</option>
@@ -2392,7 +2392,6 @@
                   <option value="tcp">TCP</option>
                 </select>
               </label>
-              <div></div>
 
               <label class="settings-check-row">
                 <input id="takEnrollClientCertToggle" type="checkbox">
@@ -2513,21 +2512,23 @@
         <button id="takIdentityCloseBtn" class="ghost-button small icon-button" type="button" aria-label="Close">&#10005;</button>
       </div>
       <div class="emitter-modal-body tak-identity-body">
-        <div class="settings-modal-grid">
-          <label class="settings-span-2">
+        <div class="tak-identity-form">
+          <label class="tak-identity-field tak-identity-field-full">
             My Callsign
             <span class="fine-print">The callsign RF SIM will publish to the linked TAK server.</span>
             <input id="takIdentityCallsignInput" type="text" maxlength="120" placeholder="RF SIM callsign">
           </label>
-          <label>
+          <div class="tak-identity-row">
+          <label class="tak-identity-field">
             My Team
             <select id="takIdentityTeamSelect"></select>
           </label>
-          <label>
+          <label class="tak-identity-field">
             My Display Type
             <select id="takIdentityDisplayTypeSelect"></select>
           </label>
-          <label class="settings-span-2">
+          </div>
+          <label class="tak-identity-field tak-identity-field-role">
             My Role
             <select id="takIdentityRoleSelect"></select>
           </label>
