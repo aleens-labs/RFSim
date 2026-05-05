@@ -10454,7 +10454,7 @@ function renderSettingsDocumentation() {
   });
 
   // Section color palette for h1/h2 section cards
-  const SECTION_COLORS = ["#3b82f6","#10b981","#f59e0b","#8b5cf6","#ef4444","#06b6d4","#f97316"];
+  const SECTION_COLORS = ["#38bdf8", "#22d3ee", "#34d399", "#facc15", "#fb923c", "#f87171", "#c084fc"];
   let sectionIndex = 0;
   let currentCard = null;
   let currentSubList = null;
