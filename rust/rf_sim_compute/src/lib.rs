@@ -384,7 +384,7 @@ fn trace_terrain_inner(source: &Endpoint, target: &Endpoint, tx_height_m: f64, r
     let mut max_obstruction_m = 0.0;
     let mut building_path_meters = 0.0;
     let mut building_hit_samples = 0usize;
-    let mut max_building_obstruction_m = 0.0;
+    let mut max_building_obstruction_m: f64 = 0.0;
     let mut sampled_count = 0usize;
 
     for step in 1..steps {
@@ -555,7 +555,7 @@ fn build_path_profile_inner(
     let mut min_fresnel_clearance_m = f64::INFINITY;
     let mut min_required_fresnel_clearance_m = f64::INFINITY;
     let mut max_obstruction_m = 0.0;
-    let mut max_building_obstruction_m = 0.0;
+    let mut max_building_obstruction_m: f64 = 0.0;
     let mut building_hit_samples = 0usize;
     let mut building_path_meters = 0.0;
     let mut worst_point = None;
