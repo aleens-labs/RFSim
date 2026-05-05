@@ -7920,6 +7920,11 @@ function applySettings() {
   updateCoordinateDisplays();
   updateMapOverlayMetrics();
   updateGridLayer();
+  updateTerrainContourIntervalUi();
+  if (state.terrainContours?.sample) {
+    state.terrainContours.model = buildTerrainContourModel(state.terrainContours.sample, getTerrainContourIntervalM());
+    syncTerrainContour2dLayer();
+  }
   renderViewsheds();
   renderPlanningResults();
   syncCesiumEntities();
@@ -11308,7 +11313,8 @@ const TERRAIN_HEATMAP_SAMPLE_BUDGET_MIN = 256;
 const TERRAIN_HEATMAP_SAMPLE_BUDGET_MAX = 3072;
 const TERRAIN_HEATMAP_SAMPLE_BUDGET_STEP = 64;
 const TERRAIN_HEATMAP_SAMPLE_BUDGET_DEFAULT = 576;
-const TERRAIN_CONTOUR_INTERVAL_OPTIONS = [10, 20, 50, 100, 200, 250, 500, 1000];
+const TERRAIN_CONTOUR_INTERVAL_OPTIONS_METRIC = [10, 20, 50, 100, 200, 250, 500, 1000];
+const TERRAIN_CONTOUR_INTERVAL_OPTIONS_STANDARD = [50, 100, 200, 250, 500, 1000, 2000, 5000];
 const TERRAIN_CONTOUR_SAMPLE_BUDGET = 1536;
 const TERRAIN_CONTOUR_LABEL_LIMIT = 28;
 
@@ -11330,13 +11336,26 @@ function normalizeTerrainContourIntervalIndex(value) {
   if (!Number.isFinite(numeric)) {
     return 3;
   }
-  return clamp(Math.round(numeric), 0, TERRAIN_CONTOUR_INTERVAL_OPTIONS.length - 1);
+  return clamp(Math.round(numeric), 0, getTerrainContourIntervalOptions().length - 1);
+}
+
+function getTerrainContourIntervalOptions() {
+  return state.settings.measurementUnits === "standard"
+    ? TERRAIN_CONTOUR_INTERVAL_OPTIONS_STANDARD
+    : TERRAIN_CONTOUR_INTERVAL_OPTIONS_METRIC;
+}
+
+function getTerrainContourIntervalDisplayValue() {
+  return getTerrainContourIntervalOptions()[
+    normalizeTerrainContourIntervalIndex(state.terrainContours.intervalIndex)
+  ] ?? (state.settings.measurementUnits === "standard" ? 200 : 100);
 }
 
 function getTerrainContourIntervalM() {
-  return TERRAIN_CONTOUR_INTERVAL_OPTIONS[
-    normalizeTerrainContourIntervalIndex(state.terrainContours.intervalIndex)
-  ] ?? 100;
+  const interval = getTerrainContourIntervalDisplayValue();
+  return state.settings.measurementUnits === "standard"
+    ? interval / 3.28084
+    : interval;
 }
 
 function closeTerrainHeatmapDropdown() {
@@ -11829,10 +11848,11 @@ function updateTerrainContourIntervalUi() {
   state.terrainContours.intervalIndex = index;
   if (dom.terrainContourInterval) {
     dom.terrainContourInterval.value = String(index);
+    dom.terrainContourInterval.max = String(getTerrainContourIntervalOptions().length - 1);
     updateRangeTrack(dom.terrainContourInterval);
   }
   if (dom.terrainContourIntervalValue) {
-    dom.terrainContourIntervalValue.textContent = `${TERRAIN_CONTOUR_INTERVAL_OPTIONS[index]} m`;
+    dom.terrainContourIntervalValue.textContent = `${getTerrainContourIntervalDisplayValue().toLocaleString()} ${state.settings.measurementUnits === "standard" ? "ft" : "m"}`;
   }
 }
 
@@ -11884,9 +11904,13 @@ function buildTerrainContourModel(sample, intervalM) {
     return { paths: [], labels: [] };
   }
   const { rows, cols, elevations, nodataMask, latitudes, longitudes, minElevationM, maxElevationM, sampleDistanceMeters } = sample;
-  const startLevel = Math.ceil(minElevationM / intervalM) * intervalM;
-  const endLevel = Math.floor(maxElevationM / intervalM) * intervalM;
-  if (!Number.isFinite(startLevel) || !Number.isFinite(endLevel) || endLevel < startLevel) {
+  const useStandard = state.settings.measurementUnits === "standard";
+  const displayInterval = getTerrainContourIntervalDisplayValue();
+  const minDisplay = useStandard ? (minElevationM * 3.28084) : minElevationM;
+  const maxDisplay = useStandard ? (maxElevationM * 3.28084) : maxElevationM;
+  const startDisplayLevel = Math.ceil(minDisplay / displayInterval) * displayInterval;
+  const endDisplayLevel = Math.floor(maxDisplay / displayInterval) * displayInterval;
+  if (!Number.isFinite(startDisplayLevel) || !Number.isFinite(endDisplayLevel) || endDisplayLevel < startDisplayLevel) {
     return { paths: [], labels: [] };
   }
 
@@ -11971,8 +11995,9 @@ function buildTerrainContourModel(sample, intervalM) {
     );
   };
 
-  for (let level = startLevel; level <= endLevel + 0.001; level += intervalM) {
-    const effectiveLevel = level + epsilon;
+  for (let displayLevel = startDisplayLevel; displayLevel <= endDisplayLevel + 0.001; displayLevel += displayInterval) {
+    const levelM = useStandard ? (displayLevel / 3.28084) : displayLevel;
+    const effectiveLevel = levelM + epsilon;
     const segments = [];
     for (let row = 0; row < rows - 1; row += 1) {
       for (let col = 0; col < cols - 1; col += 1) {
@@ -11995,7 +12020,10 @@ function buildTerrainContourModel(sample, intervalM) {
       const lengthMeters = terrainContourPathLengthMeters(points);
       if (!Number.isFinite(lengthMeters) || lengthMeters < minUsefulLength) return;
       paths.push({
-        levelM: Math.round(level),
+        levelM,
+        labelText: useStandard
+          ? `${Math.round(displayLevel).toLocaleString()} ft`
+          : `${Math.round(displayLevel).toLocaleString()} m`,
         points,
         lengthMeters,
       });
@@ -12012,7 +12040,7 @@ function buildTerrainContourModel(sample, intervalM) {
       labels.push({
         lat: position.lat,
         lon: position.lon,
-        text: formatElevation(path.levelM),
+        text: path.labelText,
       });
     });
 
