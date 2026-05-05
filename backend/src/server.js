@@ -12,9 +12,23 @@ const path = require("path");
 const { z } = require("zod");
 const { config } = require("./config");
 const { pool, query } = require("./db");
+const {
+  buildLoginIdentifierCandidates,
+  normalizeDisplayName,
+  normalizeUsername,
+  usernameToInternalEmail,
+} = require("./userIdentity");
+const {
+  loginSchema,
+  projectCreateSchema,
+  projectUpdateSchema,
+  registerSchema,
+  snapshotSchema,
+} = require("./schemas");
 const { parsePkcs12, parseTruststore } = require("./tak/certUtils");
 
 const app = express();
+app.set("trust proxy", 1);
 
 app.use(helmet());
 app.use(cors({ origin: config.appOrigin, credentials: true }));
@@ -24,9 +38,14 @@ app.use(express.json({ limit: "10mb" }));
 const projectSchemaCapabilities = {
   hasStateSchemaVersion: false,
   hasClientSavedAt: false,
+  hasRevision: false,
 };
 
+const MIGRATION_LOCK_KEY = 682451901;
+const LOW_VALUE_ANALYTICS_EVENT_TYPES = ["visit", "auth_login"];
+
 const rateLimitState = new Map();
+let lastRateLimitPruneAt = 0;
 const rateLimitBuckets = {
   auth: { limit: 10, windowMs: 15 * 60 * 1000 },
   aiRelay: { limit: 30, windowMs: 60 * 1000 },
@@ -34,11 +53,16 @@ const rateLimitBuckets = {
 };
 
 function getClientIp(request) {
-  const forwarded = request.headers["x-forwarded-for"];
-  if (typeof forwarded === "string" && forwarded.trim()) {
-    return forwarded.split(",")[0].trim();
-  }
   return request.ip || request.socket?.remoteAddress || "unknown";
+}
+
+function pruneRateLimitState(now = Date.now()) {
+  rateLimitState.forEach((entry, key) => {
+    if (!entry || now >= entry.resetAt) {
+      rateLimitState.delete(key);
+    }
+  });
+  lastRateLimitPruneAt = now;
 }
 
 function rateLimit(bucketName) {
@@ -49,6 +73,9 @@ function rateLimit(bucketName) {
       return;
     }
     const now = Date.now();
+    if ((now - lastRateLimitPruneAt) >= 60000 || rateLimitState.size > 5000) {
+      pruneRateLimitState(now);
+    }
     const key = `${bucketName}:${getClientIp(request)}`;
     const entry = rateLimitState.get(key);
     if (!entry || now >= entry.resetAt) {
@@ -63,6 +90,16 @@ function rateLimit(bucketName) {
     entry.count += 1;
     next();
   };
+}
+
+function logServerError(context, error) {
+  const details = error instanceof Error ? (error.stack || error.message) : String(error);
+  console.error(`[server] ${context}: ${details}`);
+}
+
+function sendInternalError(response, context, error, publicMessage = "Internal server error.") {
+  logServerError(context, error);
+  response.status(500).json({ error: publicMessage });
 }
 
 function signToken(user) {
@@ -87,10 +124,6 @@ function authRequired(request, response, next) {
   } catch {
     response.status(401).json({ error: "Invalid token." });
   }
-}
-
-function normalizeUsername(value = "") {
-  return String(value).trim();
 }
 
 function deriveEncryptionKey(secret) {
@@ -127,15 +160,6 @@ function decryptSecret(payload = "") {
     decipher.final(),
   ]);
   return decrypted.toString("utf8");
-}
-
-function usernameToInternalEmail(username) {
-  const slug = normalizeUsername(username)
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 80) || "user";
-  return `${slug}@rfsim.local`;
 }
 
 function isPemLike(value = "", { kind = "generic" } = {}) {
@@ -364,26 +388,20 @@ function buildTakSocketConfig(profileRow) {
   }
 
   if (!caCertRaw) {
-    tlsOptions.rejectUnauthorized = false;
-    verificationMode = "unverified";
-    verificationNote = "No CA trust bundle was available, so server identity verification is disabled.";
+    throw new Error("A TAK CA trust bundle is required. Server identity verification cannot be disabled.");
   } else if (caCert.kind === "text" && isPemLike(caCert.text, { kind: "certificate" })) {
     tlsOptions.ca = caCert.text;
     tlsOptions.rejectUnauthorized = true;
-    tlsOptions.checkServerIdentity = () => undefined;
     verificationMode = "custom-ca";
-    verificationNote = "The uploaded CA trust bundle is used, but hostname mismatch checks are relaxed so direct server IP connections can succeed.";
+    verificationNote = "The uploaded CA trust bundle is used with hostname verification enabled.";
   } else if (caCert.kind === "data-url") {
     const { caPem } = parseTruststore(caCert.buffer, decryptSecret(profileRow.ca_cert_password_secret || ""));
     tlsOptions.ca = caPem;
     tlsOptions.rejectUnauthorized = true;
-    tlsOptions.checkServerIdentity = () => undefined;
     verificationMode = "custom-ca-p12";
-    verificationNote = "The uploaded PKCS12 CA truststore is used and hostname mismatch checks are relaxed so direct server IP connections can succeed.";
+    verificationNote = "The uploaded PKCS12 CA truststore is used with hostname verification enabled.";
   } else {
-    tlsOptions.rejectUnauthorized = false;
-    verificationMode = "p12-truststore-unverified";
-    verificationNote = "PKCS#12 truststores cannot be validated directly by this Node connector, so server identity verification is disabled.";
+    throw new Error("TAK CA trust bundle format is not supported.");
   }
 
   return {
@@ -712,33 +730,6 @@ function stopIdleTakConnectors() {
 
 setInterval(stopIdleTakConnectors, 30000).unref?.();
 
-function buildLoginIdentifierCandidates(rawIdentifier = "") {
-  const trimmed = normalizeUsername(rawIdentifier);
-  if (!trimmed) {
-    return [];
-  }
-
-  const candidates = new Set();
-  const lowered = trimmed.toLowerCase();
-  candidates.add(lowered);
-
-  // Support the current username -> internal email scheme.
-  candidates.add(usernameToInternalEmail(trimmed).toLowerCase());
-
-  // If the user typed an email address, also allow its local-part to resolve to
-  // the synthesized internal account form for backward compatibility.
-  const atIndex = lowered.indexOf("@");
-  if (atIndex > 0) {
-    const localPart = lowered.slice(0, atIndex).trim();
-    if (localPart) {
-      candidates.add(localPart);
-      candidates.add(usernameToInternalEmail(localPart).toLowerCase());
-    }
-  }
-
-  return [...candidates];
-}
-
 async function findUserByLoginIdentifier(identifier) {
   const candidates = buildLoginIdentifierCandidates(identifier);
   if (!candidates.length) {
@@ -746,14 +737,14 @@ async function findUserByLoginIdentifier(identifier) {
   }
 
   const result = await query(
-    `select id, email, full_name, password_hash, is_admin
+    `select id, username, email, full_name, password_hash, is_admin
      from app_user
-     where lower(email) = any($1::text[])
-        or lower(full_name) = any($1::text[])
+     where lower(username) = any($1::text[])
+        or lower(email) = any($1::text[])
      order by
        case
-         when lower(email) = $2 then 0
-         when lower(full_name) = $2 then 1
+         when lower(username) = $2 then 0
+         when lower(email) = $2 then 1
          else 2
        end
      limit 1`,
@@ -765,7 +756,7 @@ async function findUserByLoginIdentifier(identifier) {
 
 async function fetchUserById(userId) {
   const result = await query(
-    "select id, email, full_name, is_admin from app_user where id = $1",
+    "select id, username, email, full_name, is_admin from app_user where id = $1",
     [userId]
   );
   return result.rows[0] ?? null;
@@ -777,35 +768,12 @@ function formatUser(user) {
   }
   return {
     id: user.id,
+    username: user.username,
     email: user.email,
     fullName: user.full_name,
     isAdmin: Boolean(user.is_admin),
   };
 }
-
-const registerSchema = z.object({
-  username: z.string().min(1).max(120),
-  password: z.string().min(12),
-  fullName: z.string().min(1).max(120).optional()
-});
-
-const loginSchema = z.object({
-  username: z.string().min(1).max(120),
-  password: z.string().min(1)
-});
-
-const projectSchema = z.object({
-  name: z.string().min(1).max(120),
-  description: z.string().max(500).optional().default(""),
-  state: z.any().optional().default({}),
-  schemaVersion: z.number().int().nonnegative().optional(),
-  clientSavedAt: z.string().datetime({ offset: true }).optional()
-});
-
-const snapshotSchema = z.object({
-  label: z.string().min(1).max(120),
-  state: z.any().optional()
-});
 
 const aiConfigItemSchema = z.object({
   id: z.string().min(1).max(200),
@@ -1020,7 +988,8 @@ app.get("/api/health", async (_request, response) => {
     await query("select 1");
     response.json({ ok: true, database: "reachable" });
   } catch (error) {
-    response.status(500).json({ ok: false, error: error.message });
+    logServerError("health check", error);
+    response.status(500).json({ ok: false, error: "Health check failed." });
   }
 });
 
@@ -1040,9 +1009,10 @@ app.get("/api/ai/genai-mil/ping", authRequired, rateLimit("aiRelay"), async (_re
       body: text.slice(0, 500),
     });
   } catch (error) {
+    logServerError("GenAI.mil ping", error);
     response.json({
       reachable: false,
-      error: error.message,
+      error: "GenAI.mil reachability check failed.",
     });
   }
 });
@@ -1056,7 +1026,7 @@ app.post("/api/auth/register", rateLimit("auth"), async (request, response) => {
 
   const username = normalizeUsername(parsed.data.username);
   const password = parsed.data.password;
-  const fullName = normalizeUsername(parsed.data.fullName || username);
+  const fullName = normalizeDisplayName(parsed.data.fullName || username);
   const internalEmail = usernameToInternalEmail(username);
   const identifierCandidates = buildLoginIdentifierCandidates(username);
 
@@ -1064,9 +1034,9 @@ app.post("/api/auth/register", rateLimit("auth"), async (request, response) => {
     const existing = await query(
       `select id
        from app_user
-       where lower(email) = any($1::text[])
-          or lower(full_name) = any($1::text[])`,
-      [identifierCandidates]
+       where lower(username) = $1
+          or lower(email) = any($2::text[])`,
+      [username, identifierCandidates]
     );
     if (existing.rowCount > 0) {
       response.status(409).json({ error: "An account with that username already exists." });
@@ -1075,20 +1045,22 @@ app.post("/api/auth/register", rateLimit("auth"), async (request, response) => {
 
     const passwordHash = await bcrypt.hash(password, 12);
     const result = await query(
-      "insert into app_user (email, password_hash, full_name) values ($1, $2, $3) returning id, email, full_name, is_admin",
-      [internalEmail, passwordHash, fullName]
+      `insert into app_user (username, email, password_hash, full_name)
+       values ($1, $2, $3, $4)
+       returning id, username, email, full_name, is_admin`,
+      [username, internalEmail, passwordHash, fullName]
     );
     const user = result.rows[0];
     await logAnalyticsEventForUser(user.id, {
       event_type: "auth_register",
       meta: { source: "self_service", username },
-    }, { username: user.full_name || user.email });
+    }, { username: user.username || user.full_name || user.email });
     response.status(201).json({
       token: signToken(user),
       user: formatUser(user),
     });
   } catch (error) {
-    response.status(500).json({ error: error.message });
+    sendInternalError(response, "register", error);
   }
 });
 
@@ -1118,13 +1090,13 @@ app.post("/api/auth/login", rateLimit("auth"), async (request, response) => {
     await logAnalyticsEventForUser(user.id, {
       event_type: "auth_login",
       meta: { source: "password_login" },
-    }, { username: user.full_name || user.email });
+    }, { username: user.username || user.full_name || user.email });
     response.json({
       token: signToken(user),
       user: formatUser(user),
     });
   } catch (error) {
-    response.status(500).json({ error: error.message });
+    sendInternalError(response, "login", error);
   }
 });
 
@@ -1137,7 +1109,7 @@ app.get("/api/auth/me", authRequired, async (request, response) => {
     }
     response.json({ user: formatUser(user) });
   } catch (error) {
-    response.status(500).json({ error: error.message });
+    sendInternalError(response, "auth me", error);
   }
 });
 
@@ -1162,7 +1134,7 @@ app.get("/api/user/ai-configs", authRequired, async (request, response) => {
       response.json({ configs: [] });
       return;
     }
-    response.status(500).json({ error: error.message });
+    sendInternalError(response, "load AI configs", error);
   }
 });
 
@@ -1202,7 +1174,7 @@ app.put("/api/user/ai-configs", authRequired, async (request, response) => {
       response.status(503).json({ error: "AI config storage not available — run the latest database migration." });
       return;
     }
-    response.status(500).json({ error: error.message });
+    sendInternalError(response, "save AI configs", error);
   } finally {
     client.release();
   }
@@ -1223,7 +1195,7 @@ app.get("/api/user/tak-profiles", authRequired, async (request, response) => {
       response.json({ profiles: [] });
       return;
     }
-    response.status(500).json({ error: error.message });
+    sendInternalError(response, "load TAK profiles", error);
   }
 });
 
@@ -1392,7 +1364,7 @@ app.put("/api/user/tak-profiles", authRequired, async (request, response) => {
       response.status(503).json({ error: "TAK profile storage not available — run the latest database migration." });
       return;
     }
-    response.status(500).json({ error: error.message });
+    sendInternalError(response, "save TAK profiles", error);
   } finally {
     client.release();
   }
@@ -1414,7 +1386,7 @@ app.delete("/api/user/tak-profiles/:profileId", authRequired, async (request, re
       response.status(503).json({ error: "TAK profile storage not available — run the latest database migration." });
       return;
     }
-    response.status(500).json({ error: error.message });
+    sendInternalError(response, "delete TAK profile", error);
   }
 });
 
@@ -1489,7 +1461,7 @@ app.post("/api/user/tak-profiles/:profileId/test", authRequired, async (request,
       response.status(503).json({ error: "TAK profile storage not available — run the latest database migration." });
       return;
     }
-    response.status(500).json({ error: error.message });
+    sendInternalError(response, "test TAK profile", error);
   }
 });
 
@@ -1508,7 +1480,7 @@ app.get("/api/user/tak-project-bindings", authRequired, async (request, response
       response.json({ bindings: [] });
       return;
     }
-    response.status(500).json({ error: error.message });
+    sendInternalError(response, "load TAK project bindings", error);
   }
 });
 
@@ -1565,7 +1537,7 @@ app.put("/api/user/tak-project-bindings", authRequired, async (request, response
       response.status(503).json({ error: "TAK project binding storage not available — run the latest database migration." });
       return;
     }
-    response.status(500).json({ error: error.message });
+    sendInternalError(response, "save TAK project bindings", error);
   } finally {
     client.release();
   }
@@ -1614,7 +1586,7 @@ app.get("/api/projects/:projectId/tak-contacts", authRequired, async (request, r
       ...snapshot,
     });
   } catch (error) {
-    response.status(500).json({ error: error.message });
+    sendInternalError(response, "load TAK contacts", error);
   }
 });
 
@@ -1705,7 +1677,7 @@ app.post("/api/projects/:projectId/tak-location", authRequired, async (request, 
       ...snapshot,
     });
   } catch (error) {
-    response.status(500).json({ error: error.message });
+    sendInternalError(response, "publish TAK location", error);
   }
 });
 
@@ -1779,7 +1751,7 @@ app.post("/api/projects/:projectId/tak-event", authRequired, async (request, res
       ...snapshot,
     });
   } catch (error) {
-    response.status(500).json({ error: error.message });
+    sendInternalError(response, "publish TAK event", error);
   }
 });
 
@@ -1797,7 +1769,8 @@ app.post("/api/ai/genai-mil/models", authRequired, rateLimit("aiRelay"), async (
     });
     await relayGenAiMilJson(response, upstream, "GenAI.mil model discovery failed.");
   } catch (error) {
-    sendGenAiMilError(response, 502, { message: error.message }, "GenAI.mil model discovery failed.");
+    logServerError("GenAI.mil model discovery", error);
+    sendGenAiMilError(response, 502, null, "GenAI.mil model discovery failed.");
   }
 });
 
@@ -1822,24 +1795,25 @@ app.post("/api/ai/genai-mil/chat/completions", authRequired, rateLimit("aiRelay"
     }
     await relayGenAiMilJson(response, upstream, "GenAI.mil chat completion failed.");
   } catch (error) {
-    sendGenAiMilError(response, 502, { message: error.message }, "GenAI.mil chat completion failed.");
+    logServerError("GenAI.mil chat completion", error);
+    sendGenAiMilError(response, 502, null, "GenAI.mil chat completion failed.");
   }
 });
 
 app.get("/api/projects", authRequired, async (request, response) => {
   try {
     const result = await query(
-      "select id, name, description, updated_at from project where owner_user_id = $1 order by updated_at desc",
+      "select id, name, description, revision, updated_at from project where owner_user_id = $1 order by updated_at desc",
       [request.user.sub]
     );
     response.json({ projects: result.rows });
   } catch (error) {
-    response.status(500).json({ error: error.message });
+    sendInternalError(response, "list projects", error);
   }
 });
 
 app.post("/api/projects", authRequired, async (request, response) => {
-  const parsed = projectSchema.safeParse(request.body);
+  const parsed = projectCreateSchema.safeParse(request.body);
   if (!parsed.success) {
     response.status(400).json({ error: parsed.error.flatten() });
     return;
@@ -1848,7 +1822,9 @@ app.post("/api/projects", authRequired, async (request, response) => {
   const { name, description, state } = parsed.data;
   try {
     const result = await query(
-      "insert into project (owner_user_id, name, description, latest_state_json) values ($1, $2, $3, $4::jsonb) returning id, name, description, latest_state_json, updated_at",
+      `insert into project (owner_user_id, name, description, latest_state_json)
+       values ($1, $2, $3, $4::jsonb)
+       returning id, name, description, latest_state_json, revision, updated_at`,
       [request.user.sub, name, description, JSON.stringify(state)]
     );
     await logAnalyticsEventForUser(request.user.sub, {
@@ -1861,7 +1837,7 @@ app.post("/api/projects", authRequired, async (request, response) => {
     }, { username: request.user.email });
     response.status(201).json({ project: result.rows[0] });
   } catch (error) {
-    response.status(500).json({ error: error.message });
+    sendInternalError(response, "create project", error);
   }
 });
 
@@ -1869,19 +1845,28 @@ async function getProjectSchemaCapabilities() {
   return projectSchemaCapabilities;
 }
 
+function buildProjectSelectList(schema) {
+  return [
+    "id",
+    "name",
+    "description",
+    "latest_state_json",
+    schema.hasRevision ? "revision" : "0::bigint as revision",
+    schema.hasStateSchemaVersion
+      ? "state_schema_version"
+      : "0::integer as state_schema_version",
+    schema.hasClientSavedAt
+      ? "client_saved_at"
+      : "null::timestamptz as client_saved_at",
+    "updated_at",
+  ].join(", ");
+}
+
 app.get("/api/projects/:projectId", authRequired, async (request, response) => {
   try {
     const schema = await getProjectSchemaCapabilities();
-    const optionalSelect = [
-      schema.hasStateSchemaVersion
-        ? "state_schema_version"
-        : "0::integer as state_schema_version",
-      schema.hasClientSavedAt
-        ? "client_saved_at"
-        : "null::timestamptz as client_saved_at",
-    ].join(", ");
     const result = await query(
-      `select id, name, description, latest_state_json, ${optionalSelect}, updated_at
+      `select ${buildProjectSelectList(schema)}
        from project
        where id = $1 and owner_user_id = $2`,
       [request.params.projectId, request.user.sub]
@@ -1892,19 +1877,19 @@ app.get("/api/projects/:projectId", authRequired, async (request, response) => {
     }
     response.json({ project: result.rows[0] });
   } catch (error) {
-    response.status(500).json({ error: error.message });
+    sendInternalError(response, "load project", error);
   }
 });
 
 app.put("/api/projects/:projectId", authRequired, async (request, response) => {
-  const parsed = projectSchema.partial().safeParse(request.body);
+  const parsed = projectUpdateSchema.safeParse(request.body);
   if (!parsed.success) {
     response.status(400).json({ error: parsed.error.flatten() });
     return;
   }
 
   const updates = [];
-  const values = [request.params.projectId, request.user.sub];
+  const values = [request.params.projectId, request.user.sub, parsed.data.revision];
   let index = values.length;
   const schema = await getProjectSchemaCapabilities();
 
@@ -1934,15 +1919,40 @@ app.put("/api/projects/:projectId", authRequired, async (request, response) => {
     values.push(parsed.data.clientSavedAt);
   }
 
-  updates.push("updated_at = now()");
+  if (updates.length === 0) {
+    response.status(400).json({ error: "No project changes supplied." });
+    return;
+  }
+
+  if (schema.hasRevision) {
+    updates.push("revision = revision + 1");
+  }
 
   try {
     const result = await query(
-      `update project set ${updates.join(", ")} where id = $1 and owner_user_id = $2 returning id, name, description, latest_state_json, updated_at`,
+      `update project
+       set ${updates.join(", ")}
+       where id = $1
+         and owner_user_id = $2
+         and revision = $3
+       returning ${buildProjectSelectList(schema)}`,
       values
     );
     if (result.rowCount === 0) {
-      response.status(404).json({ error: "Project not found." });
+      const current = await query(
+        `select ${buildProjectSelectList(schema)}
+         from project
+         where id = $1 and owner_user_id = $2`,
+        [request.params.projectId, request.user.sub]
+      );
+      if (current.rowCount === 0) {
+        response.status(404).json({ error: "Project not found." });
+        return;
+      }
+      response.status(409).json({
+        error: "Project has changed on the server. Reload before saving again.",
+        project: current.rows[0],
+      });
       return;
     }
     await logAnalyticsEventForUser(request.user.sub, {
@@ -1951,13 +1961,15 @@ app.put("/api/projects/:projectId", authRequired, async (request, response) => {
         project_id: result.rows[0].id,
         project_name: result.rows[0].name,
         field_count: updates.length,
+        prior_revision: parsed.data.revision,
+        revision: result.rows[0].revision,
         schema_version: schema.hasStateSchemaVersion ? (parsed.data.schemaVersion ?? null) : null,
         client_saved_at: schema.hasClientSavedAt ? (parsed.data.clientSavedAt ?? null) : null,
       },
     }, { username: request.user.email });
     response.json({ project: result.rows[0] });
   } catch (error) {
-    response.status(500).json({ error: error.message });
+    sendInternalError(response, "save project", error);
   }
 });
 
@@ -1988,7 +2000,7 @@ app.delete("/api/projects/:projectId", authRequired, async (request, response) =
     }, { username: request.user.email });
     response.status(204).send();
   } catch (error) {
-    response.status(500).json({ error: error.message });
+    sendInternalError(response, "delete project", error);
   }
 });
 
@@ -2005,7 +2017,9 @@ app.post("/api/projects/:projectId/duplicate", authRequired, async (request, res
 
     const source = sourceResult.rows[0];
     const duplicateResult = await query(
-      "insert into project (owner_user_id, name, description, latest_state_json) values ($1, $2, $3, $4::jsonb) returning id, name, description, latest_state_json, updated_at",
+      `insert into project (owner_user_id, name, description, latest_state_json)
+       values ($1, $2, $3, $4::jsonb)
+       returning id, name, description, latest_state_json, revision, updated_at`,
       [request.user.sub, `${source.name} Copy`, source.description, JSON.stringify(source.latest_state_json)]
     );
     await logAnalyticsEventForUser(request.user.sub, {
@@ -2019,7 +2033,7 @@ app.post("/api/projects/:projectId/duplicate", authRequired, async (request, res
     }, { username: request.user.email });
     response.status(201).json({ project: duplicateResult.rows[0] });
   } catch (error) {
-    response.status(500).json({ error: error.message });
+    sendInternalError(response, "duplicate project", error);
   }
 });
 
@@ -2035,7 +2049,7 @@ app.get("/api/projects/:projectId/snapshots", authRequired, async (request, resp
     );
     response.json({ snapshots: result.rows });
   } catch (error) {
-    response.status(500).json({ error: error.message });
+    sendInternalError(response, "list snapshots", error);
   }
 });
 
@@ -2072,7 +2086,7 @@ app.post("/api/projects/:projectId/snapshots", authRequired, async (request, res
     }, { username: request.user.email });
     response.status(201).json({ snapshot: result.rows[0] });
   } catch (error) {
-    response.status(500).json({ error: error.message });
+    sendInternalError(response, "create snapshot", error);
   }
 });
 
@@ -2088,7 +2102,7 @@ async function adminRequired(request, response, next) {
     request.adminUser = user;
     next();
   } catch (error) {
-    response.status(500).json({ error: error.message });
+    sendInternalError(response, "authorize admin request", error);
   }
 }
 
@@ -2164,7 +2178,7 @@ app.post("/api/analytics/event", authRequired, rateLimit("analytics"), async (re
     );
     response.status(204).send();
   } catch (error) {
-    response.status(500).json({ error: error.message });
+    sendInternalError(response, "record analytics event", error);
   }
 });
 
@@ -2177,21 +2191,31 @@ app.delete("/api/admin/user/:userId", authRequired, adminRequired, async (reques
   if (userId === String(request.user.sub)) {
     return response.status(400).json({ error: "Cannot delete your own account." });
   }
+  const client = await pool.connect();
   try {
-    const existing = await query("SELECT id, full_name, email FROM app_user WHERE id = $1", [userId]);
+    await client.query("begin");
+    const existing = await client.query(
+      "select id, username, full_name, email from app_user where id = $1 for update",
+      [userId]
+    );
     if (!existing.rows.length) {
+      await client.query("rollback");
       return response.status(404).json({ error: "User not found." });
     }
     const user = existing.rows[0];
-    // Cascade: delete related data first to avoid FK violations
-    await query("DELETE FROM user_ai_config WHERE owner_user_id = $1", [userId]);
-    await query("DELETE FROM project WHERE owner_user_id = $1", [userId]);
-    await query("DELETE FROM app_user WHERE id = $1", [userId]);
+    await client.query("delete from app_user where id = $1", [userId]);
+    await client.query("commit");
     console.log(`[admin] Deleted user id=${userId} email=${user.email} by admin id=${request.user.sub}`);
-    return response.json({ ok: true, deleted: { id: userId, email: user.email, full_name: user.full_name } });
+    return response.json({
+      ok: true,
+      deleted: { id: userId, username: user.username, email: user.email, full_name: user.full_name }
+    });
   } catch (error) {
-    console.error("[admin] delete user error:", error.message);
-    return response.status(500).json({ error: error.message });
+    await client.query("rollback").catch(() => {});
+    sendInternalError(response, "delete user", error);
+    return;
+  } finally {
+    client.release();
   }
 });
 
@@ -2494,42 +2518,46 @@ app.get("/api/admin/analytics", authRequired, adminRequired, async (_request, re
       intents: intentUsageRes.rows,
     });
   } catch (error) {
-    response.status(500).json({ error: error.message });
+    sendInternalError(response, "load admin analytics", error);
   }
 });
 
 async function runMigrations() {
-  await query(`
-    create table if not exists schema_migration (
-      filename text primary key,
-      applied_at timestamptz not null default now()
-    )
-  `);
-  const applied = await query("select filename from schema_migration");
-  const appliedFiles = new Set(applied.rows.map((row) => row.filename));
-  const sqlDir = path.join(__dirname, "../sql");
-  const files = fs.readdirSync(sqlDir).filter((f) => f.endsWith(".sql")).sort();
-  for (const file of files) {
-    if (appliedFiles.has(file)) {
-      continue;
+  const client = await pool.connect();
+  try {
+    await client.query("select pg_advisory_lock($1)", [MIGRATION_LOCK_KEY]);
+    await client.query(`
+      create table if not exists schema_migration (
+        filename text primary key,
+        applied_at timestamptz not null default now()
+      )
+    `);
+    const applied = await client.query("select filename from schema_migration");
+    const appliedFiles = new Set(applied.rows.map((row) => row.filename));
+    const sqlDir = path.join(__dirname, "../sql");
+    const files = fs.readdirSync(sqlDir).filter((f) => f.endsWith(".sql")).sort();
+    for (const file of files) {
+      if (appliedFiles.has(file)) {
+        continue;
+      }
+      const sql = fs.readFileSync(path.join(sqlDir, file), "utf8");
+      try {
+        await client.query("begin");
+        await client.query(sql);
+        await client.query(
+          "insert into schema_migration (filename) values ($1) on conflict (filename) do nothing",
+          [file]
+        );
+        await client.query("commit");
+        console.log(`Migration applied: ${file}`);
+      } catch (error) {
+        await client.query("rollback");
+        throw new Error(`Migration failed (${file}): ${error.message}`);
+      }
     }
-    const sql = fs.readFileSync(path.join(sqlDir, file), "utf8");
-    const client = await pool.connect();
-    try {
-      await client.query("begin");
-      await client.query(sql);
-      await client.query(
-        "insert into schema_migration (filename) values ($1) on conflict (filename) do nothing",
-        [file]
-      );
-      await client.query("commit");
-      console.log(`Migration applied: ${file}`);
-    } catch (error) {
-      await client.query("rollback");
-      throw new Error(`Migration failed (${file}): ${error.message}`);
-    } finally {
-      client.release();
-    }
+  } finally {
+    await client.query("select pg_advisory_unlock($1)", [MIGRATION_LOCK_KEY]).catch(() => {});
+    client.release();
   }
 }
 
@@ -2539,16 +2567,54 @@ async function loadProjectSchemaCapabilities() {
      from information_schema.columns
      where table_schema = 'public'
        and table_name = 'project'
-       and column_name in ('state_schema_version', 'client_saved_at')`
+       and column_name in ('state_schema_version', 'client_saved_at', 'revision')`
   );
   const columns = new Set(result.rows.map((row) => row.column_name));
   projectSchemaCapabilities.hasStateSchemaVersion = columns.has("state_schema_version");
   projectSchemaCapabilities.hasClientSavedAt = columns.has("client_saved_at");
+  projectSchemaCapabilities.hasRevision = columns.has("revision");
+}
+
+async function pruneAnalyticsEvents() {
+  if (config.analyticsRetentionDays <= 0) {
+    return;
+  }
+  try {
+    const result = await query(
+      `delete from analytics_event
+       where event_type = any($1::text[])
+         and created_at < now() - make_interval(days => $2)`,
+      [LOW_VALUE_ANALYTICS_EVENT_TYPES, config.analyticsRetentionDays]
+    );
+    if (result.rowCount > 0) {
+      console.log(`Pruned ${result.rowCount} low-value analytics events.`);
+    }
+  } catch (error) {
+    if (error.code !== "42P01") {
+      console.warn(`[Analytics] prune failed: ${error.message}`);
+    }
+  }
+}
+
+function startAnalyticsPruneJob() {
+  if (config.analyticsRetentionDays <= 0 || config.analyticsPruneIntervalMs <= 0) {
+    return;
+  }
+  pruneAnalyticsEvents().catch((error) => {
+    console.warn(`[Analytics] initial prune failed: ${error.message}`);
+  });
+  const timer = setInterval(() => {
+    pruneAnalyticsEvents().catch((error) => {
+      console.warn(`[Analytics] scheduled prune failed: ${error.message}`);
+    });
+  }, config.analyticsPruneIntervalMs);
+  timer.unref?.();
 }
 
 runMigrations().then(() => {
   return loadProjectSchemaCapabilities();
 }).then(() => {
+  startAnalyticsPruneJob();
   app.listen(config.port, () => {
     console.log(`EW Sim backend listening on port ${config.port}`);
   });

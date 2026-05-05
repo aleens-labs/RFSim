@@ -39,6 +39,8 @@ struct TerrainGrid {
     osm_buildings_enabled: bool,
     #[serde(default = "default_building_material")]
     building_material_preset: String,
+    #[serde(default = "default_building_propagation_mode")]
+    building_propagation_mode: String,
     #[serde(default)]
     osm_building_dataset: Option<OsmBuildingDataset>,
 }
@@ -55,6 +57,14 @@ struct OsmBuildingDataset {
     cell_offsets: Vec<u32>,
     #[serde(default)]
     cell_building_indexes: Vec<u32>,
+    #[serde(default)]
+    cell_building_top_heights: Vec<f64>,
+    #[serde(default)]
+    cell_building_base_heights: Vec<f64>,
+    #[serde(default)]
+    cell_building_candidate_counts: Vec<u16>,
+    #[serde(default)]
+    cell_building_occupancy: Vec<u8>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -206,6 +216,9 @@ fn default_wind_speed_mps() -> f64 { 3.0 }
 /// Inputs: none.
 /// Reference: project-local default value, not an external algorithm.
 fn default_building_material() -> String { "reinforced-concrete".to_string() }
+
+/// Returns the default propagation quality mode used by the building model.
+fn default_building_propagation_mode() -> String { "balanced".to_string() }
 
 /// Returns the compute engine version string exposed to JS callers.
 ///
@@ -634,16 +647,74 @@ struct ObstructionSample {
     building_height: f64,
 }
 
+#[derive(Clone, Copy, Debug)]
+struct BuildingCellSummary {
+    max_height_m: f64,
+    min_height_m: f64,
+    candidate_count: usize,
+}
+
+fn building_propagation_mode(terrain: &TerrainGrid) -> &str {
+    match terrain.building_propagation_mode.as_str() {
+        "fast" => "fast",
+        "precise" => "precise",
+        _ => "balanced",
+    }
+}
+
+fn get_building_cell_summary(row: usize, col: usize, terrain: &TerrainGrid, dataset: &OsmBuildingDataset) -> Option<BuildingCellSummary> {
+    let cell_index = row * terrain.cols + col;
+    if dataset.cell_building_occupancy.get(cell_index).copied().unwrap_or(0) != 1 {
+        return None;
+    }
+    let max_height_m = *dataset.cell_building_top_heights.get(cell_index)?;
+    let min_height_m = *dataset.cell_building_base_heights.get(cell_index)?;
+    if !max_height_m.is_finite() || !min_height_m.is_finite() {
+        return None;
+    }
+    Some(BuildingCellSummary {
+        max_height_m,
+        min_height_m: min_height_m.max(0.0),
+        candidate_count: dataset.cell_building_candidate_counts.get(cell_index).copied().unwrap_or(1) as usize,
+    })
+}
+
 /// Samples the OSM building volume at one point, if a footprint contains the sample location.
-fn sample_building_at_point(lat: f64, lon: f64, terrain: &TerrainGrid, ground_height: f64) -> Option<BuildingSample> {
+fn sample_building_at_point(
+    lat: f64,
+    lon: f64,
+    terrain: &TerrainGrid,
+    ground_height: f64,
+    los_reference_height: Option<f64>,
+) -> Option<BuildingSample> {
     if !terrain.osm_buildings_enabled {
         return None;
     }
     let dataset = terrain.osm_building_dataset.as_ref()?;
-    if dataset.footprints.is_empty() {
-        return None;
-    }
     let (row, col) = terrain_grid_cell_index(lat, lon, terrain)?;
+    let cell_summary = get_building_cell_summary(row, col, terrain, dataset)?;
+    let summary_sample = BuildingSample {
+        base_height: ground_height + cell_summary.min_height_m,
+        top_height: ground_height + cell_summary.max_height_m,
+    };
+    match building_propagation_mode(terrain) {
+        "fast" => return Some(summary_sample),
+        "balanced" => {
+            if let Some(los_height) = los_reference_height {
+                if los_height > summary_sample.top_height + 4.0 {
+                    return None;
+                }
+            }
+            if cell_summary.candidate_count > 4 {
+                return Some(summary_sample);
+            }
+        }
+        _ => {}
+    }
+
+    if dataset.footprints.is_empty() {
+        return Some(summary_sample);
+    }
     let candidate_indexes = get_building_candidate_indexes(row, col, terrain, dataset);
 
     let mut best: Option<BuildingSample> = None;
@@ -671,14 +742,18 @@ fn sample_building_at_point(lat: f64, lon: f64, terrain: &TerrainGrid, ground_he
             _ => candidate,
         });
     }
-    best
+    match best {
+        Some(sample) => Some(sample),
+        None if building_propagation_mode(terrain) == "precise" => None,
+        None => Some(summary_sample),
+    }
 }
 
 /// Samples terrain and explicit building obstruction terms separately at one point.
-fn sample_obstruction_components(lat: f64, lon: f64, terrain: &TerrainGrid) -> Option<ObstructionSample> {
+fn sample_obstruction_components(lat: f64, lon: f64, terrain: &TerrainGrid, los_reference_height: Option<f64>) -> Option<ObstructionSample> {
     let terrain_height = sample_terrain(lat, lon, terrain)?;
     let ground_height = sample_terrain_base(lat, lon, terrain).unwrap_or(terrain_height);
-    let building = sample_building_at_point(lat, lon, terrain, ground_height);
+    let building = sample_building_at_point(lat, lon, terrain, ground_height, los_reference_height);
     let building_base_height = building.map(|entry| entry.base_height).unwrap_or(ground_height);
     let building_top_height = building.map(|entry| entry.top_height).unwrap_or(ground_height);
     let building_height = (building_top_height - building_base_height).max(0.0);
@@ -733,13 +808,13 @@ fn trace_terrain_inner(source: &Endpoint, target: &Endpoint, tx_height_m: f64, r
       let t = step as f64 / steps as f64;
       let lat = lerp(source.lat, target.lat, t);
       let lon = lerp(source.lon, target.lon, t);
-      let Some(obstruction_sample) = sample_obstruction_components(lat, lon, terrain) else {
-          continue;
-      };
-      sampled_count += 1;
       let los_height = lerp(source_alt, target_alt, t);
       let earth_curve_drop = earth_curvature_drop_meters(total_distance_km * t);
       let los_reference_height = los_height - earth_curve_drop;
+      let Some(obstruction_sample) = sample_obstruction_components(lat, lon, terrain, Some(los_reference_height)) else {
+          continue;
+      };
+      sampled_count += 1;
       let total_obstruction = obstruction_sample.surface_height - los_reference_height;
       let terrain_obstruction = obstruction_sample.terrain_height - los_reference_height;
       if total_obstruction > max_obstruction_m {
@@ -952,20 +1027,20 @@ fn build_path_profile_inner(
         let t = step as f64 / steps as f64;
         let lat = lerp(source.lat, target.lat, t);
         let lon = lerp(source.lon, target.lon, t);
+        let los_height = lerp(source_alt, target_alt, t);
+        let earth_curve_drop = earth_curvature_drop_meters(distance_km * t);
+        let los_reference_height = los_height - earth_curve_drop;
         let obstruction_sample = terrain
-            .and_then(|terrain| sample_obstruction_components(lat, lon, terrain));
+            .and_then(|terrain| sample_obstruction_components(lat, lon, terrain, Some(los_reference_height)));
         let surface_height = obstruction_sample
             .map(|sample| sample.surface_height)
             .unwrap_or(0.0);
-        let los_height = lerp(source_alt, target_alt, t);
-        let earth_curve_drop = earth_curvature_drop_meters(distance_km * t);
         let clearance_m = (los_height - earth_curve_drop) - surface_height;
         let d1 = total_distance_meters * t;
         let d2 = total_distance_meters - d1;
         let fresnel_radius_m = ((wavelength_m * d1 * d2) / (d1 + d2).max(1.0)).max(0.0).sqrt();
         let fresnel_clearance_m = clearance_m - fresnel_radius_m;
         let required_fresnel_clearance_m = clearance_m - (fresnel_radius_m * fresnel_fraction);
-        let los_reference_height = los_height - earth_curve_drop;
         let obstruction = (surface_height - los_reference_height).max(0.0);
         let terrain_obstruction = obstruction_sample
             .map(|sample| (sample.terrain_height - los_reference_height).max(0.0))
@@ -1193,7 +1268,14 @@ fn estimate_trace_sample_meters(terrain: &TerrainGrid, latitude: f64) -> f64 {
     let lat_meters = terrain.lat_step_deg.abs() * 111_320.0;
     let lon_meters = terrain.lon_step_deg.abs() * 111_320.0 * latitude.to_radians().cos().max(1e-6);
     let cell_meters = lat_meters.min(lon_meters).max(1.0);
-    clamp(cell_meters / 3.0, 8.0, 40.0)
+    if !terrain.osm_buildings_enabled {
+        return clamp(cell_meters / 3.0, 8.0, 40.0);
+    }
+    match building_propagation_mode(terrain) {
+        "fast" => clamp(cell_meters * 1.5, 24.0, 90.0),
+        "precise" => clamp(cell_meters / 3.0, 8.0, 40.0),
+        _ => clamp(cell_meters * 0.9, 14.0, 60.0),
+    }
 }
 
 /// Computes great-circle distance between two latitude/longitude points.

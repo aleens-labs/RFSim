@@ -15,3 +15,4 @@ build/
 .claude
 rust/rf_sim_compute/target/
 rust/rf_sim_compute/pkg/
+certs/

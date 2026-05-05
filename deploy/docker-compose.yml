@@ -28,8 +28,16 @@ services:
       NODE_ENV: production
       APP_ORIGIN: ${APP_ORIGIN}
       JWT_SECRET: ${JWT_SECRET}
+      AI_CONFIG_SECRET: ${AI_CONFIG_SECRET}
       DATABASE_SSL: ${DATABASE_SSL}
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      DATABASE_POOL_MAX: ${DATABASE_POOL_MAX}
+      DATABASE_IDLE_TIMEOUT_MS: ${DATABASE_IDLE_TIMEOUT_MS}
+      DATABASE_CONNECTION_TIMEOUT_MS: ${DATABASE_CONNECTION_TIMEOUT_MS}
+      DATABASE_STATEMENT_TIMEOUT_MS: ${DATABASE_STATEMENT_TIMEOUT_MS}
+      DATABASE_IDLE_TRANSACTION_TIMEOUT_MS: ${DATABASE_IDLE_TRANSACTION_TIMEOUT_MS}
+      ANALYTICS_RETENTION_DAYS: ${ANALYTICS_RETENTION_DAYS}
+      ANALYTICS_PRUNE_INTERVAL_MS: ${ANALYTICS_PRUNE_INTERVAL_MS}
     depends_on:
       postgres:
         condition: service_healthy
@@ -39,6 +47,9 @@ services:
       context: ..
       dockerfile: deploy/Dockerfile.web
     container_name: ew-sim-web
+    environment:
+      EW_SIM_API_BASE_URL: ${EW_SIM_API_BASE_URL:-/api}
+      CESIUM_ION_DEFAULT_TOKEN: ${CESIUM_ION_DEFAULT_TOKEN:-}
     depends_on:
       - api
     ports:

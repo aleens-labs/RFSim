@@ -125,6 +125,12 @@ const BUILDING_MATERIAL_MODELS = {
   },
 };
 
+const BUILDING_PROPAGATION_MODES = {
+  fast: { label: "Fast" },
+  balanced: { label: "Balanced" },
+  precise: { label: "Precise" },
+};
+
 const EXTERNAL_RESOURCE_URLS = {
   leafletDrawScript: "https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js",
   leafletDrawStyle: "https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css",
@@ -1542,7 +1548,7 @@ function setSessionScopedItem(key, value) {
 }
 
 function getTakIdentityStorageKey(user = state.session.user) {
-  const rawIdentity = user?.email || user?.fullName || "session";
+  const rawIdentity = user?.username || user?.email || user?.fullName || "session";
   const normalized = String(rawIdentity)
     .toLowerCase()
     .replace(/[^a-z0-9._-]+/g, "-")
@@ -1826,6 +1832,7 @@ const dom = {
   cesiumPhotorealisticTilesToggle: document.querySelector("#cesiumPhotorealisticTilesToggle"),
   cesiumOsmBuildingsToggle: document.querySelector("#cesiumOsmBuildingsToggle"),
   buildingMaterialPreset: document.querySelector("#buildingMaterialPreset"),
+  buildingPropagationMode: document.querySelector("#buildingPropagationMode"),
   dtedInput: document.querySelector("#dtedInput"),
   dtedFolderInput: document.querySelector("#dtedFolderInput"),
   clearTerrainBtn: document.querySelector("#clearTerrainBtn"),
@@ -2216,6 +2223,7 @@ const state = {
     cesiumPhotorealisticTilesEnabled: false,
     cesiumOsmBuildingsEnabled: false,
     buildingMaterialPreset: "reinforced-concrete",
+    buildingPropagationMode: "balanced",
     labelDefaultPoint: true,
     labelDefaultPolygon: false,
     labelDefaultLine: false,
@@ -2284,6 +2292,7 @@ const state = {
     guest: INITIAL_GUEST_SESSION,
     token: INITIAL_GUEST_SESSION ? null : getSessionToken(),
     activeProjectId: INITIAL_GUEST_SESSION ? null : getSessionScopedItem(ACTIVE_PROJECT_STORAGE_KEY),
+    activeProjectRevision: null,
     user: null,
     projects: [],
     autosaveTimerId: null,
@@ -3186,7 +3195,7 @@ function refreshTakLiveFeed({ immediate = false } = {}) {
 const TAK_GPS_PUBLISH_INTERVAL_MS = 8000;
 
 function buildTakGpsUid(projectId = state.session.activeProjectId) {
-  const rawIdentity = state.session.user?.email || state.session.user?.fullName || "user";
+  const rawIdentity = state.session.user?.username || state.session.user?.email || state.session.user?.fullName || "user";
   const safeIdentity = String(rawIdentity)
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
@@ -5292,6 +5301,19 @@ function sanitizeAiSavedConfig(config) {
   };
 }
 
+function serializeAiSavedConfigForClientStorage(config) {
+  if (!config) {
+    return null;
+  }
+  return {
+    id: config.id,
+    label: config.label,
+    provider: config.provider,
+    model: config.model,
+    localModelUrl: config.localModelUrl || "",
+  };
+}
+
 function sameAiSavedConfig(left, right) {
   if (!left || !right) {
     return false;
@@ -5449,6 +5471,10 @@ async function loadServerAiProviderSettings() {
     if (state.ai.activeConfigId && !mergedConfigs.some((config) => config.id === state.ai.activeConfigId)) {
       state.ai.activeConfigId = "";
     }
+    const activeConfig = mergedConfigs.find((config) => config.id === state.ai.activeConfigId) ?? mergedConfigs[0] ?? null;
+    if (activeConfig) {
+      setActiveAiDraft(activeConfig.provider, activeConfig.apiKey, activeConfig.model, activeConfig.id, activeConfig.label);
+    }
 
     persistAiProviderSettings();
     syncAiUi();
@@ -5491,6 +5517,7 @@ function clearSessionState({ preserveGuest = false } = {}) {
   state.session.user = null;
   state.session.projects = [];
   state.session.activeProjectId = null;
+  state.session.activeProjectRevision = null;
   state.session.autosaveTimerId = null;
   state.session.autosavePending = false;
   state.session.localSaveTimerId = null;
@@ -5540,6 +5567,11 @@ async function loadProjectList() {
   const payload = await apiFetch("/projects");
   state.session.projects = payload.projects ?? [];
   syncWorkspaceUi();
+}
+
+function setActiveProjectRevision(revision = null) {
+  const numericRevision = Number(revision);
+  state.session.activeProjectRevision = Number.isFinite(numericRevision) ? numericRevision : null;
 }
 
 function setAuthScreenStatus(message = "", isError = false) {
@@ -5678,7 +5710,7 @@ function syncWorkspaceUi() {
   dom.workspaceProjectSaveBtn?.removeAttribute("disabled");
   dom.workspaceProjectReloadBtn?.removeAttribute("disabled");
   dom.workspaceProjectSnapshotBtn?.removeAttribute("disabled");
-  const userLabel = state.session.user.fullName || state.session.user.email;
+  const userLabel = state.session.user.fullName || state.session.user.username || state.session.user.email;
   const activeProject = state.session.projects.find((project) => project.id === state.session.activeProjectId) ?? null;
   const activeProjectLabel = activeProject?.name || "Local Browser State";
   const activeTakProfile = getTakProfileForProject(state.session.activeProjectId);
@@ -5737,7 +5769,7 @@ async function onWorkspaceLogin(credentials = null) {
   syncWorkspaceUi();
   closeWorkspaceMenu();
   setAuthScreenStatus("", false);
-  setStatus(`Signed in as ${payload.user.email}.`);
+  setStatus(`Signed in as ${payload.user.fullName || payload.user.username || payload.user.email}.`);
   fireAnalyticsEvent({ event_type: "visit" });
 }
 
@@ -5765,7 +5797,7 @@ async function onWorkspaceRegister(credentials = null) {
   syncWorkspaceUi();
   closeWorkspaceMenu();
   setAuthScreenStatus("", false);
-  setStatus(`Account created for ${payload.user.email}.`);
+  setStatus(`Account created for ${payload.user.fullName || payload.user.username || payload.user.email}.`);
 }
 
 function onWorkspaceSignOut() {
@@ -5798,6 +5830,7 @@ async function onWorkspaceProjectCreate() {
     body: JSON.stringify({ name, description: "", state: serializeCurrentMapState() }),
   });
   state.session.activeProjectId = payload.project.id;
+  setActiveProjectRevision(payload.project.revision);
   persistSessionStorage();
   await loadProjectList();
   setStatus(`Created project ${payload.project.name}. Reloading into server-backed project.`);
@@ -5806,6 +5839,7 @@ async function onWorkspaceProjectCreate() {
 
 async function onWorkspaceProjectSelectChanged() {
   state.session.activeProjectId = dom.workspaceProjectSelect.value || null;
+  setActiveProjectRevision(null);
   persistSessionStorage();
   setStatus(state.session.activeProjectId ? "Project selected. Reloading project state..." : "Returned to local browser state.");
   window.location.reload();
@@ -5884,10 +5918,19 @@ function xhrPutProject(projectId, body, token) {
     xhr.upload.addEventListener("load", () => setAutosaveRingProgress(1));
 
     xhr.addEventListener("load", () => {
+      let payload = {};
+      try {
+        payload = xhr.responseText ? JSON.parse(xhr.responseText) : {};
+      } catch {
+        payload = {};
+      }
       if (xhr.status >= 200 && xhr.status < 300) {
-        resolve();
+        resolve(payload);
       } else {
-        reject(new Error(`HTTP ${xhr.status}: ${xhr.responseText}`));
+        const error = new Error(payload.error ?? `HTTP ${xhr.status}`);
+        error.status = xhr.status;
+        error.payload = payload;
+        reject(error);
       }
     });
     xhr.addEventListener("error", () => reject(new Error("Network error")));
@@ -5915,12 +5958,18 @@ async function saveActiveProjectNow({ silent = false } = {}) {
     const serverState = serializeMapStateForServer();
     const body = JSON.stringify({
       state: serverState,
+      revision: state.session.activeProjectRevision ?? 0,
       schemaVersion: STATE_SCHEMA_VERSION,
       clientSavedAt: serverState.savedAt ?? nowIso(),
     });
-    await xhrPutProject(state.session.activeProjectId, body, state.session.token);
+    const payload = await xhrPutProject(state.session.activeProjectId, body, state.session.token);
+    setActiveProjectRevision(payload?.project?.revision ?? state.session.activeProjectRevision);
   } catch (err) {
     setAutosaveIndicator("error");
+    if (err?.status === 409) {
+      setActiveProjectRevision(err.payload?.project?.revision ?? state.session.activeProjectRevision);
+      setStatus("Server project changed elsewhere. Reload the project before saving again.", true);
+    }
     throw err;
   }
 
@@ -5957,7 +6006,10 @@ function flushPendingAutosave() {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${state.session.token}`,
       },
-      body: JSON.stringify({ state: serializeMapStateForServer() }),
+      body: JSON.stringify({
+        state: serializeMapStateForServer(),
+        revision: state.session.activeProjectRevision ?? 0,
+      }),
     });
   } catch { /* best-effort */ }
 
@@ -6032,6 +6084,7 @@ async function onWorkspaceProjectDelete() {
   state.takSettings.projectAssignments.delete(projectId);
   if (state.session.activeProjectId === projectId) {
     state.session.activeProjectId = null;
+    setActiveProjectRevision(null);
   }
   persistSessionStorage();
   syncWorkspaceUi();
@@ -7291,6 +7344,7 @@ function wireEvents() {
   dom.cesiumPhotorealisticTilesToggle.addEventListener("change", onCesium3dVisualSettingsChanged);
   dom.cesiumOsmBuildingsToggle.addEventListener("change", onCesiumOsmBuildingsSettingsChanged);
   dom.buildingMaterialPreset.addEventListener("change", onCesiumOsmBuildingsSettingsChanged);
+  dom.buildingPropagationMode?.addEventListener("change", onCesiumOsmBuildingsSettingsChanged);
   dom.aiProviderSelect.addEventListener("change", onAiProviderChanged);
   dom.aiSavedConfigSelect.addEventListener("change", onAiSavedConfigChanged);
   dom.aiSavedConfigLabelInput.addEventListener("change", onAiSavedConfigLabelChanged);
@@ -7527,6 +7581,9 @@ function loadSettings() {
     state.settings.buildingMaterialPreset = BUILDING_MATERIAL_MODELS[parsed.buildingMaterialPreset]
       ? parsed.buildingMaterialPreset
       : state.settings.buildingMaterialPreset;
+    state.settings.buildingPropagationMode = BUILDING_PROPAGATION_MODES[parsed.buildingPropagationMode]
+      ? parsed.buildingPropagationMode
+      : state.settings.buildingPropagationMode;
     if (typeof parsed.labelDefaultPoint === "boolean") state.settings.labelDefaultPoint = parsed.labelDefaultPoint;
     if (typeof parsed.labelDefaultPolygon === "boolean") state.settings.labelDefaultPolygon = parsed.labelDefaultPolygon;
     if (typeof parsed.labelDefaultLine === "boolean") state.settings.labelDefaultLine = parsed.labelDefaultLine;
@@ -7934,6 +7991,7 @@ async function loadMapState() {
     try {
       const payload = await apiFetch(`/projects/${state.session.activeProjectId}`);
       const serverState = payload.project?.latest_state_json ?? null;
+      setActiveProjectRevision(payload.project?.revision ?? null);
 
       if (serverState) {
         // KMZ geometry lives in IndexedDB (no size limit). idbLoadKmzItems also
@@ -7956,11 +8014,13 @@ async function loadMapState() {
         return;
       }
     } catch (error) {
+      setActiveProjectRevision(null);
       setStatus(`Server project load failed, falling back to browser state: ${error.message}`, true);
     }
   }
 
   if (localState) {
+    setActiveProjectRevision(null);
     // Guest path: load KMZ items from IndexedDB (with localStorage legacy fallback).
     // Always use null as the project key here — localStorage may contain a stale
     // activeProjectId from a previous server-project session, but local browser
@@ -8193,6 +8253,7 @@ function applySettings() {
   dom.cesiumPhotorealisticTilesToggle.value = state.settings.cesiumPhotorealisticTilesEnabled ? "on" : "off";
   dom.cesiumOsmBuildingsToggle.value = state.settings.cesiumOsmBuildingsEnabled ? "on" : "off";
   dom.buildingMaterialPreset.value = state.settings.buildingMaterialPreset;
+  if (dom.buildingPropagationMode) dom.buildingPropagationMode.value = state.settings.buildingPropagationMode;
   updateCenterCrosshairVisibility();
   document.body.classList.toggle("theme-light", state.settings.theme === "light");
   if (dom.coordsLabel) dom.coordsLabel.textContent = coordinateSystemStatusLabel(state.settings.coordinateSystem);
@@ -8563,6 +8624,16 @@ function getBuildingMaterialModel() {
   return BUILDING_MATERIAL_MODELS[state.settings.buildingMaterialPreset] ?? BUILDING_MATERIAL_MODELS["reinforced-concrete"];
 }
 
+function getBuildingPropagationMode() {
+  return BUILDING_PROPAGATION_MODES[state.settings.buildingPropagationMode]
+    ? state.settings.buildingPropagationMode
+    : "balanced";
+}
+
+function getBuildingPropagationModeLabel(mode = getBuildingPropagationMode()) {
+  return BUILDING_PROPAGATION_MODES[mode]?.label ?? BUILDING_PROPAGATION_MODES.balanced.label;
+}
+
 function buildCesiumTerrainProviderKey() {
   const mode = getEffectiveCesiumTerrainMode();
   if (mode === "cesium-world") {
@@ -8896,6 +8967,9 @@ function onCesiumOsmBuildingsSettingsChanged() {
   state.settings.buildingMaterialPreset = BUILDING_MATERIAL_MODELS[dom.buildingMaterialPreset.value]
     ? dom.buildingMaterialPreset.value
     : "reinforced-concrete";
+  state.settings.buildingPropagationMode = BUILDING_PROPAGATION_MODES[dom.buildingPropagationMode?.value]
+    ? dom.buildingPropagationMode.value
+    : "balanced";
   clearIonTerrainCaches();
   persistSettings();
   syncCesiumScene();
@@ -8903,10 +8977,11 @@ function onCesiumOsmBuildingsSettingsChanged() {
   syncCesiumEntities();
   updateMapOverlayMetrics();
   updateTerrainSummary();
-  if (state.settings.cesiumOsmBuildingsEnabled && !dom.cesiumIonToken.value.trim()) {
-    setStatus("Add a Cesium Ion token to load OSM buildings.", true);
-  } else if (state.settings.cesiumOsmBuildingsEnabled) {
-    setStatus("OSM buildings enabled for RF obstruction modeling.");
+  if (state.settings.cesiumOsmBuildingsEnabled) {
+    const visualNote = dom.cesiumIonToken.value.trim()
+      ? ""
+      : " Add a Cesium Ion token only if you also want 3D building visualization.";
+    setStatus(`OSM buildings enabled for RF obstruction modeling (${BUILDING_PROPAGATION_MODES[state.settings.buildingPropagationMode].label}).${visualNote}`);
   }
 }
 
@@ -9246,34 +9321,13 @@ function loadAiProviderSettings() {
   }
   try {
     const parsed = JSON.parse(stored);
-    const savedConfigs = Array.isArray(parsed.configs)
-      ? parsed.configs.map(sanitizeAiSavedConfig).filter(Boolean)
-      : [];
-    if (!savedConfigs.length && typeof parsed.provider === "string" && typeof parsed.apiKey === "string") {
-      const migratedConfig = sanitizeAiSavedConfig({
-        id: generateAiConfigId(),
-        provider: parsed.provider,
-        apiKey: parsed.apiKey,
-        model: typeof parsed.model === "string" ? parsed.model : "",
-      });
-      if (migratedConfig) {
-        savedConfigs.push(migratedConfig);
-      }
-    }
-    state.ai.savedConfigs = savedConfigs;
+    state.ai.savedConfigs = [];
     const activeConfigId = typeof parsed.activeConfigId === "string" ? parsed.activeConfigId : "";
-    const activeConfig = savedConfigs.find((config) => config.id === activeConfigId) ?? savedConfigs[0] ?? null;
-    if (activeConfig) {
-      setActiveAiDraft(activeConfig.provider, activeConfig.apiKey, activeConfig.model, activeConfig.id, activeConfig.label);
-    } else {
-      setActiveAiDraft(
-        typeof parsed.provider === "string" ? parsed.provider : "",
-        typeof parsed.apiKey === "string" ? parsed.apiKey.trim() : "",
-        typeof parsed.model === "string" ? parsed.model : "",
-        "",
-        typeof parsed.configLabel === "string" ? parsed.configLabel.trim() : "",
-      );
-    }
+    const storedProvider = typeof parsed.provider === "string" ? parsed.provider : "";
+    const storedModel = typeof parsed.model === "string" ? parsed.model : "";
+    const storedConfigLabel = typeof parsed.configLabel === "string" ? parsed.configLabel.trim() : "";
+    const isLocalProvider = getAiProviderMeta(storedProvider)?.isLocalModel;
+    setActiveAiDraft(storedProvider, "", storedModel, activeConfigId, storedConfigLabel);
     if (typeof parsed.localModelUrl === "string") {
       state.ai.localModelUrl = parsed.localModelUrl.trim();
     }
@@ -9301,13 +9355,12 @@ function loadAiProviderSettings() {
       state.ai.agentProfilePinned = false;
       state.ai.agentProfileReason = "Disabled specialist mode reset to general.";
     }
-    const isLocalProvider = getAiProviderMeta(state.ai.provider)?.isLocalModel;
-    if (state.ai.provider && (state.ai.apiKey || isLocalProvider)) {
+    if (state.ai.provider && isLocalProvider) {
       state.ai.status = "pending";
-      state.ai.statusMessage = "Stored provider found. Revalidating access...";
+      state.ai.statusMessage = "Stored local-model provider found. Revalidating access...";
     }
     // Restore panel open state and width
-    if (parsed.panelOpen && state.ai.provider && state.ai.apiKey) {
+    if (parsed.panelOpen && (state.ai.provider || state.ai.activeConfigId)) {
       state.ai.panelOpen = true;
       document.body.classList.add("ai-panel-open");
       const width = typeof parsed.aiPanelWidth === "number" && parsed.aiPanelWidth > 0
@@ -9329,11 +9382,10 @@ function persistAiProviderSettings() {
     return;
   }
   setSessionScopedItem(AI_PROVIDER_STORAGE_KEY, JSON.stringify({
-    configs: state.ai.savedConfigs,
+    configs: state.ai.savedConfigs.map(serializeAiSavedConfigForClientStorage).filter(Boolean),
     activeConfigId: state.ai.activeConfigId,
     configLabel: state.ai.configLabel,
     provider: state.ai.provider,
-    apiKey: state.ai.apiKey,
     model: state.ai.model,
     localModelUrl: state.ai.localModelUrl,
     enabledAgentProfileIds: normalizeEnabledAiAgentProfileIds(state.ai.enabledAgentProfileIds),
@@ -12849,8 +12901,8 @@ function addAiPendingImage(blob, mediaType) {
   reader.onload = (e) => {
     const dataUrl = e.target.result;
     const validType = ["image/jpeg", "image/png", "image/gif", "image/webp"].includes(mediaType) ? mediaType : "image/png";
-    state.ai.pendingImages.push({ dataUrl, mediaType: validType });
-    const idx = state.ai.pendingImages.length - 1;
+    const attachmentId = generateAiAttachmentId("image");
+    state.ai.pendingImages.push({ id: attachmentId, dataUrl, mediaType: validType });
 
     const thumb = document.createElement("div");
     thumb.className = "ai-image-thumb";
@@ -12862,7 +12914,7 @@ function addAiPendingImage(blob, mediaType) {
     removeBtn.textContent = "x";
     removeBtn.type = "button";
     removeBtn.addEventListener("click", () => {
-      state.ai.pendingImages.splice(idx, 1);
+      state.ai.pendingImages = state.ai.pendingImages.filter((image) => image.id !== attachmentId);
       thumb.remove();
       syncAttachmentBar();
     });
@@ -12875,8 +12927,8 @@ function addAiPendingImage(blob, mediaType) {
 
 function addAiPendingImageDataUrl(dataUrl, mediaType, name = "Attached image") {
   const validType = ["image/jpeg", "image/png", "image/gif", "image/webp"].includes(mediaType) ? mediaType : "image/png";
-  state.ai.pendingImages.push({ dataUrl, mediaType: validType, name });
-  const idx = state.ai.pendingImages.length - 1;
+  const attachmentId = generateAiAttachmentId("image");
+  state.ai.pendingImages.push({ id: attachmentId, dataUrl, mediaType: validType, name });
 
   const thumb = document.createElement("div");
   thumb.className = "ai-image-thumb";
@@ -12890,7 +12942,7 @@ function addAiPendingImageDataUrl(dataUrl, mediaType, name = "Attached image") {
     removeBtn.textContent = "x";
   removeBtn.type = "button";
   removeBtn.addEventListener("click", () => {
-    state.ai.pendingImages.splice(idx, 1);
+    state.ai.pendingImages = state.ai.pendingImages.filter((image) => image.id !== attachmentId);
     thumb.remove();
     syncAttachmentBar();
   });
@@ -19466,7 +19518,7 @@ function updateTerrainSummary() {
     const propagationModel = dom.propagationModel.value;
     const hasCesiumTerrain = usesConfiguredCesiumTerrain();
     const propagationSummary = usesOsmBuildingsInPropagation(propagationModel)
-      ? `Terrain-aware propagation uses terrain sampling plus OSM building footprints using the ${getBuildingMaterialModel().label} material preset.`
+      ? `Terrain-aware propagation uses terrain sampling plus OSM building footprints using the ${getBuildingMaterialModel().label} material preset in ${getBuildingPropagationModeLabel()} mode.`
       : simulationUsesTerrainModel(propagationModel)
         ? (hasCesiumTerrain
           ? (simulationUsesAtmosphericModel(propagationModel)
@@ -19490,7 +19542,7 @@ function updateTerrainSummary() {
   dom.terrainSummary.textContent =
     `Primary local terrain: ${terrain.name}. ${terrain.rows} x ${terrain.cols} posts with ` +
     `${terrain.latStepDeg.toFixed(6)} x ${terrain.lonStepDeg.toFixed(6)} degree spacing.${hybridSummary}` +
-    (terrain.osmBuildingsEnabled ? ` OSM building obstructions enabled with ${getBuildingMaterialModel().label} loss model.` : "") +
+    (terrain.osmBuildingsEnabled ? ` OSM building obstructions enabled with ${getBuildingMaterialModel().label} loss model in ${getBuildingPropagationModeLabel(terrain.buildingPropagationMode || state.settings.buildingPropagationMode)} mode.` : "") +
     (usesCesiumPhotorealisticTiles() ? " 3D view uses Google Photorealistic 3D Tiles for visual rendering." : "");
   updateTerrainMenuValue();
 }
@@ -19763,12 +19815,17 @@ async function parseGeoTiffTerrain(buffer, fileName) {
 }
 
 function cacheTerrainInWorker(terrain) {
+  const buildingPropagationMode = terrain.buildingPropagationMode ?? getBuildingPropagationMode();
   const elevations = terrain.elevations.slice(0);
   const baseElevations = terrain.baseElevations?.slice?.(0) ?? null;
   const nodataMask = terrain.nodataMask?.slice?.(0) ?? null;
   const sourceMask = terrain.sourceMask?.slice?.(0) ?? null;
   const osmBuildingCellOffsets = terrain.osmBuildingDataset?.cellOffsets?.slice?.(0) ?? null;
   const osmBuildingCellIndexes = terrain.osmBuildingDataset?.cellBuildingIndexes?.slice?.(0) ?? null;
+  const osmBuildingTopHeights = terrain.osmBuildingDataset?.cellBuildingTopHeights?.slice?.(0) ?? null;
+  const osmBuildingBaseHeights = terrain.osmBuildingDataset?.cellBuildingBaseHeights?.slice?.(0) ?? null;
+  const osmBuildingCandidateCounts = terrain.osmBuildingDataset?.cellBuildingCandidateCounts?.slice?.(0) ?? null;
+  const osmBuildingOccupancy = terrain.osmBuildingDataset?.cellBuildingOccupancy?.slice?.(0) ?? null;
   return new Promise((resolve) => {
     state.terrainCacheResolvers.set(terrain.id, resolve);
     const transferables = [elevations.buffer];
@@ -19777,6 +19834,10 @@ function cacheTerrainInWorker(terrain) {
     if (sourceMask) transferables.push(sourceMask.buffer);
     if (osmBuildingCellOffsets) transferables.push(osmBuildingCellOffsets.buffer);
     if (osmBuildingCellIndexes) transferables.push(osmBuildingCellIndexes.buffer);
+    if (osmBuildingTopHeights) transferables.push(osmBuildingTopHeights.buffer);
+    if (osmBuildingBaseHeights) transferables.push(osmBuildingBaseHeights.buffer);
+    if (osmBuildingCandidateCounts) transferables.push(osmBuildingCandidateCounts.buffer);
+    if (osmBuildingOccupancy) transferables.push(osmBuildingOccupancy.buffer);
     state.worker.postMessage(
       {
         type: "terrain:cache",
@@ -19799,13 +19860,18 @@ function cacheTerrainInWorker(terrain) {
           terrainCompleteness: terrain.terrainCompleteness ?? "full",
           osmBuildingsEnabled: Boolean(terrain.osmBuildingsEnabled),
           buildingMaterialPreset: terrain.buildingMaterialPreset ?? state.settings.buildingMaterialPreset,
+          buildingPropagationMode: terrain.buildingPropagationMode ?? getBuildingPropagationMode(),
           osmBuildingDataset: terrain.osmBuildingDataset
             ? {
               source: terrain.osmBuildingDataset.source ?? "overpass",
               footprintCount: terrain.osmBuildingDataset.footprintCount ?? terrain.osmBuildingDataset.footprints?.length ?? 0,
-              footprints: terrain.osmBuildingDataset.footprints ?? [],
+              footprints: buildingPropagationMode === "fast" ? [] : (terrain.osmBuildingDataset.footprints ?? []),
               cellOffsets: osmBuildingCellOffsets,
               cellBuildingIndexes: osmBuildingCellIndexes,
+              cellBuildingTopHeights: osmBuildingTopHeights,
+              cellBuildingBaseHeights: osmBuildingBaseHeights,
+              cellBuildingCandidateCounts: osmBuildingCandidateCounts,
+              cellBuildingOccupancy: osmBuildingOccupancy,
             }
             : null,
         },
@@ -21281,7 +21347,7 @@ async function resolveTerrainIdForSimulation(asset) {
   return await ensureIonTerrainGrid(
     bounds,
     Number(dom.gridMeters.value),
-    `sim:${asset.id}:${radiusMeters}:${dom.gridMeters.value}:${propagationModel}:${usesOsmBuildingsInPropagation(propagationModel) ? "buildings" : "terrain"}:${state.settings.buildingMaterialPreset}:${buildLoadedTerrainCacheKey()}:${buildCesiumTerrainProviderKey()}`,
+    `sim:${asset.id}:${radiusMeters}:${dom.gridMeters.value}:${propagationModel}:${usesOsmBuildingsInPropagation(propagationModel) ? "buildings" : "terrain"}:${state.settings.buildingMaterialPreset}:${getBuildingPropagationMode()}:${buildLoadedTerrainCacheKey()}:${buildCesiumTerrainProviderKey()}`,
   );
 }
 
@@ -21292,7 +21358,7 @@ async function resolveTerrainIdForPlanning(polygon, gridMeters) {
 
   const bounds = boundsFromPolygon(polygon);
   const propagationModel = dom.propagationModel.value;
-  const key = `plan:${polygon.map((point) => `${point.lat.toFixed(4)},${point.lon.toFixed(4)}`).join("|")}:${gridMeters}:${propagationModel}:${usesOsmBuildingsInPropagation(propagationModel) ? "buildings" : "terrain"}:${state.settings.buildingMaterialPreset}:${buildLoadedTerrainCacheKey()}:${buildCesiumTerrainProviderKey()}`;
+  const key = `plan:${polygon.map((point) => `${point.lat.toFixed(4)},${point.lon.toFixed(4)}`).join("|")}:${gridMeters}:${propagationModel}:${usesOsmBuildingsInPropagation(propagationModel) ? "buildings" : "terrain"}:${state.settings.buildingMaterialPreset}:${getBuildingPropagationMode()}:${buildLoadedTerrainCacheKey()}:${buildCesiumTerrainProviderKey()}`;
   return await ensureIonTerrainGrid(bounds, gridMeters, key);
 }
 
@@ -21437,7 +21503,7 @@ async function sampleCesiumTerrainGrid(bounds, gridMeters, cacheKey) {
         cols,
         latStepDeg,
         lonStepDeg,
-      });
+      }, getBuildingPropagationMode());
       if (osmBuildingDataset?.footprintCount) {
         sampledSurfaceType = "terrain+osm-footprints";
       }
@@ -21497,6 +21563,7 @@ async function sampleCesiumTerrainGrid(bounds, gridMeters, cacheKey) {
     terrainCoverageMode,
     terrainCompleteness,
     buildingMaterialPreset: state.settings.buildingMaterialPreset,
+    buildingPropagationMode: getBuildingPropagationMode(),
     osmBuildingsEnabled: hasOsmBuildingDataset,
     osmBuildingDataset,
   };
@@ -25926,6 +25993,15 @@ function _syncCesiumEntitiesImmediate() {
   };
 
   const projectedLabelPlacements = [];
+  // Render labels at 2x font size, display at scale 0.5 — produces a high-res
+  // canvas texture that stays sharp in 3D perspective without changing visual size.
+  const LABEL_RENDER_SCALE = 0.5;
+  const upscaleFont = (font) => {
+    const m = font.match(/^((?:(?:bold|italic|[0-9]+00)\s+)*)(\d+(?:\.\d+)?)(px[\s\S]*)$/);
+    if (!m) return font;
+    return `${m[1]}${Math.round(parseFloat(m[2]) / LABEL_RENDER_SCALE)}${m[3]}`;
+  };
+
   const buildCesiumLabelOptions = ({
     lat,
     lon,
@@ -25933,10 +26009,10 @@ function _syncCesiumEntitiesImmediate() {
     font = "14px Bahnschrift",
     fillColor = C.Color.WHITE,
     outlineColor = C.Color.BLACK,
-    outlineWidth = 2,
+    outlineWidth = 4,
     style = C.LabelStyle.FILL_AND_OUTLINE,
-    backgroundColor = C.Color.fromCssColorString("#0b1220").withAlpha(0.78),
-    backgroundPadding = new C.Cartesian2(6, 4),
+    backgroundColor = C.Color.fromCssColorString("#0b1220").withAlpha(0.88),
+    backgroundPadding = new C.Cartesian2(8, 5),
     heightReference = C.HeightReference.CLAMP_TO_GROUND,
     anchorMode = "above",
     markerPixelSize = 10,
@@ -25988,7 +26064,8 @@ function _syncCesiumEntitiesImmediate() {
 
     return {
       text,
-      font,
+      font: upscaleFont(font),
+      scale: LABEL_RENDER_SCALE,
       fillColor,
       pixelOffset: new C.Cartesian2(offsetX, offsetY),
       eyeOffset: new C.Cartesian3(0, Math.min(40, 8 + lane * 5), 0),
@@ -26000,7 +26077,7 @@ function _syncCesiumEntitiesImmediate() {
       showBackground: true,
       backgroundColor,
       backgroundPadding,
-      scaleByDistance: new C.NearFarScalar(800, 1, 30000, 0.68),
+      scaleByDistance: new C.NearFarScalar(800, LABEL_RENDER_SCALE, 30000, LABEL_RENDER_SCALE * 0.68),
       translucencyByDistance: new C.NearFarScalar(1200, 1, 85000, 0.16),
       pixelOffsetScaleByDistance: new C.NearFarScalar(1000, 1, 40000, 0.72),
       distanceDisplayCondition: new C.DistanceDisplayCondition(0, 120000),
@@ -26315,47 +26392,40 @@ function _syncCesiumEntitiesImmediate() {
 
   // --- VIEWSHEDS ---
   state.viewsheds.filter((v) => isVisible(`viewshed:${v.id}`)).forEach((viewshed) => {
-    const { latitudes, longitudes, rssi, lineOfSight, layer } = viewshed;
-    if (!layer || !latitudes) return;
+    const sampleBounds = viewshed.sampleBounds;
     const opacity = viewshed.opacity ?? 0.7;
-    const gridLatStep = viewshed.layer?.options?.gridLatStepDeg ?? (latitudes[1] - latitudes[0]);
-    const gridLonStep = viewshed.layer?.options?.gridLonStepDeg ?? (longitudes[1] - longitudes[0]);
-    const halfLat = (gridLatStep || 0.001) / 2;
-    const halfLon = (gridLonStep || 0.001) / 2;
-
-    const instances = [];
-    for (let i = 0; i < latitudes.length; i++) {
-      const cssColor = rssiColor(rssi[i], Boolean(lineOfSight[i]), opacity, getSimLosRenderMode(), getSimBelowThresholdMode());
-      if (!cssColor) continue;
-      const color = C.Color.fromCssColorString(cssColor);
-      instances.push(new C.GeometryInstance({
-        id: `viewshed:${viewshed.id}:${i}`,
-        geometry: new C.RectangleGeometry({
-          rectangle: C.Rectangle.fromDegrees(
-            longitudes[i] - halfLon, latitudes[i] - halfLat,
-            longitudes[i] + halfLon, latitudes[i] + halfLat,
-          ),
-          vertexFormat: C.PerInstanceColorAppearance.VERTEX_FORMAT,
-        }),
-        attributes: {
-          color: C.ColorGeometryInstanceAttribute.fromColor(color),
-        },
-      }));
+    if (!sampleBounds?.sw || !sampleBounds?.ne) {
+      return;
     }
 
-    if (instances.length > 0) {
-      const primitive = new C.GroundPrimitive({
-        geometryInstances: instances,
-        appearance: new C.PerInstanceColorAppearance({
-          flat: true,
-          translucent: true,
+    const rasterCanvas = typeof viewshed.layer?.getRasterCanvas === "function"
+      ? viewshed.layer.getRasterCanvas()
+      : buildViewshedRasterCanvas(viewshed.rows, viewshed.cols, Array.from({ length: viewshed.rssi?.length ?? 0 }, (_, index) =>
+        rssiColorChannels(viewshed.rssi[index], Boolean(viewshed.lineOfSight?.[index]), 1, getSimLosRenderMode(), getSimBelowThresholdMode())
+      ));
+    if (!rasterCanvas) {
+      return;
+    }
+
+    safeAddEntity({
+      id: `managed:viewshed:${viewshed.id}`,
+      rectangle: {
+        coordinates: C.Rectangle.fromDegrees(
+          sampleBounds.sw.lon,
+          sampleBounds.sw.lat,
+          sampleBounds.ne.lon,
+          sampleBounds.ne.lat,
+        ),
+        material: new C.ImageMaterialProperty({
+          image: rasterCanvas,
+          transparent: true,
+          color: C.Color.WHITE.withAlpha(opacity),
         }),
         classificationType: overlayClassificationType,
-        asynchronous: false,
-      });
-      viewer.scene.primitives.add(primitive);
-      viewer._managedPrimitives.push(primitive);
-    }
+        zIndex: 9,
+        height: 0,
+      },
+    });
   });
 
   // --- IMPORTED FEATURES ---
@@ -26974,6 +27044,93 @@ function rssiColorChannels(rssi, lineOfSight, opacity = 0.7, losRenderMode = "tr
 function rssiColor(rssi, lineOfSight, opacity = 0.7, losRenderMode = "transparent", belowThresholdMode = "gradient") {
   const color = rssiColorChannels(rssi, lineOfSight, opacity, losRenderMode, belowThresholdMode);
   return color ? `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${color[3].toFixed(3)})` : null;
+}
+
+function createRenderCanvas(width, height) {
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(width));
+  canvas.height = Math.max(1, Math.round(height));
+  return canvas;
+}
+
+function buildViewshedRasterCanvas(rows, cols, colors) {
+  if (!rows || !cols || !colors?.length) {
+    return null;
+  }
+
+  const width = Math.max(1, cols);
+  const height = Math.max(1, rows);
+  const source = createRenderCanvas(width, height);
+  const sourceCtx = source.getContext("2d", { willReadFrequently: true });
+  const sourceImage = sourceCtx.createImageData(width, height);
+  const sourcePixels = sourceImage.data;
+
+  for (let index = 0; index < width * height; index += 1) {
+    const color = colors[index];
+    if (!color) {
+      continue;
+    }
+    const offset = index * 4;
+    sourcePixels[offset] = color[0];
+    sourcePixels[offset + 1] = color[1];
+    sourcePixels[offset + 2] = color[2];
+    sourcePixels[offset + 3] = Math.round(clamp(color[3], 0, 1) * 255);
+  }
+  sourceCtx.putImageData(sourceImage, 0, 0);
+
+  const smoothed = createRenderCanvas(width, height);
+  const smoothCtx = smoothed.getContext("2d");
+  const smoothImage = smoothCtx.createImageData(width, height);
+  const smoothPixels = smoothImage.data;
+
+  for (let row = 0; row < height; row += 1) {
+    for (let col = 0; col < width; col += 1) {
+      let accumR = 0;
+      let accumG = 0;
+      let accumB = 0;
+      let accumA = 0;
+      let accumW = 0;
+
+      for (let dy = -1; dy <= 1; dy += 1) {
+        const sampleRow = clamp(row + dy, 0, height - 1);
+        for (let dx = -1; dx <= 1; dx += 1) {
+          const sampleCol = clamp(col + dx, 0, width - 1);
+          const kernelWeight = dx === 0 && dy === 0 ? 4 : (dx === 0 || dy === 0 ? 2 : 1);
+          const sampleOffset = ((sampleRow * width) + sampleCol) * 4;
+          const alpha = sourcePixels[sampleOffset + 3] / 255;
+          if (alpha <= 0) {
+            continue;
+          }
+          const weight = kernelWeight * alpha;
+          accumR += sourcePixels[sampleOffset] * weight;
+          accumG += sourcePixels[sampleOffset + 1] * weight;
+          accumB += sourcePixels[sampleOffset + 2] * weight;
+          accumA += alpha * kernelWeight;
+          accumW += weight;
+        }
+      }
+
+      if (accumW <= 0) {
+        continue;
+      }
+
+      const offset = ((row * width) + col) * 4;
+      smoothPixels[offset] = Math.round(accumR / accumW);
+      smoothPixels[offset + 1] = Math.round(accumG / accumW);
+      smoothPixels[offset + 2] = Math.round(accumB / accumW);
+      smoothPixels[offset + 3] = Math.round(clamp(accumA / 16, 0, 1) * 255);
+    }
+  }
+
+  smoothCtx.putImageData(smoothImage, 0, 0);
+
+  const upscaleFactor = 2;
+  const output = createRenderCanvas(width * upscaleFactor, height * upscaleFactor);
+  const outputCtx = output.getContext("2d");
+  outputCtx.imageSmoothingEnabled = true;
+  outputCtx.imageSmoothingQuality = "high";
+  outputCtx.drawImage(smoothed, 0, 0, output.width, output.height);
+  return output;
 }
 
 function getSimLosRenderMode() {
@@ -27868,6 +28025,10 @@ const CanvasViewshedLayer = L.Layer.extend({
     this._canvas = null;
     this._frame = null;
     this._colorCache = null;
+    this._rasterCanvas = null;
+    this._rasterColorCache = null;
+    this._rasterRows = 0;
+    this._rasterCols = 0;
   },
 
   onAdd(map) {
@@ -27901,6 +28062,11 @@ const CanvasViewshedLayer = L.Layer.extend({
     }
   },
 
+  getRasterCanvas() {
+    this._ensureRasterCache();
+    return this._rasterCanvas;
+  },
+
   _ensureColorCache() {
     const losMode = getSimLosRenderMode();
     const threshMode = getSimBelowThresholdMode();
@@ -27920,6 +28086,29 @@ const CanvasViewshedLayer = L.Layer.extend({
     }
   },
 
+  _ensureRasterCache() {
+    this._ensureColorCache();
+    const rows = Number(this.options.rows) || 0;
+    const cols = Number(this.options.cols) || 0;
+    if (!rows || !cols || !this._colorCache?.length) {
+      this._rasterCanvas = null;
+      this._rasterColorCache = null;
+      this._rasterRows = 0;
+      this._rasterCols = 0;
+      return;
+    }
+    if (this._rasterCanvas
+        && this._rasterColorCache === this._colorCache
+        && this._rasterRows === rows
+        && this._rasterCols === cols) {
+      return;
+    }
+    this._rasterCanvas = buildViewshedRasterCanvas(rows, cols, this._colorCache);
+    this._rasterColorCache = this._colorCache;
+    this._rasterRows = rows;
+    this._rasterCols = cols;
+  },
+
   _scheduleRedraw() {
     if (this._frame !== null) {
       return;
@@ -27936,10 +28125,9 @@ const CanvasViewshedLayer = L.Layer.extend({
       return;
     }
 
-    this._ensureColorCache();
+    this._ensureRasterCache();
 
     const size = this._map.getSize();
-    const bounds = this._map.getBounds();
     const topLeft = this._map.containerPointToLayerPoint([0, 0]);
     this._canvas.width = size.x;
     this._canvas.height = size.y;
@@ -27952,19 +28140,18 @@ const CanvasViewshedLayer = L.Layer.extend({
     const context = this._canvas.getContext("2d");
     context.clearRect(0, 0, size.x, size.y);
     context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = "high";
 
-    const colors = this._colorCache;
+    const sampleBounds = this.options.sampleBounds;
+    const rasterCanvas = this._rasterCanvas;
     const rows = Number(this.options.rows) || 0;
     const cols = Number(this.options.cols) || 0;
-    const sampleBounds = this.options.sampleBounds;
-    const validMask = this.options.validMask;
 
     if (rows > 1
         && cols > 1
         && sampleBounds?.sw
         && sampleBounds?.ne
-        && colors?.length === rows * cols
-        && validMask?.length === colors.length) {
+        && rasterCanvas) {
       const pxNW = this._map.latLngToLayerPoint([sampleBounds.ne.lat, sampleBounds.sw.lon]).subtract(topLeft);
       const pxSE = this._map.latLngToLayerPoint([sampleBounds.sw.lat, sampleBounds.ne.lon]).subtract(topLeft);
       const x0 = Math.max(0, Math.floor(pxNW.x));
@@ -27975,64 +28162,17 @@ const CanvasViewshedLayer = L.Layer.extend({
         return;
       }
 
-      const imgW = x1 - x0;
-      const imgH = y1 - y0;
-      const imgData = context.createImageData(imgW, imgH);
-      const pixels = imgData.data;
-      const pxSpanX = Math.max(1, pxSE.x - pxNW.x);
-      const pxSpanY = Math.max(1, pxSE.y - pxNW.y);
-
-      for (let py = 0; py < imgH; py += 1) {
-        const northRow = (((py + y0 - pxNW.y) / pxSpanY) * rows) - 0.5;
-        const topNorthRow = Math.max(0, Math.min(rows - 1, Math.floor(northRow)));
-        const bottomNorthRow = Math.max(0, Math.min(rows - 1, topNorthRow + 1));
-        const ty = Math.max(0, Math.min(1, northRow - topNorthRow));
-        const row0 = rows - 1 - topNorthRow;
-        const row1 = rows - 1 - bottomNorthRow;
-
-        for (let px = 0; px < imgW; px += 1) {
-          const gx = (((px + x0 - pxNW.x) / pxSpanX) * cols) - 0.5;
-          const col0 = Math.max(0, Math.min(cols - 1, Math.floor(gx)));
-          const col1 = Math.max(0, Math.min(cols - 1, col0 + 1));
-          const tx = Math.max(0, Math.min(1, gx - col0));
-
-          const i00 = row0 * cols + col0;
-          const i10 = row0 * cols + col1;
-          const i01 = row1 * cols + col0;
-          const i11 = row1 * cols + col1;
-
-          const w00 = (1 - tx) * (1 - ty) * (colors[i00] ? 1 : 0);
-          const w10 = tx * (1 - ty) * (colors[i10] ? 1 : 0);
-          const w01 = (1 - tx) * ty * (colors[i01] ? 1 : 0);
-          const w11 = tx * ty * (colors[i11] ? 1 : 0);
-          const wSum = w00 + w10 + w01 + w11;
-          if (wSum < 0.0001) {
-            continue;
-          }
-
-          const c00 = colors[i00];
-          const c10 = colors[i10];
-          const c01 = colors[i01];
-          const c11 = colors[i11];
-          const inv = 1 / wSum;
-          const r = ((c00?.[0] ?? 0) * w00 + (c10?.[0] ?? 0) * w10 + (c01?.[0] ?? 0) * w01 + (c11?.[0] ?? 0) * w11) * inv;
-          const g = ((c00?.[1] ?? 0) * w00 + (c10?.[1] ?? 0) * w10 + (c01?.[1] ?? 0) * w01 + (c11?.[1] ?? 0) * w11) * inv;
-          const b = ((c00?.[2] ?? 0) * w00 + (c10?.[2] ?? 0) * w10 + (c01?.[2] ?? 0) * w01 + (c11?.[2] ?? 0) * w11) * inv;
-          const a = ((c00?.[3] ?? 0) * w00 + (c10?.[3] ?? 0) * w10 + (c01?.[3] ?? 0) * w01 + (c11?.[3] ?? 0) * w11) * inv;
-          const off = (py * imgW + px) * 4;
-          pixels[off] = r + 0.5;
-          pixels[off + 1] = g + 0.5;
-          pixels[off + 2] = b + 0.5;
-          pixels[off + 3] = Math.round(clamp(a, 0, 1) * 255);
-        }
-      }
-
-      context.putImageData(imgData, x0, y0);
+      context.save();
+      context.filter = "blur(0.35px)";
+      context.drawImage(rasterCanvas, x0, y0, x1 - x0, y1 - y0);
+      context.restore();
       return;
     }
 
     const latitudes = this.options.latitudes ?? [];
     const longitudes = this.options.longitudes ?? [];
+    const colors = this._colorCache ?? [];
+    const bounds = this._map.getBounds();
     const latHalf = this.options.gridLatStepDeg / 2;
     const lonHalf = this.options.gridLonStepDeg / 2;
     const south = bounds.getSouth();
@@ -28843,12 +28983,19 @@ function coordinateRangeToGridIndexRange(minCoord, maxCoord, originCoord, stepDe
   };
 }
 
-function buildOsmBuildingDatasetForTerrain(footprints, terrain) {
+function buildOsmBuildingDatasetForTerrain(footprints, terrain, propagationMode = getBuildingPropagationMode()) {
   if (!Array.isArray(footprints) || !footprints.length || !terrain?.rows || !terrain?.cols) {
     return null;
   }
-  const cellLists = Array.from({ length: terrain.rows * terrain.cols }, () => []);
+  const keepExactFootprints = propagationMode !== "fast";
+  const cellLists = keepExactFootprints ? Array.from({ length: terrain.rows * terrain.cols }, () => []) : null;
   const normalizedFootprints = [];
+  const cellBuildingTopHeights = new Float32Array(terrain.rows * terrain.cols);
+  const cellBuildingBaseHeights = new Float32Array(terrain.rows * terrain.cols);
+  const cellBuildingCandidateCounts = new Uint16Array(terrain.rows * terrain.cols);
+  const cellBuildingOccupancy = new Uint8Array(terrain.rows * terrain.cols);
+  cellBuildingTopHeights.fill(Number.NaN);
+  cellBuildingBaseHeights.fill(Number.NaN);
   footprints.forEach((footprint) => {
     if (!Array.isArray(footprint?.outerRing) || footprint.outerRing.length < 8 || !Array.isArray(footprint?.bbox) || footprint.bbox.length !== 4) {
       return;
@@ -28859,43 +29006,67 @@ function buildOsmBuildingDatasetForTerrain(footprints, terrain) {
     if (!rowRange || !colRange) {
       return;
     }
-    const normalizedIndex = normalizedFootprints.length;
-    normalizedFootprints.push({
-      id: footprint.id,
-      bbox: footprint.bbox,
-      outerRing: footprint.outerRing,
-      holes: footprint.holes ?? [],
-      heightM: footprint.heightM,
-      minHeightM: footprint.minHeightM,
-    });
+    let normalizedIndex = -1;
+    if (keepExactFootprints) {
+      normalizedIndex = normalizedFootprints.length;
+      normalizedFootprints.push({
+        id: footprint.id,
+        bbox: footprint.bbox,
+        outerRing: footprint.outerRing,
+        holes: footprint.holes ?? [],
+        heightM: footprint.heightM,
+        minHeightM: footprint.minHeightM,
+      });
+    }
     for (let row = rowRange.start; row <= rowRange.end; row += 1) {
       for (let col = colRange.start; col <= colRange.end; col += 1) {
-        cellLists[row * terrain.cols + col].push(normalizedIndex);
+        const cellIndex = row * terrain.cols + col;
+        if (cellLists) {
+          cellLists[cellIndex].push(normalizedIndex);
+        }
+        cellBuildingCandidateCounts[cellIndex] = Math.min(65535, cellBuildingCandidateCounts[cellIndex] + 1);
+        cellBuildingOccupancy[cellIndex] = 1;
+        const currentTop = cellBuildingTopHeights[cellIndex];
+        const currentBase = cellBuildingBaseHeights[cellIndex];
+        cellBuildingTopHeights[cellIndex] = Number.isFinite(currentTop)
+          ? Math.max(currentTop, footprint.heightM)
+          : footprint.heightM;
+        cellBuildingBaseHeights[cellIndex] = Number.isFinite(currentBase)
+          ? Math.min(currentBase, footprint.minHeightM)
+          : footprint.minHeightM;
       }
     }
   });
-  if (!normalizedFootprints.length) {
+  if (!cellBuildingOccupancy.some((value) => value === 1)) {
     return null;
   }
 
-  const cellOffsets = new Uint32Array(cellLists.length + 1);
-  const cellBuildingIndexes = new Uint32Array(cellLists.reduce((sum, cell) => sum + cell.length, 0));
-  let cursor = 0;
-  cellLists.forEach((cell, index) => {
-    cellOffsets[index] = cursor;
-    cell.forEach((buildingIndex) => {
-      cellBuildingIndexes[cursor] = buildingIndex;
-      cursor += 1;
+  let cellOffsets = new Uint32Array(0);
+  let cellBuildingIndexes = new Uint32Array(0);
+  if (cellLists) {
+    cellOffsets = new Uint32Array(cellLists.length + 1);
+    cellBuildingIndexes = new Uint32Array(cellLists.reduce((sum, cell) => sum + cell.length, 0));
+    let cursor = 0;
+    cellLists.forEach((cell, index) => {
+      cellOffsets[index] = cursor;
+      cell.forEach((buildingIndex) => {
+        cellBuildingIndexes[cursor] = buildingIndex;
+        cursor += 1;
+      });
     });
-  });
-  cellOffsets[cellLists.length] = cursor;
+    cellOffsets[cellLists.length] = cursor;
+  }
 
   return {
     source: "overpass",
-    footprintCount: normalizedFootprints.length,
+    footprintCount: keepExactFootprints ? normalizedFootprints.length : footprints.length,
     footprints: normalizedFootprints,
     cellOffsets,
     cellBuildingIndexes,
+    cellBuildingTopHeights,
+    cellBuildingBaseHeights,
+    cellBuildingCandidateCounts,
+    cellBuildingOccupancy,
   };
 }
 

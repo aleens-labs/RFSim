@@ -1,4 +1,4 @@
-self.addEventListener("message", (event) => {
+self.addEventListener("message", async (event) => {
   const { type, payload } = event.data;
 
   try {
@@ -39,6 +39,7 @@ self.addEventListener("message", (event) => {
     }
 
     if (type === "simulation:start") {
+      await ensureComputeEngineReady();
       const result = runSimulation(payload, (progress) => {
         self.postMessage({
           type: "simulation:progress",
@@ -60,6 +61,7 @@ self.addEventListener("message", (event) => {
     }
 
     if (type === "inspection:start") {
+      await ensureComputeEngineReady();
       self.postMessage({
         type: "inspection:complete",
         payload: inspectPoint(payload),
@@ -68,6 +70,7 @@ self.addEventListener("message", (event) => {
     }
 
     if (type === "planning:start") {
+      await ensureComputeEngineReady();
       self.postMessage({
         type: "planning:complete",
         payload: planSites(payload),
@@ -76,6 +79,7 @@ self.addEventListener("message", (event) => {
     }
 
     if (type === "site-study:start") {
+      await ensureComputeEngineReady();
       self.postMessage({
         type: "site-study:complete",
         payload: runSiteStudy(payload),
@@ -144,6 +148,11 @@ function primeComputeEngineLoad() {
       return null;
     });
   return computeEngineState.loadPromise;
+}
+
+async function ensureComputeEngineReady() {
+  await primeComputeEngineLoad();
+  return computeEngineState.active;
 }
 
 function getComputeEngine() {
@@ -806,18 +815,18 @@ function buildPathProfile(source, target, terrain, weather, propagationModel, cl
       const t = step / steps;
       const lat = lerp(source.lat, target.lat, t);
       const lon = lerp(source.lon, target.lon, t);
-      const obstruction = terrain ? sampleObstructionComponents(lat, lon, terrain) : null;
-      const surfaceHeight = obstruction?.surfaceHeight ?? 0;
-      const terrainHeight = obstruction?.terrainHeight ?? 0;
       const losHeight = lerp(sourceAlt, targetAlt, t);
       const earthCurveDrop = earthCurvatureDropMeters(distanceKm * t);
+      const losReferenceHeight = losHeight - earthCurveDrop;
+      const obstruction = terrain ? sampleObstructionComponents(lat, lon, terrain, losReferenceHeight) : null;
+      const surfaceHeight = obstruction?.surfaceHeight ?? 0;
+      const terrainHeight = obstruction?.terrainHeight ?? 0;
       const clearanceM = (losHeight - earthCurveDrop) - surfaceHeight;
       const d1 = totalDistanceMeters * t;
       const d2 = totalDistanceMeters - d1;
       const fresnelRadiusM = Math.sqrt(Math.max((wavelengthM * d1 * d2) / Math.max(d1 + d2, 1), 0));
       const fresnelClearanceM = clearanceM - fresnelRadiusM;
       const requiredFresnelClearanceM = clearanceM - (fresnelRadiusM * fresnelFraction);
-      const losReferenceHeight = losHeight - earthCurveDrop;
       const totalObstruction = Math.max(0, surfaceHeight - losReferenceHeight);
       const terrainObstruction = Math.max(0, terrainHeight - losReferenceHeight);
       const buildingHeight = obstruction?.buildingHeight ?? 0;
@@ -1008,14 +1017,14 @@ function traceTerrain(source, target, txHeightM, rxHeightM, terrain) {
       const t = step / steps;
       const lat = lerp(source.lat, target.lat, t);
       const lon = lerp(source.lon, target.lon, t);
-      const obstruction = sampleObstructionComponents(lat, lon, terrain);
+      const losHeight = lerp(sourceAlt, targetAlt, t);
+      const earthCurveDrop = earthCurvatureDropMeters(totalDistanceKm * t);
+      const losReferenceHeight = losHeight - earthCurveDrop;
+      const obstruction = sampleObstructionComponents(lat, lon, terrain, losReferenceHeight);
       if (!obstruction) {
         continue;
       }
       sampledCount += 1;
-      const losHeight = lerp(sourceAlt, targetAlt, t);
-      const earthCurveDrop = earthCurvatureDropMeters(totalDistanceKm * t);
-      const losReferenceHeight = losHeight - earthCurveDrop;
       const totalObstruction = obstruction.surfaceHeight - losReferenceHeight;
       const terrainObstruction = obstruction.terrainHeight - losReferenceHeight;
       if (totalObstruction > maxObstructionM) {
@@ -1057,7 +1066,17 @@ function estimateTraceSampleMeters(terrain, latitude) {
   const latMeters = Math.abs(terrain.latStepDeg ?? 0) * 111320;
   const lonMeters = Math.abs(terrain.lonStepDeg ?? 0) * 111320 * Math.max(Math.cos((latitude * Math.PI) / 180), 1e-6);
   const cellMeters = Math.max(1, Math.min(latMeters || Number.POSITIVE_INFINITY, lonMeters || Number.POSITIVE_INFINITY));
-  return Math.max(8, Math.min(40, cellMeters / 3));
+  if (!terrain?.osmBuildingsEnabled) {
+    return Math.max(8, Math.min(40, cellMeters / 3));
+  }
+  const mode = getBuildingPropagationMode(terrain);
+  if (mode === "fast") {
+    return Math.max(24, Math.min(90, cellMeters * 1.5));
+  }
+  if (mode === "precise") {
+    return Math.max(8, Math.min(40, cellMeters / 3));
+  }
+  return Math.max(14, Math.min(60, cellMeters * 0.9));
 }
 
 function sampleSurfaceObstruction(lat, lon, terrain) {
@@ -1072,14 +1091,14 @@ function sampleTerrainBase(lat, lon, terrain) {
   return sampleTerrainField(lat, lon, terrain, "baseElevations");
 }
 
-function sampleObstructionComponents(lat, lon, terrain) {
+function sampleObstructionComponents(lat, lon, terrain, losReferenceHeight = null) {
   const terrainHeight = sampleTerrain(lat, lon, terrain);
   if (!Number.isFinite(terrainHeight)) {
     return null;
   }
   const groundHeight = sampleTerrainBase(lat, lon, terrain);
   const effectiveGroundHeight = Number.isFinite(groundHeight) ? groundHeight : terrainHeight;
-  const building = sampleBuildingAtPoint(lat, lon, terrain, effectiveGroundHeight);
+  const building = sampleBuildingAtPoint(lat, lon, terrain, effectiveGroundHeight, losReferenceHeight);
   const buildingTopHeight = Number.isFinite(building?.topHeight) ? building.topHeight : effectiveGroundHeight;
   const buildingBaseHeight = Number.isFinite(building?.baseHeight) ? building.baseHeight : effectiveGroundHeight;
   return {
@@ -1094,16 +1113,16 @@ function sampleObstructionComponents(lat, lon, terrain) {
   };
 }
 
-function sampleBuildingAtPoint(lat, lon, terrain, groundHeight = null) {
+function sampleBuildingAtPoint(lat, lon, terrain, groundHeight = null, losReferenceHeight = null) {
   if (!terrain?.osmBuildingsEnabled) {
     return null;
   }
   const dataset = terrain.osmBuildingDataset;
-  if (!dataset?.footprints?.length) {
+  if (!dataset) {
     return null;
   }
-  const candidateIndexes = getOsmBuildingCandidateIndexes(lat, lon, terrain, dataset);
-  if (!candidateIndexes.length) {
+  const cellSummary = getOsmBuildingCellSummary(lat, lon, terrain, dataset);
+  if (!cellSummary) {
     return null;
   }
   const effectiveGroundHeight = Number.isFinite(groundHeight)
@@ -1111,6 +1130,31 @@ function sampleBuildingAtPoint(lat, lon, terrain, groundHeight = null) {
     : (sampleTerrainBase(lat, lon, terrain) ?? sampleTerrain(lat, lon, terrain));
   if (!Number.isFinite(effectiveGroundHeight)) {
     return null;
+  }
+  const mode = getBuildingPropagationMode(terrain);
+  if (mode === "fast") {
+    return {
+      baseHeight: effectiveGroundHeight + cellSummary.minHeightM,
+      topHeight: effectiveGroundHeight + cellSummary.maxHeightM,
+    };
+  }
+  if (mode === "balanced" && Number.isFinite(losReferenceHeight) && losReferenceHeight > (effectiveGroundHeight + cellSummary.maxHeightM + 4)) {
+    return null;
+  }
+  if (mode === "balanced" && cellSummary.candidateCount > 4) {
+    return {
+      baseHeight: effectiveGroundHeight + cellSummary.minHeightM,
+      topHeight: effectiveGroundHeight + cellSummary.maxHeightM,
+    };
+  }
+  const candidateIndexes = getOsmBuildingCandidateIndexes(lat, lon, terrain, dataset);
+  if (!candidateIndexes.length) {
+    return mode === "precise"
+      ? null
+      : {
+        baseHeight: effectiveGroundHeight + cellSummary.minHeightM,
+        topHeight: effectiveGroundHeight + cellSummary.maxHeightM,
+      };
   }
   let best = null;
   for (const buildingIndex of candidateIndexes) {
@@ -1135,7 +1179,15 @@ function sampleBuildingAtPoint(lat, lon, terrain, groundHeight = null) {
       best = candidate;
     }
   }
-  return best;
+  if (best) {
+    return best;
+  }
+  return mode === "precise"
+    ? null
+    : {
+      baseHeight: effectiveGroundHeight + cellSummary.minHeightM,
+      topHeight: effectiveGroundHeight + cellSummary.maxHeightM,
+    };
 }
 
 function getOsmBuildingCandidateIndexes(lat, lon, terrain, dataset) {
@@ -1156,6 +1208,37 @@ function getOsmBuildingCandidateIndexes(lat, lon, terrain, dataset) {
     return [];
   }
   return indexes.subarray(start, end);
+}
+
+function getOsmBuildingCellSummary(lat, lon, terrain, dataset) {
+  const row = Math.floor((lat - terrain.origin.lat) / terrain.latStepDeg);
+  const col = Math.floor((lon - terrain.origin.lon) / terrain.lonStepDeg);
+  if (row < 0 || col < 0 || row >= terrain.rows || col >= terrain.cols) {
+    return null;
+  }
+  const cellIndex = row * terrain.cols + col;
+  const occupancy = dataset.cellBuildingOccupancy;
+  if (!(occupancy instanceof Uint8Array) || occupancy[cellIndex] !== 1) {
+    return null;
+  }
+  const topHeights = dataset.cellBuildingTopHeights;
+  const baseHeights = dataset.cellBuildingBaseHeights;
+  const candidateCounts = dataset.cellBuildingCandidateCounts;
+  const maxHeightM = topHeights instanceof Float32Array ? topHeights[cellIndex] : Number.NaN;
+  const minHeightM = baseHeights instanceof Float32Array ? baseHeights[cellIndex] : Number.NaN;
+  if (!Number.isFinite(maxHeightM) || !Number.isFinite(minHeightM)) {
+    return null;
+  }
+  return {
+    maxHeightM,
+    minHeightM: Math.max(0, minHeightM),
+    candidateCount: candidateCounts instanceof Uint16Array ? candidateCounts[cellIndex] : 1,
+  };
+}
+
+function getBuildingPropagationMode(terrain) {
+  const mode = terrain?.buildingPropagationMode;
+  return mode === "fast" || mode === "precise" ? mode : "balanced";
 }
 
 function pointInsideFlatBbox(lat, lon, bbox) {

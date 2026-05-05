@@ -120,6 +120,15 @@ function rmrf(dir) {
   fs.mkdirSync(dir, { recursive: true });
 }
 
+function resolveWithin(baseDir, ...segments) {
+  const targetPath = path.resolve(baseDir, ...segments);
+  const relativePath = path.relative(baseDir, targetPath);
+  if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+    return null;
+  }
+  return targetPath;
+}
+
 // ─── Route handlers ──────────────────────────────────────────────────────────
 
 function handleHealth(req, res) {
@@ -135,8 +144,8 @@ function handleTile(req, res, parts) {
   // parts: ["tiles", source, z, x, "y.png"]
   if (parts.length < 5) return sendJson(res, 400, { error: "Bad tile path" }, req);
   const [, source, z, x, yfile] = parts;
-  const filePath = path.join(TILES_DIR, source, z, x, yfile);
-  if (!filePath.startsWith(TILES_DIR)) return sendJson(res, 400, { error: "Invalid path" }, req);
+  const filePath = resolveWithin(TILES_DIR, source, z, x, yfile);
+  if (!filePath) return sendJson(res, 400, { error: "Invalid path" }, req);
   if (!fs.existsSync(filePath)) return sendJson(res, 404, { error: "Tile not found" }, req);
   const buf = fs.readFileSync(filePath);
   send(res, 200, buf, "image/png", req);
@@ -146,8 +155,8 @@ function handleElevation(req, res, parts) {
   // parts: ["elevation", z, x, "y.json"]
   if (parts.length < 4) return sendJson(res, 400, { error: "Bad elevation path" }, req);
   const [, z, x, yfile] = parts;
-  const filePath = path.join(ELEV_DIR, z, x, yfile);
-  if (!filePath.startsWith(ELEV_DIR)) return sendJson(res, 400, { error: "Invalid path" }, req);
+  const filePath = resolveWithin(ELEV_DIR, z, x, yfile);
+  if (!filePath) return sendJson(res, 400, { error: "Invalid path" }, req);
   if (!fs.existsSync(filePath)) return sendJson(res, 404, { error: "Elevation not found" }, req);
   const data = fs.readFileSync(filePath, "utf8");
   send(res, 200, data, "application/json", req);
@@ -156,8 +165,8 @@ function handleElevation(req, res, parts) {
 function handleOsm(req, res, parts) {
   // parts: ["osm", "bbox_key.geojson"]
   if (parts.length < 2) return sendJson(res, 400, { error: "Bad OSM path" }, req);
-  const filePath = path.join(OSM_DIR, parts[1]);
-  if (!filePath.startsWith(OSM_DIR)) return sendJson(res, 400, { error: "Invalid path" }, req);
+  const filePath = resolveWithin(OSM_DIR, parts[1]);
+  if (!filePath) return sendJson(res, 400, { error: "Invalid path" }, req);
   if (!fs.existsSync(filePath)) return sendJson(res, 404, { error: "OSM file not found" }, req);
   const data = fs.readFileSync(filePath, "utf8");
   send(res, 200, data, "application/json", req);
@@ -184,9 +193,9 @@ async function handleStoreTile(req, res, parts) {
   // POST /store/tiles/{source}/{z}/{x}/{y}.png  body=raw PNG bytes
   if (parts.length < 6) return sendJson(res, 400, { error: "Bad store tile path" }, req);
   const [,, source, z, x, yfile] = parts;
-  const dir = path.join(TILES_DIR, source, z, x);
-  const filePath = path.join(dir, yfile);
-  if (!filePath.startsWith(TILES_DIR)) return sendJson(res, 400, { error: "Invalid path" }, req);
+  const dir = resolveWithin(TILES_DIR, source, z, x);
+  const filePath = resolveWithin(TILES_DIR, source, z, x, yfile);
+  if (!dir || !filePath) return sendJson(res, 400, { error: "Invalid path" }, req);
   fs.mkdirSync(dir, { recursive: true });
   const body = await readBody(req);
   fs.writeFileSync(filePath, body);
@@ -198,9 +207,9 @@ async function handleStoreElevation(req, res, parts) {
   // POST /store/elevation/{z}/{x}/{y}.json  body=JSON string
   if (parts.length < 5) return sendJson(res, 400, { error: "Bad store elevation path" }, req);
   const [,, z, x, yfile] = parts;
-  const dir = path.join(ELEV_DIR, z, x);
-  const filePath = path.join(dir, yfile);
-  if (!filePath.startsWith(ELEV_DIR)) return sendJson(res, 400, { error: "Invalid path" }, req);
+  const dir = resolveWithin(ELEV_DIR, z, x);
+  const filePath = resolveWithin(ELEV_DIR, z, x, yfile);
+  if (!dir || !filePath) return sendJson(res, 400, { error: "Invalid path" }, req);
   fs.mkdirSync(dir, { recursive: true });
   const body = await readBody(req);
   fs.writeFileSync(filePath, body);
@@ -211,8 +220,8 @@ async function handleStoreOsm(req, res, parts) {
   if (rejectUntrustedOrigin(req, res)) return;
   // POST /store/osm/{bbox_key}.geojson  body=GeoJSON string
   if (parts.length < 3) return sendJson(res, 400, { error: "Bad store OSM path" }, req);
-  const filePath = path.join(OSM_DIR, parts[2]);
-  if (!filePath.startsWith(OSM_DIR)) return sendJson(res, 400, { error: "Invalid path" }, req);
+  const filePath = resolveWithin(OSM_DIR, parts[2]);
+  if (!filePath) return sendJson(res, 400, { error: "Invalid path" }, req);
   const body = await readBody(req);
   fs.writeFileSync(filePath, body);
   sendJson(res, 200, { ok: true, path: filePath }, req);
