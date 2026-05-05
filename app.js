@@ -8647,7 +8647,9 @@ function toggleAiPanelCollapse() {
     }
     document.documentElement.style.setProperty("--ai-panel-width", "0px");
   }
-  dom.collapseAiPanelIcon.innerHTML = state.ai.panelOpen ? "&#9654;" : "&#9664;";
+  if (dom.collapseAiPanelIcon) {
+    dom.collapseAiPanelIcon.innerHTML = state.ai.panelOpen ? "&#9654;" : "&#9664;";
+  }
   syncAiChatToggleBtn();
   persistAiProviderSettings();
   refreshCurrentViewLayout();
@@ -8656,7 +8658,9 @@ function toggleAiPanelCollapse() {
 function syncAiChatToggleBtn() {
   if (!dom.aiChatToggleBtn) return;
   const open = state.ai.panelOpen;
-  dom.aiChatToggleChevron.innerHTML = open ? "&#9664;" : "&#9654;";
+  if (dom.aiChatToggleChevron) {
+    dom.aiChatToggleChevron.innerHTML = open ? "&#9664;" : "&#9654;";
+  }
   dom.aiChatToggleBtn.classList.toggle("ai-chat-toggle-active", open);
   const statusLabel =
     state.ai.status === "ready" ? "Online" :
@@ -8861,17 +8865,26 @@ function initViewModeToggle() {
 }
 
 function endPanelResize() {
+  if (!state.ui.resizeActive) {
+    return;
+  }
   state.ui.resizeActive = false;
   document.body.classList.remove("is-resizing");
   settleMapViewportAfterLayoutChange();
 }
 
 function endControlPanelSectionResize() {
+  if (!state.ui.sectionResizeActive) {
+    return;
+  }
   state.ui.sectionResizeActive = false;
   document.body.classList.remove("is-resizing");
 }
 
 function endAiPanelResize() {
+  if (!state.ui.aiResizeActive) {
+    return;
+  }
   state.ui.aiResizeActive = false;
   document.body.classList.remove("is-resizing");
   persistAiProviderSettings();
