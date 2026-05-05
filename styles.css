@@ -4813,6 +4813,11 @@ button:focus {
   font-size: 0.82rem;
 }
 
+.settings-modal-grid label:not(.settings-span-2):not(.settings-check-row) input:not([type="checkbox"]),
+.settings-modal-grid label:not(.settings-span-2):not(.settings-check-row) select {
+  max-width: 160px;
+}
+
 .settings-modal-grid .settings-check-row {
   grid-column: span 2;
   display: flex;

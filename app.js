@@ -6359,6 +6359,7 @@ function ensureMapContentsSearchUi() {
 
 function initColorSwatches() {
   document.querySelectorAll(".color-swatches[data-for]").forEach(container => {
+    if (container.hasAttribute("data-no-swatches")) return;
     const inputId = container.dataset.for;
     const input = document.getElementById(inputId);
     if (!input) return;
@@ -28218,8 +28219,9 @@ function scheduleTopoRefresh(delayMs = 800) {
   }, delayMs);
 }
 
-async function renderTopologyView() {
+async function renderTopologyView(options = {}) {
   try {
+  _topoPendingFit = Boolean(options.fitView);
   const svg   = document.getElementById("topoSvg");
   const nodes = document.getElementById("topoNodes");
   const empty = document.getElementById("topoEmptyMsg");
@@ -28297,7 +28299,7 @@ async function renderTopologyView() {
   }
 
   // ── Nodes: unit cards or individual emitter cards ────────────────
-  const displayMode = state.ui?.topologyDisplayMode === "emitters" ? "emitters" : "units";
+  const displayMode = getTopologyDisplayMode();
   const toLinkedUnits = _toState.units.filter(u => linkedUnitIds.has(u.id));
   const standaloneEmitterEntries = resolvedEmitterRecords
     .filter((record) => !record.unitId)
@@ -28339,7 +28341,7 @@ async function renderTopologyView() {
 
   // ── Smart layout ──────────────────────────────────────────────────
   // Card dimensions (approximate — cards are centered on their position point)
-  const CARD_W = 184, CARD_H = 272, PAD_X = 180, PAD_Y = 140;
+  const CARD_W = 184, CARD_H = 272, PAD_X = 240, PAD_Y = 180;
   const SLOT_W = CARD_W + PAD_X, SLOT_H = CARD_H + PAD_Y;
   const unitPos = new Map(); // key → {x, y}  (visual center)
   const n = posEntries.length;
@@ -28403,8 +28405,8 @@ async function renderTopologyView() {
       .sort((a, b) => String(a.label || "").localeCompare(String(b.label || "")));
 
     if (unitEntries.length && roots.length && childSet.size) {
-      const H_GAP = 340;
-      const V_GAP = 300;
+      const H_GAP = 420;
+      const V_GAP = 340;
       const widthCache = new Map();
 
       function subtreeWidth(id) {
@@ -28446,17 +28448,22 @@ async function renderTopologyView() {
     if (standaloneEntries.length) {
       const placedUnitPositions = [...unitPos.values()];
       const maxUnitX = placedUnitPositions.length ? Math.max(...placedUnitPositions.map((pos) => pos.x)) : 320;
-      const standaloneX = maxUnitX + SLOT_W * 0.95;
+      const standaloneX = maxUnitX + SLOT_W * 1.2;
       standaloneEntries.forEach((entry, index) => {
         unitPos.set(entry.key, {
           x: standaloneX,
-          y: 220 + index * (CARD_H + 70),
+          y: 220 + index * (CARD_H + 120),
         });
       });
     }
   }
-
-
+  if (options.resetLayout) {
+    clearTopoStoredPositions(displayMode);
+  }
+  for (const entry of posEntries) {
+    const stored = getTopoStoredPosition(displayMode, entry.key);
+    if (stored) unitPos.set(entry.key, { x: stored.x, y: stored.y });
+  }
 
   // ── Candidate links: one per unique emitter-type pair between any two unit cards ──
   // Match on waveform bucket (waveform name, or frequency if no waveform).
@@ -29633,6 +29640,10 @@ function getTopologyBandFilter() {
   return state.ui.topologyBandFilter.filter((band) => TOPOLOGY_BANDS.includes(band));
 }
 
+function getTopologyDisplayMode() {
+  return state.ui?.topologyDisplayMode === "emitters" ? "emitters" : "units";
+}
+
 function isTopologyEmitterVisible(emitter) {
   return getTopologyBandFilter().includes(getEmitterTopologyBand(emitter));
 }
@@ -29652,7 +29663,7 @@ function syncTopologyToolbarUi() {
   if (dom.topoBandUHF) dom.topoBandUHF.checked = selected.has("UHF");
   if (dom.topoBandSATCOM) dom.topoBandSATCOM.checked = selected.has("SATCOM");
   updateTopologyFilterButtonLabel();
-  const mode = state.ui?.topologyDisplayMode === "emitters" ? "emitters" : "units";
+  const mode = getTopologyDisplayMode();
   dom.topoDisplayUnitsBtn?.classList.toggle("is-active", mode === "units");
   dom.topoDisplayUnitsBtn?.setAttribute("aria-selected", String(mode === "units"));
   dom.topoDisplayEmittersBtn?.classList.toggle("is-active", mode === "emitters");
@@ -29696,7 +29707,7 @@ function wireTopologyToolbarControls() {
         .map((el) => el.value);
       state.ui.topologyBandFilter = selected;
       syncTopologyToolbarUi();
-      if (state.ui?.currentView === "topology") renderTopologyView();
+      if (state.ui?.currentView === "topology") renderTopologyView({ fitView: true });
     }, { signal: sig });
   });
 
@@ -29706,7 +29717,7 @@ function wireTopologyToolbarControls() {
       if (state.ui.topologyDisplayMode === nextMode) return;
       state.ui.topologyDisplayMode = nextMode;
       syncTopologyToolbarUi();
-      if (state.ui?.currentView === "topology") renderTopologyView();
+      if (state.ui?.currentView === "topology") renderTopologyView({ fitView: true });
     }, { signal: sig });
   });
 
@@ -29720,8 +29731,32 @@ function wireTopologyToolbarControls() {
 
 // World-space positions for each node (key → {x,y}), kept in sync during drag
 const _topoNodePositions = new Map();
+const _topoManualPositions = new Map();
 // Link descriptors for live redraw during drag
 let _topoLinkDescriptors = [];
+
+function getTopoManualPositionKey(mode, key) {
+  return `${mode}:${key}`;
+}
+
+function getTopoStoredPosition(mode, key) {
+  return _topoManualPositions.get(getTopoManualPositionKey(mode, key)) || null;
+}
+
+function setTopoStoredPosition(mode, key, pos) {
+  if (!mode || key == null || !pos) return;
+  _topoManualPositions.set(getTopoManualPositionKey(mode, key), { x: pos.x, y: pos.y });
+}
+
+function clearTopoStoredPositions(mode = null) {
+  if (!mode) {
+    _topoManualPositions.clear();
+    return;
+  }
+  for (const key of [..._topoManualPositions.keys()]) {
+    if (key.startsWith(`${mode}:`)) _topoManualPositions.delete(key);
+  }
+}
 
 function redrawTopoLinksLegacy() {
   const svg = document.getElementById("topoSvg");
@@ -29929,7 +29964,7 @@ function fitTopologyViewToContent() {
   });
   if (!nodeMetrics.length) return;
 
-  const padding = 72;
+  const padding = 140;
   const minX = Math.min(...nodeMetrics.map((node) => node.x - node.width / 2)) - padding;
   const maxX = Math.max(...nodeMetrics.map((node) => node.x + node.width / 2)) + padding;
   const minY = Math.min(...nodeMetrics.map((node) => node.y - node.height / 2)) - padding;
@@ -29940,11 +29975,16 @@ function fitTopologyViewToContent() {
   const rect = canvas.getBoundingClientRect();
   if (!rect.width || !rect.height) return;
 
-  _topoZoom = Math.max(0.45, Math.min(1.35, Math.min(rect.width / width, rect.height / height)));
+  _topoZoom = Math.max(0.35, Math.min(1.05, Math.min(rect.width / width, rect.height / height) * 0.94));
   _topoPanOffset = {
     x: rect.width / 2 - ((minX + maxX) / 2) * _topoZoom,
     y: rect.height / 2 - ((minY + maxY) / 2) * _topoZoom,
   };
+}
+
+function triggerTopologyAutoLayout() {
+  _topoViewInitialized = false;
+  renderTopologyView({ resetLayout: true, fitView: true });
 }
 
 let _topoAbortController = null;
@@ -29952,6 +29992,7 @@ let _topoAbortController = null;
 let _topoPanOffset = { x: 0, y: 0 };
 let _topoZoom = 1;
 let _topoViewInitialized = false;
+let _topoPendingFit = false;
 
 function wireTopoCanvasPanZoom() {
   // Cancel any previous listeners before re-wiring (nodes changed, etc.)
@@ -29970,11 +30011,14 @@ function wireTopoCanvasPanZoom() {
 
   // Apply whatever state we already have (survives re-renders)
   applyTransform();
-  requestAnimationFrame(() => {
-    fitTopologyViewToContent();
-    applyTransform();
-    _topoViewInitialized = true;
-  });
+  if (_topoPendingFit || !_topoViewInitialized) {
+    requestAnimationFrame(() => {
+      fitTopologyViewToContent();
+      applyTransform();
+      _topoViewInitialized = true;
+      _topoPendingFit = false;
+    });
+  }
 
   let dragging = null; // { node, key, startClientX, startClientY, origX, origY } | { panning, startX, startY }
 
@@ -30009,6 +30053,7 @@ function wireTopoCanvasPanZoom() {
     const newX = dragging.origX + dx;
     const newY = dragging.origY + dy;
     _topoNodePositions.set(dragging.key, { x: newX, y: newY });
+    setTopoStoredPosition(getTopologyDisplayMode(), dragging.key, { x: newX, y: newY });
     dragging.node.style.left = newX + "px";
     dragging.node.style.top  = newY + "px";
     redrawTopoLinks();
@@ -30040,8 +30085,12 @@ function wireTopoCanvasPanZoom() {
     applyTransform();
   }, { signal: sig });
 
+  document.getElementById("topoAutoLayoutBtn")?.addEventListener("click", () => {
+    triggerTopologyAutoLayout();
+  }, { signal: sig });
+
   document.getElementById("topoRefreshBtn")?.addEventListener("click", () => {
-    renderTopologyView();
+    renderTopologyView({ fitView: true });
   }, { signal: sig });
 }
 
