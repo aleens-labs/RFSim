@@ -6372,6 +6372,8 @@ body.emitter-modal-open {
   display: block;
   pointer-events: none;
   -webkit-user-drag: none;
+  object-fit: contain;
+  object-position: center;
 }
 .to-unit-label {
   font-size: 1.05rem;
