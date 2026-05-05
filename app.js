@@ -8571,10 +8571,49 @@ function onCesiumOsmBuildingsSettingsChanged() {
 function togglePanelCollapse() {
   document.body.classList.toggle("panel-collapsed");
   dom.collapsePanelIcon.innerHTML = document.body.classList.contains("panel-collapsed") ? "&#9654;" : "&#9664;";
-  state.map.invalidateSize();
+  settleMapViewportAfterLayoutChange();
+}
+
+let _layoutSettleRafId = null;
+let _layoutSettleTimeoutIds = [];
+
+function clearPendingMapLayoutSettles() {
+  if (_layoutSettleRafId) {
+    cancelAnimationFrame(_layoutSettleRafId);
+    _layoutSettleRafId = null;
+  }
+  _layoutSettleTimeoutIds.forEach((id) => clearTimeout(id));
+  _layoutSettleTimeoutIds = [];
+}
+
+function refreshMapViewportForLayoutChange() {
+  if (state.ui?.currentView !== "map" || !state.map) {
+    return;
+  }
+  state.map.invalidateSize({ pan: false, animate: false });
+  state.baseLayer?.redraw?.();
   if (state.cesiumViewer) {
     state.cesiumViewer.resize();
   }
+}
+
+function settleMapViewportAfterLayoutChange() {
+  if (state.ui?.currentView !== "map" || !state.map) {
+    return;
+  }
+  clearPendingMapLayoutSettles();
+  const passes = [0, 48, 120, 220, 320];
+  _layoutSettleRafId = requestAnimationFrame(() => {
+    _layoutSettleRafId = null;
+    refreshMapViewportForLayoutChange();
+  });
+  passes.forEach((delay) => {
+    const timeoutId = setTimeout(() => {
+      refreshMapViewportForLayoutChange();
+      _layoutSettleTimeoutIds = _layoutSettleTimeoutIds.filter((id) => id !== timeoutId);
+    }, delay);
+    _layoutSettleTimeoutIds.push(timeoutId);
+  });
 }
 
 function refreshCurrentViewLayout() {
@@ -8590,10 +8629,7 @@ function refreshCurrentViewLayout() {
     renderToView();
     return;
   }
-  state.map.invalidateSize();
-  if (state.cesiumViewer) {
-    state.cesiumViewer.resize();
-  }
+  settleMapViewportAfterLayoutChange();
 }
 
 function toggleAiPanelCollapse() {
@@ -8660,7 +8696,7 @@ function onPanelResize(event) {
   }
   const nextWidth = clamp(event.clientX, 280, 620);
   document.documentElement.style.setProperty("--panel-width", `${nextWidth}px`);
-  state.map.invalidateSize();
+  refreshMapViewportForLayoutChange();
 }
 
 function onAiPanelResize(event) {
@@ -8670,7 +8706,7 @@ function onAiPanelResize(event) {
   const nextWidth = clamp(window.innerWidth - event.clientX, 300, 620);
   state.ui.aiPanelWidth = nextWidth;
   document.documentElement.style.setProperty("--ai-panel-width", `${nextWidth}px`);
-  state.map.invalidateSize();
+  refreshMapViewportForLayoutChange();
 }
 
 function onControlPanelSectionResize(event) {
@@ -8827,6 +8863,7 @@ function initViewModeToggle() {
 function endPanelResize() {
   state.ui.resizeActive = false;
   document.body.classList.remove("is-resizing");
+  settleMapViewportAfterLayoutChange();
 }
 
 function endControlPanelSectionResize() {
