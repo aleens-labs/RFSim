@@ -9782,7 +9782,8 @@ function renderMarkdown(text) {
     });
 
     const withLinks = withCoords.replace(/\[([^\]]+)\]\(((?:asset|imported|viewshed|terrain|planning-region|planning-results):[^\)]+)\)/g, (_, label, contentId) => {
-      return `\x00LINK\x00${label}\x00${contentId}\x00`;
+      const cleanLabel = label.replace(/<\/?[^>]+>/g, "").replace(/\*\*(.+?)\*\*/g, "$1").replace(/\*(.+?)\*/g, "$1").trim();
+      return `\x00LINK\x00${cleanLabel}\x00${contentId}\x00`;
     });
     let result = esc(withLinks)
       .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
@@ -9791,7 +9792,8 @@ function renderMarkdown(text) {
       .replace(/(?<!_)_(?!_)(.+?)(?<!_)_(?!_)/g, "<em>$1</em>")
       .replace(/`([^`]+)`/g, "<code>$1</code>");
     result = result.replace(/\x00LINK\x00([^\x00]+)\x00([^\x00]+)\x00/g, (_, label, contentId) => {
-      const safeLabel = escapeHtml(label);
+      const cleanLabel = label.replace(/<[^>]+>/g, "").replace(/\*\*(.+?)\*\*/g, "$1").replace(/\*(.+?)\*/g, "$1").trim();
+      const safeLabel = escapeHtml(cleanLabel);
       const safeContentId = escapeHtml(contentId);
       return `<button class="ai-map-link" data-content-id="${safeContentId}" title="Navigate to ${safeLabel}">${safeLabel}</button>`;
     });
@@ -26982,11 +26984,16 @@ const CanvasTerrainHeatmapLayer = L.Layer.extend({
     const pxSpanY = Math.max(1, pxSE.y - pxNW.y);
 
     for (let py = 0; py < imgH; py += 1) {
-      // Fractional grid row (0 = top row center, rows-1 = bottom row center)
-      const gy = ((py + y0 - pxNW.y) / pxSpanY) * rows - 0.5;
-      const row0 = Math.max(0, Math.min(rows - 1, Math.floor(gy)));
-      const row1 = Math.min(rows - 1, row0 + 1);
-      const ty = Math.max(0, Math.min(1, gy - row0));
+      // Convert the screen Y position into a north-to-south sample-space row,
+      // then map that into the south-to-north row order used by the Cesium
+      // sample buffer. This keeps the 2D heatmap aligned with both imagery
+      // and the contour lines rendered from the same data.
+      const northRow = (((py + y0 - pxNW.y) / pxSpanY) * rows) - 0.5;
+      const topNorthRow = Math.max(0, Math.min(rows - 1, Math.floor(northRow)));
+      const bottomNorthRow = Math.max(0, Math.min(rows - 1, topNorthRow + 1));
+      const ty = Math.max(0, Math.min(1, northRow - topNorthRow));
+      const row0 = rows - 1 - topNorthRow;
+      const row1 = rows - 1 - bottomNorthRow;
 
       for (let px = 0; px < imgW; px += 1) {
         const gx = ((px + x0 - pxNW.x) / pxSpanX) * cols - 0.5;
