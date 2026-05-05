@@ -10658,7 +10658,7 @@ function updateTerrainHeatmapSampleSizeUi() {
     updateRangeTrack(input);
   }
   if (dom.terrainHeatmapSampleSizeValue) {
-    dom.terrainHeatmapSampleSizeValue.textContent = `${value} cells`;
+    dom.terrainHeatmapSampleSizeValue.textContent = `${Math.round((value / TERRAIN_HEATMAP_SAMPLE_BUDGET_MAX) * 100)}%`;
   }
 }
 
@@ -25548,8 +25548,8 @@ const CanvasTerrainHeatmapLayer = L.Layer.extend({
     if (!this._map || !this._canvas || !this.options.sample) {
       return;
     }
-    this._ensureColorCache();
     const sample = this.options.sample;
+    const { rows, cols, elevations, nodataMask, minElevationM, maxElevationM } = sample;
     const size = this._map.getSize();
     const topLeft = this._map.containerPointToLayerPoint([0, 0]);
     this._canvas.width = size.x;
@@ -25563,22 +25563,96 @@ const CanvasTerrainHeatmapLayer = L.Layer.extend({
     const context = this._canvas.getContext("2d");
     context.clearRect(0, 0, size.x, size.y);
 
-    const latHalf = sample.latStepDeg / 2;
-    const lonHalf = sample.lonStepDeg / 2;
-    const latitudes = sample.latitudes;
-    const longitudes = sample.longitudes;
-    for (let index = 0; index < latitudes.length; index += 1) {
-      const fill = this._colorCache?.[index];
-      if (!fill) continue;
-      const lat = latitudes[index];
-      const lon = longitudes[index];
-      const northWest = this._map.latLngToLayerPoint([lat + latHalf, lon - lonHalf]).subtract(topLeft);
-      const southEast = this._map.latLngToLayerPoint([lat - latHalf, lon + lonHalf]).subtract(topLeft);
-      const width = Math.max(1, southEast.x - northWest.x);
-      const height = Math.max(1, southEast.y - northWest.y);
-      context.fillStyle = fill;
-      context.fillRect(northWest.x, northWest.y, width, height);
+    // Build a grid of raw RGBA color values for bilinear interpolation.
+    // Each cell stores [r, g, b, valid] where valid=0 means nodata.
+    const span = Math.max(0.0001, maxElevationM - minElevationM);
+    const gridR = new Float32Array(rows * cols);
+    const gridG = new Float32Array(rows * cols);
+    const gridB = new Float32Array(rows * cols);
+    const gridValid = new Uint8Array(rows * cols);
+    for (let i = 0; i < rows * cols; i += 1) {
+      if (nodataMask[i] === 1 || !Number.isFinite(elevations[i])) continue;
+      const t = (elevations[i] - minElevationM) / span;
+      const stops = [
+        { at: 0,   r: 255, g: 59,  b: 59  },
+        { at: 0.2, r: 255, g: 140, b: 61  },
+        { at: 0.4, r: 250, g: 204, b: 21  },
+        { at: 0.6, r: 52,  g: 211, b: 153 },
+        { at: 0.8, r: 56,  g: 189, b: 248 },
+        { at: 1,   r: 139, g: 92,  b: 246 },
+      ];
+      let lo = stops[0], hi = stops[stops.length - 1];
+      for (let s = 1; s < stops.length; s += 1) {
+        if (t <= stops[s].at) { lo = stops[s - 1]; hi = stops[s]; break; }
+      }
+      const f = Math.max(0, Math.min(1, (t - lo.at) / Math.max(0.0001, hi.at - lo.at)));
+      gridR[i] = lo.r + (hi.r - lo.r) * f;
+      gridG[i] = lo.g + (hi.g - lo.g) * f;
+      gridB[i] = lo.b + (hi.b - lo.b) * f;
+      gridValid[i] = 1;
     }
+
+    // Map each screen pixel to a grid position and bilinearly interpolate.
+    // Compute the pixel bounds of the entire sampled region.
+    const sw = sample.bounds.sw;
+    const ne = sample.bounds.ne;
+    const pxNW = this._map.latLngToLayerPoint([ne.lat, sw.lon]).subtract(topLeft);
+    const pxSE = this._map.latLngToLayerPoint([sw.lat, ne.lon]).subtract(topLeft);
+
+    const x0 = Math.max(0, Math.floor(pxNW.x));
+    const y0 = Math.max(0, Math.floor(pxNW.y));
+    const x1 = Math.min(size.x, Math.ceil(pxSE.x));
+    const y1 = Math.min(size.y, Math.ceil(pxSE.y));
+    if (x1 <= x0 || y1 <= y0) return;
+
+    const imgW = x1 - x0;
+    const imgH = y1 - y0;
+    const imgData = context.createImageData(imgW, imgH);
+    const pixels = imgData.data;
+
+    const pxSpanX = Math.max(1, pxSE.x - pxNW.x);
+    const pxSpanY = Math.max(1, pxSE.y - pxNW.y);
+
+    for (let py = 0; py < imgH; py += 1) {
+      // Fractional grid row (0 = top row center, rows-1 = bottom row center)
+      const gy = ((py + y0 - pxNW.y) / pxSpanY) * rows - 0.5;
+      const row0 = Math.max(0, Math.min(rows - 1, Math.floor(gy)));
+      const row1 = Math.min(rows - 1, row0 + 1);
+      const ty = Math.max(0, Math.min(1, gy - row0));
+
+      for (let px = 0; px < imgW; px += 1) {
+        const gx = ((px + x0 - pxNW.x) / pxSpanX) * cols - 0.5;
+        const col0 = Math.max(0, Math.min(cols - 1, Math.floor(gx)));
+        const col1 = Math.min(cols - 1, col0 + 1);
+        const tx = Math.max(0, Math.min(1, gx - col0));
+
+        const i00 = row0 * cols + col0;
+        const i10 = row0 * cols + col1;
+        const i01 = row1 * cols + col0;
+        const i11 = row1 * cols + col1;
+
+        // Weighted sum of valid neighbors only
+        const w00 = (1 - tx) * (1 - ty) * gridValid[i00];
+        const w10 = tx       * (1 - ty) * gridValid[i10];
+        const w01 = (1 - tx) * ty       * gridValid[i01];
+        const w11 = tx       * ty       * gridValid[i11];
+        const wSum = w00 + w10 + w01 + w11;
+        if (wSum < 0.0001) continue;
+
+        const wn = 1 / wSum;
+        const r = (gridR[i00] * w00 + gridR[i10] * w10 + gridR[i01] * w01 + gridR[i11] * w11) * wn;
+        const g = (gridG[i00] * w00 + gridG[i10] * w10 + gridG[i01] * w01 + gridG[i11] * w11) * wn;
+        const b = (gridB[i00] * w00 + gridB[i10] * w10 + gridB[i01] * w01 + gridB[i11] * w11) * wn;
+
+        const off = (py * imgW + px) * 4;
+        pixels[off]     = r + 0.5;
+        pixels[off + 1] = g + 0.5;
+        pixels[off + 2] = b + 0.5;
+        pixels[off + 3] = 255;
+      }
+    }
+
+    context.putImageData(imgData, x0, y0);
   },
 });
 

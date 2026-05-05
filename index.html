@@ -318,10 +318,6 @@
             <div class="weather-summary" id="weatherSummary">Manual weather profile active.</div>
           </div>
         </div>
-        <div class="status-chip status-chip-clock">
-          <span>DATE/TIME</span>
-          <strong id="clockValue">--</strong>
-        </div>
         <div class="gps-menu-shell">
           <button id="gpsMenuBtn" class="status-chip status-chip-button gps-status-button" type="button" aria-label="Open GPS settings" aria-expanded="false">
             <span>GPS Status</span>
@@ -407,10 +403,10 @@
                     </div>
                     <input id="terrainHeatmapOpacity" class="coverage-opacity-slider terrain-heatmap-opacity-slider" type="range" min="0.15" max="1" step="0.05" value="0.58" aria-label="Terrain heatmap opacity">
                     <div class="terrain-heatmap-dropdown-header">
-                      <span>Sample Density</span>
-                      <strong id="terrainHeatmapSampleSizeValue">576 cells</strong>
+                      <span>Detail Level</span>
+                      <strong id="terrainHeatmapSampleSizeValue">19%</strong>
                     </div>
-                    <input id="terrainHeatmapSampleSize" class="coverage-opacity-slider terrain-heatmap-opacity-slider" type="range" min="256" max="3072" step="64" value="576" aria-label="Terrain heatmap sample density">
+                    <input id="terrainHeatmapSampleSize" class="coverage-opacity-slider terrain-heatmap-opacity-slider" type="range" min="256" max="3072" step="64" value="576" aria-label="Terrain heatmap detail level">
                   </div>
                 </div>
                 <!-- Select mode -->
@@ -721,6 +717,10 @@
           <div class="bottom-center-row">
             <div class="overlay-card view-metrics-card">
               <div class="overlay-metric-row">
+                <div class="overlay-metric-block">
+                  <span>Date/Time</span>
+                  <strong id="clockValue" style="font-variant-numeric: tabular-nums;">--</strong>
+                </div>
                 <div class="overlay-metric-block">
                   <span id="centerCoordinateLabel">Center Grid</span>
                   <strong id="centerCoordinateValue">----------</strong>
