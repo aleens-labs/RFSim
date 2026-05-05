@@ -24,7 +24,7 @@ COPY app.js /usr/share/nginx/html/app.js
 COPY styles.css /usr/share/nginx/html/styles.css
 COPY app-config.js /usr/share/nginx/html/app-config.js
 COPY simulation-worker.js /usr/share/nginx/html/simulation-worker.js
-COPY rf-compute-wasm-loader.mjs /usr/share/nginx/html/rf-compute-wasm-loader.mjs
+COPY rf-compute-wasm-loader.js /usr/share/nginx/html/rf-compute-wasm-loader.js
 COPY favicon.svg /usr/share/nginx/html/favicon.svg
 COPY og-image.png /usr/share/nginx/html/og-image.png
 COPY genai-proxy.js /usr/share/nginx/html/genai-proxy.js

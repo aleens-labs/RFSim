@@ -19324,7 +19324,7 @@ function onViewshedAction(event) {
 
   if (action === "focus") {
     state.activeInspectionViewshedId = viewshed.id;
-    updateMetrics(viewshed.rssi);
+    updateMetrics(viewshed.rssi, viewshed.validMask);
     renderViewsheds();
     focusMapContent(`viewshed:${viewshed.id}`);
     setStatus(`Inspecting ${viewshed.asset.name}. Click the map for point estimates.`);
@@ -19358,7 +19358,7 @@ function removeViewshed(viewshedId, options = {}) {
 
   if (state.activeInspectionViewshedId === viewshedId) {
     state.activeInspectionViewshedId = state.viewsheds[0]?.id ?? null;
-    updateMetrics(state.viewsheds[0]?.rssi ?? null);
+    updateMetrics(state.viewsheds[0]?.rssi ?? null, state.viewsheds[0]?.validMask ?? null);
   }
 
   if (state.editingViewshedId === viewshedId) {
@@ -19900,17 +19900,18 @@ function consumeSimulationResult(payload) {
   if (payload.requestId === state.simulationProgress.requestId) {
     updateSimulationProgress(96, "Rendering coverage layer...", "96%");
   }
-  const latitudes = new Float64Array(payload.latitudes);
-  const longitudes = new Float64Array(payload.longitudes);
   const rssi = new Float32Array(payload.rssi);
   const lineOfSight = new Uint8Array(payload.lineOfSight);
+  const validMask = new Uint8Array(payload.validMask);
   const existingViewshed = state.viewsheds.find((entry) => entry.id === payload.requestId);
   const layer = new CanvasViewshedLayer({
     pane: getMapContentPaneName(`viewshed:${payload.requestId}`),
-    latitudes,
-    longitudes,
     rssi,
     lineOfSight,
+    validMask,
+    rows: payload.rows,
+    cols: payload.cols,
+    sampleBounds: payload.sampleBounds,
     gridLatStepDeg: payload.gridLatStepDeg,
     gridLonStepDeg: payload.gridLonStepDeg,
     opacity: payload.opacity,
@@ -19929,13 +19930,15 @@ function consumeSimulationResult(payload) {
     opacity: payload.opacity,
     propagationModel: payload.propagationModel,
     propagationModelLabel: propagationModelLabel(payload.propagationModel),
-    cellCount: latitudes.length,
+    cellCount: payload.cellCount ?? countCoverageCells(rssi, validMask),
     gridLatStepDeg: payload.gridLatStepDeg,
     gridLonStepDeg: payload.gridLonStepDeg,
-    latitudes,
-    longitudes,
+    rows: payload.rows,
+    cols: payload.cols,
+    sampleBounds: payload.sampleBounds,
     rssi,
     lineOfSight,
+    validMask,
     bounds: leafletBoundsFromData(payload.asset, payload.radiusMeters),
   };
 
@@ -19955,7 +19958,7 @@ function consumeSimulationResult(payload) {
     emitterMarker.openPopup();
   }
 
-  updateMetrics(rssi);
+  updateMetrics(rssi, validMask);
   renderViewsheds();
   renderMapContents();
   syncCesiumEntities();
@@ -20014,7 +20017,27 @@ function consumeInspectionResult(payload) {
     .openOn(state.map);
 }
 
-function updateMetrics(rssiArray) {
+function countCoverageCells(rssiArray, validMask = null) {
+  if (!rssiArray?.length) {
+    return 0;
+  }
+  if (validMask?.length === rssiArray.length) {
+    let total = 0;
+    for (let index = 0; index < validMask.length; index += 1) {
+      total += validMask[index] ? 1 : 0;
+    }
+    return total;
+  }
+  let total = 0;
+  for (let index = 0; index < rssiArray.length; index += 1) {
+    if (Number.isFinite(rssiArray[index])) {
+      total += 1;
+    }
+  }
+  return total;
+}
+
+function updateMetrics(rssiArray, validMask = null) {
   if (!rssiArray?.length) {
     dom.coverageMetric.textContent = "0 cells";
     dom.minRssiMetric.textContent = "n/a";
@@ -20026,6 +20049,9 @@ function updateMetrics(rssiArray) {
   let max = Number.NEGATIVE_INFINITY;
   for (let index = 0; index < rssiArray.length; index += 1) {
     const value = rssiArray[index];
+    if ((validMask?.length === rssiArray.length && !validMask[index]) || !Number.isFinite(value)) {
+      continue;
+    }
     if (value < min) {
       min = value;
     }
@@ -20034,9 +20060,10 @@ function updateMetrics(rssiArray) {
     }
   }
 
-  dom.coverageMetric.textContent = `${rssiArray.length} cells`;
-  dom.minRssiMetric.textContent = `${min.toFixed(1)} dBm`;
-  dom.maxRssiMetric.textContent = `${max.toFixed(1)} dBm`;
+  const cellCount = countCoverageCells(rssiArray, validMask);
+  dom.coverageMetric.textContent = `${cellCount} cells`;
+  dom.minRssiMetric.textContent = Number.isFinite(min) ? `${min.toFixed(1)} dBm` : "n/a";
+  dom.maxRssiMetric.textContent = Number.isFinite(max) ? `${max.toFixed(1)} dBm` : "n/a";
 }
 
 function setStatus(message, isError = false) {
@@ -26895,22 +26922,58 @@ function textSlice(bytes, start, end) {
 // belowThresholdMode: "gradient" = show weak signal cells, "hidden" = skip cells below threshold
 const RSSI_THRESHOLD_DBM = -110; // cells below this are considered out-of-coverage
 
-function rssiColor(rssi, lineOfSight, opacity = 0.7, losRenderMode = "transparent", belowThresholdMode = "gradient") {
+function hslToRgb(hueDeg, saturation, lightness) {
+  const h = ((Number(hueDeg) % 360) + 360) % 360 / 360;
+  const s = clamp(Number(saturation) || 0, 0, 1);
+  const l = clamp(Number(lightness) || 0, 0, 1);
+  if (s <= 0) {
+    const gray = Math.round(l * 255);
+    return [gray, gray, gray];
+  }
+
+  const q = l < 0.5 ? l * (1 + s) : l + s - (l * s);
+  const p = (2 * l) - q;
+  const toChannel = (t) => {
+    let normalized = t;
+    if (normalized < 0) normalized += 1;
+    if (normalized > 1) normalized -= 1;
+    if (normalized < 1 / 6) return p + ((q - p) * 6 * normalized);
+    if (normalized < 1 / 2) return q;
+    if (normalized < 2 / 3) return p + ((q - p) * (2 / 3 - normalized) * 6);
+    return p;
+  };
+
+  return [
+    Math.round(toChannel(h + (1 / 3)) * 255),
+    Math.round(toChannel(h) * 255),
+    Math.round(toChannel(h - (1 / 3)) * 255),
+  ];
+}
+
+function rssiColorChannels(rssi, lineOfSight, opacity = 0.7, losRenderMode = "transparent", belowThresholdMode = "gradient") {
   const minRssi = -120;
   const maxRssi = -40;
 
   if (!lineOfSight) {
-    if (losRenderMode === "transparent") return null; // caller skips this cell
-    if (losRenderMode === "shadow") return `rgba(160,160,160,${Math.max(0.08, opacity * 0.25)})`;
-    // legacy gradient fallback
+    if (losRenderMode === "transparent") return null;
+    if (losRenderMode === "shadow") {
+      return [160, 160, 160, clamp(Math.max(0.08, opacity * 0.25), 0, 1)];
+    }
     const normalized = Math.min(1, Math.max(0, (rssi - minRssi) / (maxRssi - minRssi)));
-    return `hsla(${normalized * 250}, 82%, 58%, ${Math.max(0.12, opacity * 0.35)})`;
+    const [r, g, b] = hslToRgb(normalized * 250, 0.82, 0.58);
+    return [r, g, b, clamp(Math.max(0.12, opacity * 0.35), 0, 1)];
   }
 
   if (belowThresholdMode === "hidden" && rssi < RSSI_THRESHOLD_DBM) return null;
 
   const normalized = Math.min(1, Math.max(0, (rssi - minRssi) / (maxRssi - minRssi)));
-  return `hsla(${normalized * 250}, 82%, 58%, ${opacity})`;
+  const [r, g, b] = hslToRgb(normalized * 250, 0.82, 0.58);
+  return [r, g, b, clamp(opacity, 0, 1)];
+}
+
+function rssiColor(rssi, lineOfSight, opacity = 0.7, losRenderMode = "transparent", belowThresholdMode = "gradient") {
+  const color = rssiColorChannels(rssi, lineOfSight, opacity, losRenderMode, belowThresholdMode);
+  return color ? `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${color[3].toFixed(3)})` : null;
 }
 
 function getSimLosRenderMode() {
@@ -27814,6 +27877,7 @@ const CanvasViewshedLayer = L.Layer.extend({
     pane.appendChild(this._canvas);
     this._ensureColorCache();
     this._canvas.style.opacity = String(this.options.opacity ?? 0.7);
+    this._canvas.style.mixBlendMode = "screen";
     map.on("moveend zoomend resize", this._scheduleRedraw, this);
     this._scheduleRedraw();
   },
@@ -27852,7 +27916,7 @@ const CanvasViewshedLayer = L.Layer.extend({
     this._colorCacheLosMode = losMode;
     this._colorCacheThreshMode = threshMode;
     for (let index = 0; index < rssi.length; index += 1) {
-      this._colorCache[index] = rssiColor(rssi[index], Boolean(lineOfSight[index]), 1, losMode, threshMode);
+      this._colorCache[index] = rssiColorChannels(rssi[index], Boolean(lineOfSight[index]), 1, losMode, threshMode);
     }
   },
 
@@ -27887,10 +27951,88 @@ const CanvasViewshedLayer = L.Layer.extend({
 
     const context = this._canvas.getContext("2d");
     context.clearRect(0, 0, size.x, size.y);
+    context.imageSmoothingEnabled = true;
 
-    const latitudes = this.options.latitudes;
-    const longitudes = this.options.longitudes;
     const colors = this._colorCache;
+    const rows = Number(this.options.rows) || 0;
+    const cols = Number(this.options.cols) || 0;
+    const sampleBounds = this.options.sampleBounds;
+    const validMask = this.options.validMask;
+
+    if (rows > 1
+        && cols > 1
+        && sampleBounds?.sw
+        && sampleBounds?.ne
+        && colors?.length === rows * cols
+        && validMask?.length === colors.length) {
+      const pxNW = this._map.latLngToLayerPoint([sampleBounds.ne.lat, sampleBounds.sw.lon]).subtract(topLeft);
+      const pxSE = this._map.latLngToLayerPoint([sampleBounds.sw.lat, sampleBounds.ne.lon]).subtract(topLeft);
+      const x0 = Math.max(0, Math.floor(pxNW.x));
+      const y0 = Math.max(0, Math.floor(pxNW.y));
+      const x1 = Math.min(size.x, Math.ceil(pxSE.x));
+      const y1 = Math.min(size.y, Math.ceil(pxSE.y));
+      if (x1 <= x0 || y1 <= y0) {
+        return;
+      }
+
+      const imgW = x1 - x0;
+      const imgH = y1 - y0;
+      const imgData = context.createImageData(imgW, imgH);
+      const pixels = imgData.data;
+      const pxSpanX = Math.max(1, pxSE.x - pxNW.x);
+      const pxSpanY = Math.max(1, pxSE.y - pxNW.y);
+
+      for (let py = 0; py < imgH; py += 1) {
+        const northRow = (((py + y0 - pxNW.y) / pxSpanY) * rows) - 0.5;
+        const topNorthRow = Math.max(0, Math.min(rows - 1, Math.floor(northRow)));
+        const bottomNorthRow = Math.max(0, Math.min(rows - 1, topNorthRow + 1));
+        const ty = Math.max(0, Math.min(1, northRow - topNorthRow));
+        const row0 = rows - 1 - topNorthRow;
+        const row1 = rows - 1 - bottomNorthRow;
+
+        for (let px = 0; px < imgW; px += 1) {
+          const gx = (((px + x0 - pxNW.x) / pxSpanX) * cols) - 0.5;
+          const col0 = Math.max(0, Math.min(cols - 1, Math.floor(gx)));
+          const col1 = Math.max(0, Math.min(cols - 1, col0 + 1));
+          const tx = Math.max(0, Math.min(1, gx - col0));
+
+          const i00 = row0 * cols + col0;
+          const i10 = row0 * cols + col1;
+          const i01 = row1 * cols + col0;
+          const i11 = row1 * cols + col1;
+
+          const w00 = (1 - tx) * (1 - ty) * (colors[i00] ? 1 : 0);
+          const w10 = tx * (1 - ty) * (colors[i10] ? 1 : 0);
+          const w01 = (1 - tx) * ty * (colors[i01] ? 1 : 0);
+          const w11 = tx * ty * (colors[i11] ? 1 : 0);
+          const wSum = w00 + w10 + w01 + w11;
+          if (wSum < 0.0001) {
+            continue;
+          }
+
+          const c00 = colors[i00];
+          const c10 = colors[i10];
+          const c01 = colors[i01];
+          const c11 = colors[i11];
+          const inv = 1 / wSum;
+          const r = ((c00?.[0] ?? 0) * w00 + (c10?.[0] ?? 0) * w10 + (c01?.[0] ?? 0) * w01 + (c11?.[0] ?? 0) * w11) * inv;
+          const g = ((c00?.[1] ?? 0) * w00 + (c10?.[1] ?? 0) * w10 + (c01?.[1] ?? 0) * w01 + (c11?.[1] ?? 0) * w11) * inv;
+          const b = ((c00?.[2] ?? 0) * w00 + (c10?.[2] ?? 0) * w10 + (c01?.[2] ?? 0) * w01 + (c11?.[2] ?? 0) * w11) * inv;
+          const a = ((c00?.[3] ?? 0) * w00 + (c10?.[3] ?? 0) * w10 + (c01?.[3] ?? 0) * w01 + (c11?.[3] ?? 0) * w11) * inv;
+          const off = (py * imgW + px) * 4;
+          pixels[off] = r + 0.5;
+          pixels[off + 1] = g + 0.5;
+          pixels[off + 2] = b + 0.5;
+          pixels[off + 3] = Math.round(clamp(a, 0, 1) * 255);
+        }
+      }
+
+      context.putImageData(imgData, x0, y0);
+      return;
+    }
+
+    const latitudes = this.options.latitudes ?? [];
+    const longitudes = this.options.longitudes ?? [];
     const latHalf = this.options.gridLatStepDeg / 2;
     const lonHalf = this.options.gridLonStepDeg / 2;
     const south = bounds.getSouth();
@@ -27905,7 +28047,7 @@ const CanvasViewshedLayer = L.Layer.extend({
       const inLongitude = wrapsDateLine
         ? lon >= west || lon <= east
         : lon >= west && lon <= east;
-      if (lat < south || lat > north || !inLongitude) {
+      if (lat < south || lat > north || !inLongitude || !colors[index]) {
         continue;
       }
 
@@ -27913,9 +28055,8 @@ const CanvasViewshedLayer = L.Layer.extend({
       const southEast = this._map.latLngToLayerPoint([lat - latHalf, lon + lonHalf]).subtract(topLeft);
       const width = Math.max(1, southEast.x - northWest.x);
       const height = Math.max(1, southEast.y - northWest.y);
-
-      if (!colors[index]) continue;
-      context.fillStyle = colors[index];
+      const color = colors[index];
+      context.fillStyle = `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${color[3].toFixed(3)})`;
       context.fillRect(northWest.x, northWest.y, width, height);
     }
   },

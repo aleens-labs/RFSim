@@ -51,10 +51,9 @@ self.addEventListener("message", (event) => {
           payload: result,
         },
         [
-          result.latitudes.buffer,
-          result.longitudes.buffer,
           result.rssi.buffer,
           result.lineOfSight.buffer,
+          result.validMask.buffer,
         ],
       );
       return;
@@ -121,7 +120,7 @@ function primeComputeEngineLoad() {
   if (computeEngineState.loadPromise) {
     return computeEngineState.loadPromise;
   }
-  computeEngineState.loadPromise = import("./rf-compute-wasm-loader.mjs")
+  computeEngineState.loadPromise = import("./rf-compute-wasm-loader.js")
     .then(({ loadRfComputeEngine }) => loadRfComputeEngine())
     .then((engine) => {
       computeEngineState.active = engine?.kind === "wasm" ? engine : null;
@@ -223,28 +222,28 @@ function runSimulation(payload, reportProgress = () => {}) {
   const terrain = resolveTerrain(terrainId);
   const latStep = metersToLatitudeDegrees(gridMeters);
   const lonStep = metersToLongitudeDegrees(gridMeters, asset.lat);
-  const estimatedCells = Math.ceil(Math.PI * (radiusMeters / gridMeters) ** 2);
-  const latitudes = new Float64Array(estimatedCells);
-  const longitudes = new Float64Array(estimatedCells);
-  const rssi = new Float32Array(estimatedCells);
-  const lineOfSight = new Uint8Array(estimatedCells);
   const totalRows = Math.max(1, Math.floor((radiusMeters * 2) / gridMeters) + 1);
+  const totalCols = totalRows;
+  const totalCells = totalRows * totalCols;
+  const rssi = new Float32Array(totalCells);
+  const lineOfSight = new Uint8Array(totalCells);
+  const validMask = new Uint8Array(totalCells);
+  rssi.fill(Number.NaN);
 
   let count = 0;
-  let processedRows = 0;
   reportProgress({
     requestId,
     fraction: 0,
     stage: "Tracing RF paths...",
     detail: "0%",
   });
-  for (let northMeters = -radiusMeters; northMeters <= radiusMeters; northMeters += gridMeters) {
+  for (let rowIndex = 0, northMeters = -radiusMeters; rowIndex < totalRows; rowIndex += 1, northMeters += gridMeters) {
     if (canceledSimulationRequestIds.has(requestId)) {
       canceledSimulationRequestIds.delete(requestId);
       throw new Error("SIMULATION_CANCELED");
     }
     const lat = asset.lat + metersToLatitudeDegrees(northMeters);
-    for (let eastMeters = -radiusMeters; eastMeters <= radiusMeters; eastMeters += gridMeters) {
+    for (let colIndex = 0, eastMeters = -radiusMeters; colIndex < totalCols; colIndex += 1, eastMeters += gridMeters) {
       if (canceledSimulationRequestIds.has(requestId)) {
         canceledSimulationRequestIds.delete(requestId);
         throw new Error("SIMULATION_CANCELED");
@@ -269,15 +268,14 @@ function runSimulation(payload, reportProgress = () => {}) {
         propagationModel,
       );
 
-      latitudes[count] = lat;
-      longitudes[count] = lon;
-      rssi[count] = result.rssiDbm;
-      lineOfSight[count] = result.lineOfSight ? 1 : 0;
+      const gridIndex = (rowIndex * totalCols) + colIndex;
+      rssi[gridIndex] = result.rssiDbm;
+      lineOfSight[gridIndex] = result.lineOfSight ? 1 : 0;
+      validMask[gridIndex] = 1;
       count += 1;
     }
-    processedRows += 1;
-    if (processedRows === totalRows || processedRows === 1 || processedRows % 4 === 0) {
-      const fraction = clamp(processedRows / totalRows, 0, 1);
+    if (rowIndex === totalRows - 1 || rowIndex === 0 || (rowIndex + 1) % 4 === 0) {
+      const fraction = clamp((rowIndex + 1) / totalRows, 0, 1);
       reportProgress({
         requestId,
         fraction,
@@ -296,12 +294,24 @@ function runSimulation(payload, reportProgress = () => {}) {
     radiusMeters,
     opacity,
     propagationModel,
+    rows: totalRows,
+    cols: totalCols,
+    cellCount: count,
     gridLatStepDeg: latStep,
     gridLonStepDeg: lonStep,
-    latitudes: latitudes.slice(0, count),
-    longitudes: longitudes.slice(0, count),
-    rssi: rssi.slice(0, count),
-    lineOfSight: lineOfSight.slice(0, count),
+    sampleBounds: {
+      sw: {
+        lat: asset.lat + metersToLatitudeDegrees(-radiusMeters) - (latStep / 2),
+        lon: asset.lon + metersToLongitudeDegrees(-radiusMeters, asset.lat) - (lonStep / 2),
+      },
+      ne: {
+        lat: asset.lat + metersToLatitudeDegrees(radiusMeters) + (latStep / 2),
+        lon: asset.lon + metersToLongitudeDegrees(radiusMeters, asset.lat) + (lonStep / 2),
+      },
+    },
+    rssi,
+    lineOfSight,
+    validMask,
     elapsedMs: Math.round(getNowMs() - startedAt),
   };
 }
