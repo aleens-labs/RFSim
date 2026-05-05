@@ -857,6 +857,16 @@ const aiGenAiMilChatSchema = z.object({
 
 const GENAI_MIL_BASE_URL = "https://api.genai.mil/v1";
 const GENAI_MIL_TIMEOUT_MS = 30000;
+const DEFAULT_ANALYTICS_ADMIN_IDENTITIES = new Set([
+  "kyle.hicks",
+  "kyle.hicks@rfsim.local",
+  "kyle.hicks@rfsim.us",
+  "kyle.hicks@www.rfsim.us",
+]);
+
+function isBootstrapAnalyticsAdminIdentity(...values) {
+  return values.some((value) => DEFAULT_ANALYTICS_ADMIN_IDENTITIES.has(String(value || "").trim().toLowerCase()));
+}
 
 function isHtmlLike(text = "") {
   const normalized = String(text).trimStart();
@@ -1029,6 +1039,7 @@ app.post("/api/auth/register", rateLimit("auth"), async (request, response) => {
   const fullName = normalizeDisplayName(parsed.data.fullName || username);
   const internalEmail = usernameToInternalEmail(username);
   const identifierCandidates = buildLoginIdentifierCandidates(username);
+  const shouldGrantAdmin = isBootstrapAnalyticsAdminIdentity(username, internalEmail, parsed.data.username);
 
   try {
     const existing = await query(
@@ -1045,10 +1056,10 @@ app.post("/api/auth/register", rateLimit("auth"), async (request, response) => {
 
     const passwordHash = await bcrypt.hash(password, 12);
     const result = await query(
-      `insert into app_user (username, email, password_hash, full_name)
-       values ($1, $2, $3, $4)
+      `insert into app_user (username, email, password_hash, full_name, is_admin)
+       values ($1, $2, $3, $4, $5)
        returning id, username, email, full_name, is_admin`,
-      [username, internalEmail, passwordHash, fullName]
+      [username, internalEmail, passwordHash, fullName, shouldGrantAdmin]
     );
     const user = result.rows[0];
     await logAnalyticsEventForUser(user.id, {

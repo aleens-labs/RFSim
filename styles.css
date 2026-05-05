@@ -316,7 +316,7 @@ body.theme-light *::-webkit-scrollbar-thumb:hover {
   height: var(--topbar-height);
   background: var(--bg-topbar);
   border-bottom: 1px solid var(--border);
-  padding: 0 10px 0 0;
+  padding: 0;
   gap: 0;
   overflow: visible;
   min-width: 0;
@@ -325,10 +325,10 @@ body.theme-light *::-webkit-scrollbar-thumb:hover {
 .top-bar-left {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 14px;
   flex-shrink: 1;
   min-width: 0;
-  padding: 0 20px;
+  padding: 0 0 0 0;
   white-space: nowrap;
 }
 
@@ -714,8 +714,11 @@ body.theme-light *::-webkit-scrollbar-thumb:hover {
 }
 
 .title-block strong {
-  font-size: 1.1rem;
-  letter-spacing: 0.06em;
+  font-family: "Orbitron", sans-serif;
+  font-size: 2rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3002,6 +3005,7 @@ body:not(.ai-panel-open) .ai-panel {
   align-items: center;
   justify-content: center;
   padding: 0;
+  flex-shrink: 0;
 }
 
 .primary-button {
@@ -4268,7 +4272,7 @@ button:focus {
   }
 
   .top-bar-left {
-    padding: 0 8px;
+    padding: 0;
     gap: 8px;
   }
 }
@@ -6705,25 +6709,34 @@ body.emitter-modal-open {
 /* ═══════════════════════════════════════════════════════════════
    VIEW MODE TOGGLE  (replaces old 2-state panel-mode-toggle)
 ═══════════════════════════════════════════════════════════════ */
-.view-mode-chip {
+.view-mode-shell {
   display: flex;
-  align-items: center;
-  order: -1;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  padding: 5px 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+  box-sizing: border-box;
+  white-space: nowrap;
   flex-shrink: 0;
+  align-self: stretch;
+  min-width: 420px;
 }
 .view-mode-toggle {
   display: flex;
   align-items: stretch;
-  background: var(--bg-card-alt, #1a1d24);
-  border: 1px solid var(--border);
-  border-radius: 999px;
+  background: rgba(13, 16, 22, 0.78);
+  border: 1px solid rgba(143, 183, 255, 0.14);
+  border-radius: 12px;
   padding: 2px;
   position: relative;
-  height: 28px;
+  height: 32px;
   gap: 0;
   flex-shrink: 0;
-  /* Fixed total width so thumb math is exact */
-  width: 280px;
+  width: 100%;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
 }
 .view-mode-toggle:hover {
   border-color: var(--border-strong);
@@ -6736,10 +6749,11 @@ body.emitter-modal-open {
   width: calc((100% - 4px) / 4);
   height: calc(100% - 4px);
   background: var(--border-strong, #4a5060);
-  border-radius: 999px;
+  border-radius: 10px;
   transition: left 0.18s ease, background 0.18s;
   pointer-events: none;
   z-index: 0;
+  box-shadow: 0 10px 24px rgba(59, 130, 246, 0.24);
 }
 .view-mode-tab {
   position: relative;
@@ -6747,11 +6761,11 @@ body.emitter-modal-open {
   background: none;
   border: none;
   cursor: pointer;
-  font-size: 0.64rem;
+  font-size: 0.7rem;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.12em;
   color: var(--muted);
-  border-radius: 999px;
+  border-radius: 10px;
   transition: color 0.15s;
   -webkit-user-select: none;
   user-select: none;
