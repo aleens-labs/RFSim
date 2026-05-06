@@ -772,6 +772,7 @@ function formatUser(user) {
     email: user.email,
     fullName: user.full_name,
     isAdmin: Boolean(user.is_admin),
+    canManageServerAiKey: isServerAiKeyManager(user),
   };
 }
 
@@ -780,7 +781,8 @@ const aiConfigItemSchema = z.object({
   label: z.string().max(120).optional().default(""),
   provider: z.string().min(1).max(80),
   apiKey: z.string().min(1).max(4096),
-  model: z.string().max(120).optional().default("")
+  model: z.string().max(120).optional().default(""),
+  serverWide: z.boolean().optional().default(false),
 });
 
 const aiConfigListSchema = z.object({
@@ -866,6 +868,97 @@ const DEFAULT_ANALYTICS_ADMIN_IDENTITIES = new Set([
 
 function isBootstrapAnalyticsAdminIdentity(...values) {
   return values.some((value) => DEFAULT_ANALYTICS_ADMIN_IDENTITIES.has(String(value || "").trim().toLowerCase()));
+}
+
+function isServerAiKeyManager(user) {
+  return Boolean(user?.is_admin) && isBootstrapAnalyticsAdminIdentity(user?.username, user?.email);
+}
+
+async function hasUserServerAiKeyAccess(userId) {
+  if (!userId) {
+    return false;
+  }
+  const result = await query(
+    "select 1 from user_server_ai_key_access where user_id = $1 limit 1",
+    [userId]
+  );
+  return result.rowCount > 0;
+}
+
+async function fetchServerWideAiConfig() {
+  const result = await query(
+    `select c.id,
+            c.label,
+            c.provider,
+            c.api_key as "apiKey",
+            c.model,
+            c.owner_user_id as "ownerUserId",
+            u.username as "ownerUsername"
+       from user_ai_config c
+       join app_user u on u.id = c.owner_user_id
+      where c.is_server_wide = true
+      order by c.updated_at desc
+      limit 1`
+  );
+  const row = result.rows[0];
+  if (!row) {
+    return null;
+  }
+  return {
+    id: row.id,
+    label: row.label,
+    provider: row.provider,
+    apiKey: decryptSecret(row.apiKey),
+    model: row.model,
+    ownerUserId: row.ownerUserId,
+    ownerUsername: row.ownerUsername,
+    serverWide: true,
+  };
+}
+
+async function buildUserAiConfigPayload(user) {
+  const result = await query(
+    `select id,
+            label,
+            provider,
+            api_key as "apiKey",
+            model,
+            coalesce(is_server_wide, false) as "serverWide"
+       from user_ai_config
+      where owner_user_id = $1
+      order by position asc, updated_at desc`,
+    [user.id]
+  );
+
+  const canManageServerWideKey = isServerAiKeyManager(user);
+  const fallbackGrantEnabled = canManageServerWideKey
+    ? true
+    : await hasUserServerAiKeyAccess(user.id);
+  const fallbackConfig = fallbackGrantEnabled
+    ? await fetchServerWideAiConfig()
+    : null;
+
+  return {
+    configs: result.rows.map((row) => ({
+      ...row,
+      apiKey: decryptSecret(row.apiKey),
+      serverWide: Boolean(row.serverWide),
+    })),
+    canManageServerWideKey,
+    fallbackGrantEnabled,
+    fallbackConfig: fallbackConfig
+      ? {
+          id: fallbackConfig.id,
+          label: fallbackConfig.label,
+          provider: fallbackConfig.provider,
+          apiKey: fallbackConfig.apiKey,
+          model: fallbackConfig.model,
+          ownerUserId: fallbackConfig.ownerUserId,
+          ownerUsername: fallbackConfig.ownerUsername,
+          serverWide: true,
+        }
+      : null,
+  };
 }
 
 function isHtmlLike(text = "") {
@@ -1126,23 +1219,21 @@ app.get("/api/auth/me", authRequired, async (request, response) => {
 
 app.get("/api/user/ai-configs", authRequired, async (request, response) => {
   try {
-    const result = await query(
-      `select id, label, provider, api_key as "apiKey", model
-       from user_ai_config
-       where owner_user_id = $1
-       order by position asc, updated_at desc`,
-      [request.user.sub]
-    );
-    response.json({
-      configs: result.rows.map((row) => ({
-        ...row,
-        apiKey: decryptSecret(row.apiKey),
-      })),
-    });
+    const user = await fetchUserById(request.user.sub);
+    if (!user) {
+      response.status(404).json({ error: "User not found." });
+      return;
+    }
+    response.json(await buildUserAiConfigPayload(user));
   } catch (error) {
     // Table may not exist yet if migration hasn't run — return empty rather than 500
     if (error.code === "42P01") {
-      response.json({ configs: [] });
+      response.json({
+        configs: [],
+        canManageServerWideKey: false,
+        fallbackGrantEnabled: false,
+        fallbackConfig: null,
+      });
       return;
     }
     sendInternalError(response, "load AI configs", error);
@@ -1158,13 +1249,34 @@ app.put("/api/user/ai-configs", authRequired, async (request, response) => {
 
   const client = await pool.connect();
   try {
+    const user = await fetchUserById(request.user.sub);
+    if (!user) {
+      response.status(404).json({ error: "User not found." });
+      return;
+    }
+
+    const canManageServerWideKey = isServerAiKeyManager(user);
+    const serverWideConfigs = parsed.data.configs.filter((config) => config.serverWide);
+    if (serverWideConfigs.length > 1) {
+      response.status(400).json({ error: "Only one server-wide AI key can be enabled at a time." });
+      return;
+    }
+    if (serverWideConfigs.length && !canManageServerWideKey) {
+      response.status(403).json({ error: "Only kyle.hicks can save a server-wide AI key." });
+      return;
+    }
+    if (serverWideConfigs.some((configItem) => configItem.provider !== "anthropic")) {
+      response.status(400).json({ error: "The server-wide AI key must be an Anthropic (Claude) key." });
+      return;
+    }
+
     await client.query("begin");
     await client.query("delete from user_ai_config where owner_user_id = $1", [request.user.sub]);
 
     for (const [index, configItem] of parsed.data.configs.entries()) {
       await client.query(
-        `insert into user_ai_config (id, owner_user_id, label, provider, api_key, model, position)
-         values ($1, $2, $3, $4, $5, $6, $7)`,
+        `insert into user_ai_config (id, owner_user_id, label, provider, api_key, model, position, is_server_wide)
+         values ($1, $2, $3, $4, $5, $6, $7, $8)`,
         [
           configItem.id,
           request.user.sub,
@@ -1173,16 +1285,21 @@ app.put("/api/user/ai-configs", authRequired, async (request, response) => {
           encryptSecret(configItem.apiKey),
           configItem.model ?? "",
           index,
+          canManageServerWideKey && Boolean(configItem.serverWide),
         ]
       );
     }
 
     await client.query("commit");
-    response.json({ configs: parsed.data.configs });
+    response.json(await buildUserAiConfigPayload(user));
   } catch (error) {
     await client.query("rollback");
     if (error.code === "42P01") {
       response.status(503).json({ error: "AI config storage not available — run the latest database migration." });
+      return;
+    }
+    if (error.code === "23505") {
+      response.status(409).json({ error: "A server-wide AI key is already enabled." });
       return;
     }
     sendInternalError(response, "save AI configs", error);
@@ -2117,6 +2234,20 @@ async function adminRequired(request, response, next) {
   }
 }
 
+async function serverAiKeyManagerRequired(request, response, next) {
+  try {
+    const user = await fetchUserById(request.user?.sub);
+    if (!isServerAiKeyManager(user)) {
+      response.status(403).json({ error: "Only kyle.hicks can manage the server-wide AI key." });
+      return;
+    }
+    request.adminUser = user;
+    next();
+  } catch (error) {
+    sendInternalError(response, "authorize server AI key request", error);
+  }
+}
+
 const analyticsEventSchema = z.object({
   event_type: z.enum([
     "visit",
@@ -2134,6 +2265,10 @@ const analyticsEventSchema = z.object({
   input_tokens:   z.number().int().nonnegative().optional(),
   output_tokens:  z.number().int().nonnegative().optional(),
   meta:           z.record(z.any()).optional().default({}),
+});
+
+const userServerAiKeyToggleSchema = z.object({
+  enabled: z.boolean(),
 });
 
 async function fetchAnalyticsUsername(userId, fallback = "") {
@@ -2227,6 +2362,207 @@ app.delete("/api/admin/user/:userId", authRequired, adminRequired, async (reques
     return;
   } finally {
     client.release();
+  }
+});
+
+app.get("/api/admin/users/:userId/stats", authRequired, serverAiKeyManagerRequired, async (request, response) => {
+  const { userId } = request.params;
+  if (!userId || typeof userId !== "string" || userId.length > 64) {
+    response.status(400).json({ error: "Invalid user ID." });
+    return;
+  }
+
+  try {
+    const [summaryRes, aiUsageRes, projectsRes, eventsRes] = await Promise.all([
+      query(
+        `with project_counts as (
+            select owner_user_id as user_id,
+                   count(*)::int as project_count,
+                   max(updated_at) as last_project_updated_at
+              from project
+             group by owner_user_id
+          ),
+          snapshot_counts as (
+            select p.owner_user_id as user_id,
+                   count(s.id)::int as snapshot_count,
+                   max(s.created_at) as last_snapshot_at
+              from project_snapshot s
+              join project p on p.id = s.project_id
+             group by p.owner_user_id
+          ),
+          event_counts as (
+            select e.user_id,
+                   count(*) filter (where e.event_type = 'visit')::int as visit_count,
+                   count(*) filter (where e.event_type = 'auth_login')::int as login_count,
+                   count(*) filter (where e.event_type = 'ai_request')::int as ai_request_count,
+                   coalesce(sum(e.input_tokens), 0)::int as total_input_tokens,
+                   coalesce(sum(e.output_tokens), 0)::int as total_output_tokens,
+                   max(e.created_at) as last_seen,
+                   max(e.created_at) filter (where e.event_type = 'auth_login') as last_login_at
+              from analytics_event e
+             group by e.user_id
+          ),
+          favorite_provider as (
+            select distinct on (e.user_id)
+                   e.user_id,
+                   e.provider as favorite_provider
+              from analytics_event e
+             where e.event_type = 'ai_request' and coalesce(e.provider, '') <> ''
+             group by e.user_id, e.provider
+             order by e.user_id, count(*) desc, max(e.created_at) desc
+          ),
+          top_intent as (
+            select distinct on (e.user_id)
+                   e.user_id,
+                   nullif(e.meta->>'intent_category', '') as top_intent
+              from analytics_event e
+             where e.event_type = 'ai_request' and nullif(e.meta->>'intent_category', '') is not null
+             group by e.user_id, e.meta->>'intent_category'
+             order by e.user_id, count(*) desc, max(e.created_at) desc
+          )
+          select u.id,
+                 u.username,
+                 u.email,
+                 u.full_name,
+                 u.created_at,
+                 u.is_admin,
+                 coalesce(pc.project_count, 0)::int as project_count,
+                 coalesce(sc.snapshot_count, 0)::int as snapshot_count,
+                 coalesce(ec.visit_count, 0)::int as visit_count,
+                 coalesce(ec.login_count, 0)::int as login_count,
+                 coalesce(ec.ai_request_count, 0)::int as ai_request_count,
+                 coalesce(ec.total_input_tokens, 0)::int as total_input_tokens,
+                 coalesce(ec.total_output_tokens, 0)::int as total_output_tokens,
+                 (coalesce(ec.total_input_tokens, 0) + coalesce(ec.total_output_tokens, 0))::int as total_tokens,
+                 ec.last_seen,
+                 ec.last_login_at,
+                 sc.last_snapshot_at,
+                 pc.last_project_updated_at,
+                 fp.favorite_provider,
+                 ti.top_intent,
+                 (usa.user_id is not null) as server_key_enabled
+            from app_user u
+            left join project_counts pc on pc.user_id = u.id
+            left join snapshot_counts sc on sc.user_id = u.id
+            left join event_counts ec on ec.user_id = u.id
+            left join favorite_provider fp on fp.user_id = u.id
+            left join top_intent ti on ti.user_id = u.id
+            left join user_server_ai_key_access usa on usa.user_id = u.id
+           where u.id = $1
+           limit 1`,
+        [userId]
+      ),
+      query(
+        `select provider,
+                model,
+                nullif(meta->>'intent_category', '') as intent_category,
+                count(*)::int as request_count,
+                (coalesce(sum(input_tokens), 0) + coalesce(sum(output_tokens), 0))::int as total_tokens,
+                max(created_at) as last_request_at
+           from analytics_event
+          where user_id = $1
+            and event_type = 'ai_request'
+          group by provider, model, nullif(meta->>'intent_category', '')
+          order by total_tokens desc, request_count desc, last_request_at desc
+          limit 8`,
+        [userId]
+      ),
+      query(
+        `select id, name, description, created_at, updated_at
+           from project
+          where owner_user_id = $1
+          order by updated_at desc
+          limit 8`,
+        [userId]
+      ),
+      query(
+        `select created_at,
+                event_type,
+                provider,
+                model,
+                nullif(meta->>'project_name', '') as project_name,
+                nullif(meta->>'intent_category', '') as intent_category,
+                (coalesce(input_tokens, 0) + coalesce(output_tokens, 0))::int as total_tokens
+           from analytics_event
+          where user_id = $1
+          order by created_at desc
+          limit 10`,
+        [userId]
+      ),
+    ]);
+
+    const summary = summaryRes.rows[0];
+    if (!summary) {
+      response.status(404).json({ error: "User not found." });
+      return;
+    }
+
+    response.json({
+      summary,
+      aiUsage: aiUsageRes.rows,
+      projects: projectsRes.rows,
+      events: eventsRes.rows,
+    });
+  } catch (error) {
+    if (error.code === "42P01") {
+      response.status(503).json({ error: "Analytics storage not available â€” run the latest database migration." });
+      return;
+    }
+    sendInternalError(response, "load user analytics stats", error);
+  }
+});
+
+app.put("/api/admin/users/:userId/server-ai-key", authRequired, serverAiKeyManagerRequired, async (request, response) => {
+  const { userId } = request.params;
+  if (!userId || typeof userId !== "string" || userId.length > 64) {
+    response.status(400).json({ error: "Invalid user ID." });
+    return;
+  }
+
+  const parsed = userServerAiKeyToggleSchema.safeParse(request.body);
+  if (!parsed.success) {
+    response.status(400).json({ error: parsed.error.flatten() });
+    return;
+  }
+
+  try {
+    const targetUser = await fetchUserById(userId);
+    if (!targetUser) {
+      response.status(404).json({ error: "User not found." });
+      return;
+    }
+
+    const fallbackConfig = await fetchServerWideAiConfig();
+    if (parsed.data.enabled && !fallbackConfig) {
+      response.status(400).json({ error: "Save a server-wide Anthropic key before granting access." });
+      return;
+    }
+
+    if (parsed.data.enabled) {
+      await query(
+        `insert into user_server_ai_key_access (user_id, granted_by_user_id, updated_at)
+         values ($1, $2, now())
+         on conflict (user_id) do update set
+           granted_by_user_id = excluded.granted_by_user_id,
+           updated_at = now()`,
+        [userId, request.adminUser.id]
+      );
+    } else {
+      await query("delete from user_server_ai_key_access where user_id = $1", [userId]);
+    }
+
+    response.json({
+      ok: true,
+      enabled: parsed.data.enabled,
+      userId,
+      username: targetUser.username,
+    });
+  } catch (error) {
+    if (error.code === "42P01") {
+      response.status(503).json({ error: "Server-wide AI key storage not available â€” run the latest database migration." });
+      return;
+    }
+    sendInternalError(response, "toggle server AI key access", error);
   }
 });
 
@@ -2329,7 +2665,8 @@ app.get("/api/admin/analytics", authRequired, adminRequired, async (_request, re
              pc.last_project_updated_at,
              lp.last_project_name,
              fp.favorite_provider,
-             ti.top_intent
+             ti.top_intent,
+             (usa.user_id is not null) as server_key_enabled
       from app_user u
       left join project_counts pc on pc.user_id = u.id
       left join snapshot_counts sc on sc.user_id = u.id
@@ -2337,6 +2674,7 @@ app.get("/api/admin/analytics", authRequired, adminRequired, async (_request, re
       left join last_project lp on lp.user_id = u.id
       left join favorite_provider fp on fp.user_id = u.id
       left join top_intent ti on ti.user_id = u.id
+      left join user_server_ai_key_access usa on usa.user_id = u.id
       order by ec.last_seen desc nulls last, u.created_at desc
     `);
 

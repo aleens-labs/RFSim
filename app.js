@@ -1732,6 +1732,9 @@ const dom = {
   aiApiKeyLabelText: document.querySelector("#aiApiKeyLabelText"),
   aiSettingsModelSelect: document.querySelector("#aiSettingsModelSelect"),
   aiRefreshModelsBtn: document.querySelector("#aiRefreshModelsBtn"),
+  aiServerWideKeyRow: document.querySelector("#aiServerWideKeyRow"),
+  aiServerWideKeyCheckbox: document.querySelector("#aiServerWideKeyCheckbox"),
+  aiServerWideKeyHint: document.querySelector("#aiServerWideKeyHint"),
   aiProviderSummary: document.querySelector("#aiProviderSummary"),
   aiAgentProfilesList: document.querySelector("#aiAgentProfilesList"),
   aiLocalModelSection: document.querySelector("#aiLocalModelSection"),
@@ -1870,6 +1873,15 @@ const dom = {
   analyticsSearchInput: document.querySelector("#analyticsSearchInput"),
   analyticsSortSelect: document.querySelector("#analyticsSortSelect"),
   analyticsRefreshBtn: document.querySelector("#analyticsRefreshBtn"),
+  analyticsUserDetailModal: document.querySelector("#analyticsUserDetailModal"),
+  analyticsUserDetailCloseBtn: document.querySelector("#analyticsUserDetailCloseBtn"),
+  analyticsUserDetailSubtitle: document.querySelector("#analyticsUserDetailSubtitle"),
+  analyticsUserDetailSummary: document.querySelector("#analyticsUserDetailSummary"),
+  analyticsUserDetailAiUsage: document.querySelector("#analyticsUserDetailAiUsage"),
+  analyticsUserDetailProjects: document.querySelector("#analyticsUserDetailProjects"),
+  analyticsUserDetailEvents: document.querySelector("#analyticsUserDetailEvents"),
+  analyticsUserServerKeyBtn: document.querySelector("#analyticsUserServerKeyBtn"),
+  analyticsUserServerKeyStatus: document.querySelector("#analyticsUserServerKeyStatus"),
   addMapFolderBtn: document.querySelector("#addMapFolderBtn"),
   addTacticalItemBtn: document.querySelector("#addTacticalItemBtn"),
   drawShapeBtn: document.querySelector("#drawShapeBtn"),
@@ -2302,6 +2314,10 @@ const state = {
   ai: {
     activeConfigId: "",
     savedConfigs: [],
+    canManageServerWideKey: false,
+    serverWideDraftEnabled: false,
+    serverFallbackGrantEnabled: false,
+    serverFallbackConfig: null,
     discoveredModelsByProvider: {},
     genAiMilPreferredTransportId: "",
     configLabel: "",
@@ -5298,6 +5314,8 @@ function sanitizeAiSavedConfig(config) {
     apiKey,
     model: ensureAiModelForProvider(provider, typeof config.model === "string" ? config.model : ""),
     localModelUrl: typeof config.localModelUrl === "string" ? config.localModelUrl.trim() : "",
+    serverWide: Boolean(config.serverWide),
+    ownerUsername: typeof config.ownerUsername === "string" ? config.ownerUsername.trim() : "",
   };
 }
 
@@ -5311,6 +5329,8 @@ function serializeAiSavedConfigForClientStorage(config) {
     provider: config.provider,
     model: config.model,
     localModelUrl: config.localModelUrl || "",
+    serverWide: Boolean(config.serverWide),
+    ownerUsername: config.ownerUsername || "",
   };
 }
 
@@ -5321,7 +5341,8 @@ function sameAiSavedConfig(left, right) {
   return left.label === right.label
     && left.provider === right.provider
     && left.apiKey === right.apiKey
-    && left.model === right.model;
+    && left.model === right.model
+    && Boolean(left.serverWide) === Boolean(right.serverWide);
 }
 
 function mergeAiSavedConfigs(primaryConfigs = [], secondaryConfigs = []) {
@@ -5355,11 +5376,40 @@ function getAiSavedConfigDisplayLabel(config) {
   if (!config) {
     return "";
   }
-  return config.label || `${getAiProviderLabel(config.provider)} | ${maskAiApiKey(config.apiKey)}`;
+  const baseLabel = config.label || `${getAiProviderLabel(config.provider)} | ${maskAiApiKey(config.apiKey)}`;
+  return config.serverWide ? `${baseLabel} | Server Wide` : baseLabel;
 }
 
 function getSavedAiConfig(configId = state.ai.activeConfigId) {
   return state.ai.savedConfigs.find((config) => config.id === configId) ?? null;
+}
+
+function getEffectiveAiConfig() {
+  if (state.ai.provider && state.ai.apiKey) {
+    return {
+      provider: state.ai.provider,
+      apiKey: state.ai.apiKey,
+      model: ensureAiModelForProvider(state.ai.provider, state.ai.model),
+      source: "user",
+      serverWide: false,
+    };
+  }
+  const fallback = sanitizeAiSavedConfig(state.ai.serverFallbackConfig);
+  if (!state.ai.serverFallbackGrantEnabled || !fallback) {
+    return null;
+  }
+  return {
+    provider: fallback.provider,
+    apiKey: fallback.apiKey,
+    model: ensureAiModelForProvider(fallback.provider, fallback.model),
+    source: "server",
+    serverWide: true,
+    ownerUsername: state.ai.serverFallbackConfig?.ownerUsername || "",
+  };
+}
+
+function isUsingServerFallbackAiConfig() {
+  return getEffectiveAiConfig()?.source === "server";
 }
 
 function isAnalyticsAdmin() {
@@ -5449,6 +5499,7 @@ async function syncAiProviderSettingsToServer() {
         provider: config.provider,
         apiKey: config.apiKey,
         model: config.model,
+        serverWide: Boolean(config.serverWide),
       })),
     }),
   });
@@ -5468,12 +5519,17 @@ async function loadServerAiProviderSettings() {
     const mergedConfigs = mergeAiSavedConfigs(serverConfigs, localConfigs);
 
     state.ai.savedConfigs = mergedConfigs;
+    state.ai.canManageServerWideKey = Boolean(payload.canManageServerWideKey);
+    state.ai.serverFallbackGrantEnabled = Boolean(payload.fallbackGrantEnabled);
+    state.ai.serverFallbackConfig = sanitizeAiSavedConfig(payload.fallbackConfig);
+    state.ai.serverWideDraftEnabled = false;
     if (state.ai.activeConfigId && !mergedConfigs.some((config) => config.id === state.ai.activeConfigId)) {
       state.ai.activeConfigId = "";
     }
     const activeConfig = mergedConfigs.find((config) => config.id === state.ai.activeConfigId) ?? mergedConfigs[0] ?? null;
     if (activeConfig) {
       setActiveAiDraft(activeConfig.provider, activeConfig.apiKey, activeConfig.model, activeConfig.id, activeConfig.label);
+      state.ai.serverWideDraftEnabled = Boolean(activeConfig.serverWide);
     }
 
     persistAiProviderSettings();
@@ -5513,6 +5569,12 @@ function clearSessionState({ preserveGuest = false } = {}) {
   }
   clearAiChatHistory();
   state.ai.messages = [];
+  state.ai.savedConfigs = [];
+  state.ai.activeConfigId = "";
+  state.ai.canManageServerWideKey = false;
+  state.ai.serverWideDraftEnabled = false;
+  state.ai.serverFallbackGrantEnabled = false;
+  state.ai.serverFallbackConfig = null;
   state.session.token = null;
   state.session.user = null;
   state.session.projects = [];
@@ -7348,6 +7410,7 @@ function wireEvents() {
   dom.aiProviderSelect.addEventListener("change", onAiProviderChanged);
   dom.aiSavedConfigSelect.addEventListener("change", onAiSavedConfigChanged);
   dom.aiSavedConfigLabelInput.addEventListener("change", onAiSavedConfigLabelChanged);
+  dom.aiServerWideKeyCheckbox?.addEventListener("change", onAiServerWideKeyChanged);
   dom.aiApiKeyInput.addEventListener("change", onAiProviderChanged);
   dom.aiLocalModelUrlInput?.addEventListener("change", onLocalModelUrlChanged);
   dom.aiLocalModelDetectBtn?.addEventListener("click", onLocalModelDetect);
@@ -9451,6 +9514,9 @@ async function onAiProviderChanged() {
   }
 
   state.ai.provider = newProvider;
+  if (!state.ai.activeConfigId) {
+    state.ai.serverWideDraftEnabled = false;
+  }
   if (!isLocal) {
     state.ai.apiKey = dom.aiApiKeyInput.value.trim();
   }
@@ -9567,6 +9633,7 @@ async function onAiSavedConfigChanged() {
     const savedConfig = getSavedAiConfig(selectedId);
     if (savedConfig) {
       setActiveAiDraft(savedConfig.provider, savedConfig.apiKey, savedConfig.model, savedConfig.id, savedConfig.label);
+      state.ai.serverWideDraftEnabled = Boolean(savedConfig.serverWide);
       setAiStatusFromCurrentConfig();
       persistAiProviderSettings();
       syncAiUi();
@@ -9575,6 +9642,7 @@ async function onAiSavedConfigChanged() {
     }
   }
   state.ai.activeConfigId = "";
+  state.ai.serverWideDraftEnabled = false;
   persistAiProviderSettings();
   syncAiUi();
 }
@@ -9582,6 +9650,12 @@ async function onAiSavedConfigChanged() {
 function onAiSavedConfigLabelChanged() {
   state.ai.configLabel = dom.aiSavedConfigLabelInput.value.trim();
   syncActiveAiConfigFromDraft();
+  persistAiProviderSettings();
+  syncAiUi();
+}
+
+function onAiServerWideKeyChanged() {
+  state.ai.serverWideDraftEnabled = Boolean(dom.aiServerWideKeyCheckbox?.checked);
   persistAiProviderSettings();
   syncAiUi();
 }
@@ -9600,18 +9674,41 @@ function saveAiProvider() {
     provider: state.ai.provider,
     apiKey: state.ai.apiKey,
     model: ensureAiModelForProvider(state.ai.provider, state.ai.model),
+    serverWide: Boolean(state.ai.serverWideDraftEnabled),
   };
+  const activeConfigIndex = state.ai.savedConfigs.findIndex((config) => config.id === state.ai.activeConfigId);
+  if (activeConfigIndex >= 0) {
+    const updatedConfig = {
+      id: state.ai.savedConfigs[activeConfigIndex].id,
+      ...draftConfig,
+    };
+    state.ai.savedConfigs.splice(activeConfigIndex, 1, updatedConfig);
+    state.ai.activeConfigId = updatedConfig.id;
+    state.ai.configLabel = updatedConfig.label;
+    state.ai.model = updatedConfig.model;
+    state.ai.serverWideDraftEnabled = Boolean(updatedConfig.serverWide);
+    if (state.ai.status !== "ready") {
+      state.ai.statusMessage = `Updated ${getAiSavedConfigDisplayLabel(updatedConfig)}.`;
+    }
+    persistAiProviderSettings();
+    syncAiProviderSettingsToServer().catch((error) => setStatus(`AI key sync failed: ${error.message}`, true));
+    syncAiUi();
+    return;
+  }
+
   const exactMatch = state.ai.savedConfigs.find((config) => (
     config.label === draftConfig.label
     && config.provider === draftConfig.provider
     && config.apiKey === draftConfig.apiKey
     && config.model === draftConfig.model
+    && Boolean(config.serverWide) === Boolean(draftConfig.serverWide)
   ));
 
   if (exactMatch) {
     state.ai.activeConfigId = exactMatch.id;
     state.ai.configLabel = exactMatch.label;
     state.ai.model = exactMatch.model;
+    state.ai.serverWideDraftEnabled = Boolean(exactMatch.serverWide);
     if (state.ai.status !== "ready") {
       state.ai.statusMessage = `Saved keys: ${state.ai.savedConfigs.length}. This key is already saved.`;
     }
@@ -9624,6 +9721,7 @@ function saveAiProvider() {
     state.ai.activeConfigId = nextConfig.id;
     state.ai.configLabel = nextConfig.label;
     state.ai.model = nextConfig.model;
+    state.ai.serverWideDraftEnabled = Boolean(nextConfig.serverWide);
     if (state.ai.status !== "ready") {
       state.ai.statusMessage = `Saved ${state.ai.savedConfigs.length} AI key${state.ai.savedConfigs.length === 1 ? "" : "s"}.`;
     }
@@ -9645,6 +9743,7 @@ function deleteAiProvider() {
   state.ai.provider = "";
   state.ai.apiKey = "";
   state.ai.model = "";
+  state.ai.serverWideDraftEnabled = false;
   state.ai.status = "offline";
   state.ai.statusMessage = deletedConfig
     ? `Deleted ${getAiSavedConfigDisplayLabel(deletedConfig)}.`
@@ -9671,6 +9770,7 @@ function clearAiProvider() {
   state.ai.provider = "";
   state.ai.apiKey = "";
   state.ai.model = "";
+  state.ai.serverWideDraftEnabled = false;
   state.ai.status = "offline";
   state.ai.statusMessage = defaultAiStatusMessage();
   persistAiProviderSettings();
@@ -9887,7 +9987,7 @@ function renderAiEmptyState() {
   }
 
   const isLocalModel = Boolean(getAiProviderMeta(state.ai.provider)?.isLocalModel);
-  const hasConfiguredProvider = Boolean(state.ai.provider && (state.ai.apiKey || isLocalModel));
+  const hasConfiguredProvider = Boolean(getEffectiveAiConfig() || (state.ai.provider && isLocalModel));
   const note = !hasConfiguredProvider
     ? "Add a working AI provider in the top bar to enable chat-assisted planning."
     : state.ai.status === "ready"
@@ -9911,6 +10011,8 @@ function syncAiUi() {
 
   state.ai.enabledAgentProfileIds = normalizeEnabledAiAgentProfileIds(state.ai.enabledAgentProfileIds);
   const isLocalModel = Boolean(getAiProviderMeta(state.ai.provider)?.isLocalModel);
+  const effectiveConfig = getEffectiveAiConfig();
+  const usingServerFallback = effectiveConfig?.source === "server";
   syncAiViewMeta();
 
   renderAiSavedConfigOptions();
@@ -9920,6 +10022,14 @@ function syncAiUi() {
   if (dom.aiSavedConfigLabelInput) {
     dom.aiSavedConfigLabelInput.value = state.ai.configLabel;
   }
+  if (dom.aiServerWideKeyRow) {
+    const showServerWideControls = Boolean(state.ai.canManageServerWideKey && state.ai.provider === "anthropic" && state.ai.apiKey);
+    dom.aiServerWideKeyRow.classList.toggle("hidden", !showServerWideControls);
+    if (dom.aiServerWideKeyCheckbox) {
+      dom.aiServerWideKeyCheckbox.checked = Boolean(state.ai.serverWideDraftEnabled);
+    }
+  }
+  dom.aiServerWideKeyHint?.classList.toggle("hidden", !state.ai.canManageServerWideKey);
 
   // API key field: hidden for local model (picker handles it), text vs password for others
   const apiKeyLabel = document.querySelector("#aiApiKeyLabel");
@@ -9968,7 +10078,12 @@ function syncAiUi() {
   if (dom.aiProviderSummary) {
     const savedCount = state.ai.savedConfigs.length;
     const savedSummary = savedCount ? ` Saved keys: ${savedCount}.` : "";
-    dom.aiProviderSummary.textContent = `${state.ai.statusMessage}${savedSummary}`;
+    const fallbackSummary = usingServerFallback
+      ? ` Using sitewide ${getAiProviderLabel(effectiveConfig.provider)} fallback from ${effectiveConfig.ownerUsername || "kyle.hicks"}.`
+      : state.ai.serverFallbackGrantEnabled && state.ai.serverFallbackConfig
+        ? ` Sitewide ${getAiProviderLabel(state.ai.serverFallbackConfig.provider)} fallback is available if you leave your own key unset.`
+        : "";
+    dom.aiProviderSummary.textContent = `${state.ai.statusMessage}${savedSummary}${fallbackSummary}`;
   }
 
   const providerLabel = state.ai.provider ? getAiProviderLabel(state.ai.provider) : null;
@@ -9999,7 +10114,7 @@ function syncAiUi() {
   }
 
   renderAiEmptyState();
-  const hasConfiguredProvider = Boolean(state.ai.provider && (state.ai.apiKey || isLocalModel));
+  const hasConfiguredProvider = Boolean(effectiveConfig);
   const controlsEnabled = hasConfiguredProvider && state.ai.status !== "testing";
   const actionButtonsEnabled = controlsEnabled && !state.ai.requestInFlight;
   const sendEnabled = actionButtonsEnabled;
@@ -10031,7 +10146,7 @@ function syncAiUi() {
     dom.aiVoiceBtn.disabled = !actionButtonsEnabled || !("webkitSpeechRecognition" in window || "SpeechRecognition" in window);
   }
   if (dom.testAiConnectionBtn) {
-    dom.testAiConnectionBtn.disabled = !state.ai.provider || state.ai.status === "testing";
+    dom.testAiConnectionBtn.disabled = !effectiveConfig || state.ai.status === "testing";
   }
   if (dom.collapseAiPanelIcon) {
     dom.collapseAiPanelIcon.innerHTML = state.ai.panelOpen ? "&#9654;" : "&#9664;";
@@ -10091,7 +10206,7 @@ async function onAiChatSubmit(event) {
     syncAiUi();
   }
   let preResolvedLookup = null;
-  if (!state.ai.provider || !state.ai.apiKey) {
+  if (!getEffectiveAiConfig()) {
     preResolvedLookup = canUseLocalLookupOnly ? await tryResolveAiMapLookup(prompt) : null;
     if (!preResolvedLookup) {
       return;
@@ -15498,7 +15613,9 @@ async function discoverGenAiMilModels(apiKey) {
 }
 
 async function testAiProviderConnection({ openPanelOnSuccess = true } = {}) {
-  const { provider, apiKey } = state.ai;
+  const effectiveConfig = getEffectiveAiConfig();
+  const provider = effectiveConfig?.provider || state.ai.provider;
+  const apiKey = effectiveConfig?.apiKey || state.ai.apiKey;
 
   if (provider === "genai-mil") {
     if (!isGenAiMilKey(apiKey)) {
@@ -16057,7 +16174,7 @@ async function callAiPlanningAssistant(prompt, images = [], files = [], contextI
 
   // Build multimodal content for Anthropic; text-only fallback for others
   let messages;
-  if (state.ai.provider === "anthropic" && images.length > 0) {
+  if ((getEffectiveAiConfig()?.provider || state.ai.provider) === "anthropic" && images.length > 0) {
     const contentBlocks = [];
     images.forEach(({ dataUrl, mediaType }) => {
       const base64 = dataUrl.split(",")[1];
@@ -16071,9 +16188,12 @@ async function callAiPlanningAssistant(prompt, images = [], files = [], contextI
   }
 
   onStatus?.("Contacting provider");
-  const providerResponse = state.ai.provider === "anthropic"
+  const effectiveConfig = getEffectiveAiConfig();
+  const activeProvider = effectiveConfig?.provider || state.ai.provider;
+  const activeModel = effectiveConfig?.model || state.ai.model;
+  const providerResponse = activeProvider === "anthropic"
     ? await callAnthropic(messages, 16000, 0.2, onToken)
-    : state.ai.provider === "local-model"
+    : activeProvider === "local-model"
       ? await callLocalModel(messages, 999999, 0.1, onToken)
       : await callGenAiMil(messages, 32000, 0.2, onToken);
   const raw = providerResponse.text;
@@ -16081,8 +16201,8 @@ async function callAiPlanningAssistant(prompt, images = [], files = [], contextI
   const parsed = parseAiAssistantResponse(raw, prompt);
   fireAnalyticsEvent({
     event_type: "ai_request",
-    provider: state.ai.provider,
-    model: state.ai.model,
+    provider: activeProvider,
+    model: activeModel,
     input_tokens: providerResponse.inputTokens,
     output_tokens: providerResponse.outputTokens,
     meta: buildAiAnalyticsMeta({
@@ -16104,13 +16224,14 @@ async function callAiPlanningAssistant(prompt, images = [], files = [], contextI
 }
 
 async function callGenAiMil(messages, maxTokens = 256, temperature = 0, onToken) {
+  const effectiveConfig = getEffectiveAiConfig();
   const selectedModel = await ensureGenAiMilModelsLoaded();
   const payload = { model: selectedModel, messages, max_tokens: maxTokens, temperature, stream: Boolean(onToken) };
   const errors = [];
 
   for (const transport of getGenAiMilTransportPlan()) {
     try {
-      const result = await postGenAiMilChatViaTransport(transport, state.ai.apiKey, payload, onToken);
+      const result = await postGenAiMilChatViaTransport(transport, effectiveConfig?.apiKey || state.ai.apiKey, payload, onToken);
       state.ai.genAiMilPreferredTransportId = transport.id;
       return {
         text: result.content,
@@ -16128,17 +16249,18 @@ async function callGenAiMil(messages, maxTokens = 256, temperature = 0, onToken)
 }
 
 async function callAnthropic(messages, maxTokens = 256, temperature = 0, onToken) {
+  const effectiveConfig = getEffectiveAiConfig();
   const streaming = Boolean(onToken);
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "x-api-key": state.ai.apiKey,
+      "x-api-key": effectiveConfig?.apiKey || state.ai.apiKey,
       "anthropic-version": "2023-06-01",
       "anthropic-dangerous-direct-browser-access": "true",
     },
     body: JSON.stringify({
-      model: ensureAiModelForProvider("anthropic", state.ai.model),
+      model: ensureAiModelForProvider("anthropic", effectiveConfig?.model || state.ai.model),
       max_tokens: maxTokens,
       temperature,
       stream: streaming,
@@ -29641,6 +29763,8 @@ const _analytics = {
   sortCol: null,
   sortDir: "desc",
   filterText: "",
+  selectedUserId: "",
+  selectedUserStats: null,
 };
 
 function getAnalyticsSessionId() {
@@ -29813,6 +29937,201 @@ function fillTable(tableId, rows, cols) {
   }
 }
 
+function normalizeAnalyticsUserIdentity(value = "") {
+  return String(value || "").trim().toLowerCase();
+}
+
+function findAnalyticsUserRecord(value = "") {
+  const normalized = normalizeAnalyticsUserIdentity(value);
+  if (!normalized) {
+    return null;
+  }
+  return (_analytics.data?.users ?? []).find((user) => {
+    return [
+      user.id,
+      user.username,
+      user.email,
+      user.full_name,
+      user.fullName,
+    ].some((candidate) => normalizeAnalyticsUserIdentity(candidate) === normalized);
+  }) ?? null;
+}
+
+function decorateAnalyticsUsernameCell(cell, userRecord) {
+  if (!cell) {
+    return;
+  }
+  const label = String(cell.textContent || "").trim();
+  if (!label) {
+    return;
+  }
+  cell.textContent = "";
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "analytics-user-link";
+  button.textContent = label;
+  button.title = `Open stats for ${label}`;
+  if (userRecord?.id) {
+    button.dataset.userId = userRecord.id;
+    button.addEventListener("click", () => openAnalyticsUserDetail(userRecord.id));
+  } else {
+    button.disabled = true;
+  }
+  cell.appendChild(button);
+  if (userRecord?.server_key_enabled) {
+    cell.classList.add("analytics-user-server-key-cell");
+    const badge = document.createElement("span");
+    badge.className = "analytics-user-server-key-badge";
+    badge.textContent = "AI SERVER KEY";
+    cell.appendChild(badge);
+  }
+}
+
+function wireAnalyticsUserLinks(tableId, usernameColumnIndex = 0, resolver = (label) => findAnalyticsUserRecord(label)) {
+  const rows = document.querySelectorAll(`#${tableId} tbody tr`);
+  rows.forEach((row) => {
+    const cells = row.querySelectorAll("td");
+    const userCell = cells[usernameColumnIndex];
+    if (!userCell || userCell.colSpan > 1) {
+      return;
+    }
+    const userRecord = resolver(String(userCell.textContent || "").trim(), row);
+    if (userRecord?.server_key_enabled) {
+      row.classList.add("analytics-user-server-key-row");
+    }
+    decorateAnalyticsUsernameCell(userCell, userRecord);
+  });
+}
+
+function formatAnalyticsDetailList(items = [], renderItem) {
+  if (!Array.isArray(items) || !items.length) {
+    return '<div class="analytics-user-detail-empty">No data</div>';
+  }
+  return items.map(renderItem).join("");
+}
+
+function closeAnalyticsUserDetail() {
+  dom.analyticsUserDetailModal?.classList.add("hidden");
+  _analytics.selectedUserId = "";
+  _analytics.selectedUserStats = null;
+}
+
+function renderAnalyticsUserDetail() {
+  const payload = _analytics.selectedUserStats;
+  const summary = payload?.summary;
+  if (!summary) {
+    return;
+  }
+
+  if (dom.analyticsUserDetailSubtitle) {
+    dom.analyticsUserDetailSubtitle.textContent = `${summary.username || summary.full_name || summary.email} • ${summary.email}`;
+  }
+  if (dom.analyticsUserServerKeyStatus) {
+    dom.analyticsUserServerKeyStatus.textContent = summary.server_key_enabled
+      ? "Server fallback enabled for this user."
+      : "Server fallback disabled for this user.";
+  }
+  if (dom.analyticsUserServerKeyBtn) {
+    dom.analyticsUserServerKeyBtn.textContent = summary.server_key_enabled ? "Disable AI SERVER KEY" : "Enable AI SERVER KEY";
+  }
+  if (dom.analyticsUserDetailSummary) {
+    const items = [
+      ["Joined", formatAnalyticsDate(summary.created_at)],
+      ["Visits", formatAnalyticsCompactNumber(summary.visit_count)],
+      ["Logins", formatAnalyticsCompactNumber(summary.login_count)],
+      ["Projects", formatAnalyticsCompactNumber(summary.project_count)],
+      ["Snapshots", formatAnalyticsCompactNumber(summary.snapshot_count)],
+      ["AI Requests", formatAnalyticsCompactNumber(summary.ai_request_count)],
+      ["Total Tokens", formatAnalyticsCompactNumber(summary.total_tokens)],
+      ["Top Provider", summary.favorite_provider || "—"],
+      ["Top Intent", summary.top_intent || "—"],
+      ["Last Seen", formatAnalyticsDateTime(summary.last_seen)],
+    ];
+    dom.analyticsUserDetailSummary.innerHTML = items.map(([label, value]) => `
+      <div class="analytics-user-detail-stat">
+        <span class="analytics-user-detail-stat-label">${escapeHtml(label)}</span>
+        <strong class="analytics-user-detail-stat-value">${escapeHtml(value)}</strong>
+      </div>
+    `).join("");
+  }
+  if (dom.analyticsUserDetailAiUsage) {
+    dom.analyticsUserDetailAiUsage.innerHTML = formatAnalyticsDetailList(payload.aiUsage, (entry) => `
+      <div class="analytics-user-detail-item">
+        <strong>${escapeHtml(entry.provider || "Unknown provider")} • ${escapeHtml(entry.model || "default")}</strong>
+        <span>${escapeHtml(entry.intent_category || "uncategorized")} • ${formatAnalyticsCompactNumber(entry.request_count)} requests • ${formatAnalyticsCompactNumber(entry.total_tokens)} tokens</span>
+      </div>
+    `);
+  }
+  if (dom.analyticsUserDetailProjects) {
+    dom.analyticsUserDetailProjects.innerHTML = formatAnalyticsDetailList(payload.projects, (project) => `
+      <div class="analytics-user-detail-item">
+        <strong>${escapeHtml(project.name || "Untitled project")}</strong>
+        <span>${escapeHtml(clampText(project.description || "", 90) || "No description")} • Updated ${escapeHtml(formatAnalyticsDateTime(project.updated_at))}</span>
+      </div>
+    `);
+  }
+  if (dom.analyticsUserDetailEvents) {
+    dom.analyticsUserDetailEvents.innerHTML = formatAnalyticsDetailList(payload.events, (event) => `
+      <div class="analytics-user-detail-item">
+        <strong>${escapeHtml(event.event_type || "event")}</strong>
+        <span>${escapeHtml(formatAnalyticsDateTime(event.created_at))} • ${escapeHtml(event.provider || "—")} • ${escapeHtml(event.project_name || event.intent_category || "—")} • ${formatAnalyticsCompactNumber(event.total_tokens)} tokens</span>
+      </div>
+    `);
+  }
+}
+
+async function fetchAnalyticsUserDetail(userId) {
+  const payload = await apiFetch(`/admin/users/${encodeURIComponent(userId)}/stats`);
+  _analytics.selectedUserStats = payload;
+  renderAnalyticsUserDetail();
+}
+
+async function openAnalyticsUserDetail(userId) {
+  if (!userId || !isAnalyticsAdmin()) {
+    return;
+  }
+  _analytics.selectedUserId = userId;
+  _analytics.selectedUserStats = null;
+  dom.analyticsUserDetailModal?.classList.remove("hidden");
+  if (dom.analyticsUserDetailSubtitle) {
+    dom.analyticsUserDetailSubtitle.textContent = "Loading user details...";
+  }
+  if (dom.analyticsUserDetailSummary) {
+    dom.analyticsUserDetailSummary.innerHTML = "";
+  }
+  if (dom.analyticsUserDetailAiUsage) {
+    dom.analyticsUserDetailAiUsage.innerHTML = "";
+  }
+  if (dom.analyticsUserDetailProjects) {
+    dom.analyticsUserDetailProjects.innerHTML = "";
+  }
+  if (dom.analyticsUserDetailEvents) {
+    dom.analyticsUserDetailEvents.innerHTML = "";
+  }
+  try {
+    await fetchAnalyticsUserDetail(userId);
+  } catch (error) {
+    if (dom.analyticsUserDetailSubtitle) {
+      dom.analyticsUserDetailSubtitle.textContent = error.message;
+    }
+  }
+}
+
+async function toggleAnalyticsUserServerKey() {
+  if (!_analytics.selectedUserId || !_analytics.selectedUserStats?.summary) {
+    return;
+  }
+  const nextEnabled = !_analytics.selectedUserStats.summary.server_key_enabled;
+  await apiFetch(`/admin/users/${encodeURIComponent(_analytics.selectedUserId)}/server-ai-key`, {
+    method: "PUT",
+    body: JSON.stringify({ enabled: nextEnabled }),
+  });
+  await Promise.all([
+    fetchAnalyticsUserDetail(_analytics.selectedUserId),
+    fetchAndRenderAnalytics(),
+  ]);
+}
+
 function ensureAnalyticsChrome() {
   const titleNote = document.querySelector("#analyticsModal .emitter-modal-title-group p");
   if (titleNote) {
@@ -29960,6 +30279,7 @@ function openAnalyticsModal() {
 }
 
 function closeAnalyticsModal() {
+  closeAnalyticsUserDetail();
   setAnalyticsOpenState(false);
 }
 
@@ -30030,6 +30350,8 @@ function renderAnalyticsOverview() {
 
   const users = sortRows(
     filterAnalyticsRows((_analytics.data?.users ?? []).map((row) => ({
+      _userId: row.id,
+      _serverKeyEnabled: Boolean(row.server_key_enabled),
       username: row.username ?? "",
       last_seen: { text: formatAnalyticsDateTime(row.last_seen), sortValue: row.last_seen || "" },
       login_count: row.login_count ?? 0,
@@ -30044,6 +30366,10 @@ function renderAnalyticsOverview() {
   fillTable("analyticsOverviewProvidersTable", providers, ["provider", "request_count", "user_count", "total_tokens"]);
   fillTable("analyticsOverviewIntentsTable", intents, ["intent_category", "ai_requests", "user_count", "total_tokens"]);
   fillTable("analyticsOverviewUsersTable", users, ["username", "last_seen", "login_count", "ai_request_count", "total_tokens", "top_intent"]);
+  wireAnalyticsUserLinks("analyticsOverviewUsersTable", 0, (_label, rowEl) => {
+    const rowIndex = Array.from(rowEl.parentElement?.children ?? []).indexOf(rowEl);
+    return users[rowIndex]?._userId ? { id: users[rowIndex]._userId, server_key_enabled: users[rowIndex]._serverKeyEnabled } : null;
+  });
 }
 
 async function adminDeleteUser(userId, displayName) {
@@ -30073,6 +30399,7 @@ function renderAnalyticsUsers() {
       favorite_provider: u.favorite_provider ?? "—",
       top_intent: u.top_intent ?? "—",
       last_seen: { text: formatAnalyticsDateTime(u.last_seen), sortValue: u.last_seen || "" },
+      _serverKeyEnabled: Boolean(u.server_key_enabled),
     }))),
     _analytics.sortCol || "last_seen",
     _analytics.sortDir
@@ -30106,6 +30433,9 @@ function renderAnalyticsUsers() {
       }
       tr.appendChild(td);
     }
+    if (row._serverKeyEnabled) {
+      tr.classList.add("analytics-user-server-key-row");
+    }
     // Delete button column — not shown for the current admin's own account
     const actionTd = document.createElement("td");
     if (row._userId && row._userId !== currentUserId) {
@@ -30118,6 +30448,7 @@ function renderAnalyticsUsers() {
     }
     tr.appendChild(actionTd);
     tbody.appendChild(tr);
+    decorateAnalyticsUsernameCell(tr.children[0], { id: row._userId, server_key_enabled: row._serverKeyEnabled });
   }
 }
 
@@ -30139,6 +30470,7 @@ function renderAnalyticsAiUsage() {
     _analytics.sortDir
   );
   fillTable("analyticsAiTable", rows, ["username", "provider", "model", "intent_category", "request_count", "total_input_tokens", "total_output_tokens", "total_tokens", "avg_total_tokens", "last_request_at"]);
+  wireAnalyticsUserLinks("analyticsAiTable", 0);
 }
 
 function renderAnalyticsProjects() {
@@ -30158,6 +30490,7 @@ function renderAnalyticsProjects() {
     _analytics.sortDir
   );
   fillTable("analyticsProjectsTable", rows, ["username", "name", "description", "created_at", "updated_at", "save_count", "snapshot_count", "last_snapshot_at", "latest_intent"]);
+  wireAnalyticsUserLinks("analyticsProjectsTable", 0);
 }
 
 function renderAnalyticsEvents() {
@@ -30178,6 +30511,7 @@ function renderAnalyticsEvents() {
     _analytics.sortDir
   );
   fillTable("analyticsEventsTable", rows, ["created_at", "username", "event_type", "provider", "model", "project_name", "intent_category", "total_tokens", "outcome", "prompt_excerpt"]);
+  wireAnalyticsUserLinks("analyticsEventsTable", 1);
 }
 
 function renderAnalyticsActiveTab() {
@@ -30302,7 +30636,14 @@ function ensureAnalyticsInitialized() {
   ensureAnalyticsChrome();
   dom.analyticsModalCloseBtn?.addEventListener("click", closeAnalyticsModal);
   addModalBackdropClose(dom.analyticsModal, closeAnalyticsModal);
+  dom.analyticsUserDetailCloseBtn?.addEventListener("click", closeAnalyticsUserDetail);
+  addModalBackdropClose(dom.analyticsUserDetailModal, closeAnalyticsUserDetail);
   dom.analyticsRefreshBtn?.addEventListener("click", fetchAndRenderAnalytics);
+  dom.analyticsUserServerKeyBtn?.addEventListener("click", () => {
+    void toggleAnalyticsUserServerKey().catch((error) => {
+      setStatus(`Server AI key update failed: ${error.message}`, true);
+    });
+  });
   dom.analyticsSearchInput?.addEventListener("input", () => {
     _analytics.filterText = dom.analyticsSearchInput.value;
     renderAnalyticsActiveTab();
@@ -30331,6 +30672,10 @@ function ensureAnalyticsInitialized() {
     });
   });
   document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && dom.analyticsUserDetailModal && !dom.analyticsUserDetailModal.classList.contains("hidden")) {
+      closeAnalyticsUserDetail();
+      return;
+    }
     if (event.key === "Escape" && dom.analyticsModal && !dom.analyticsModal.classList.contains("hidden")) {
       closeAnalyticsModal();
     }
@@ -33739,7 +34084,7 @@ function wireViewAiForm(formId, inputId, sendId, clearId, messagesId, contextFn)
 
   // Enable input when AI is configured
   const checkAi = () => {
-    const hasProvider = !!(state.ui?.aiProvider || localStorage.getItem("ai_api_key") || localStorage.getItem("ai_provider_url"));
+    const hasProvider = Boolean(getEffectiveAiConfig() || state.ui?.aiProvider || localStorage.getItem("ai_api_key") || localStorage.getItem("ai_provider_url"));
     input.disabled = !hasProvider;
     if (sendBtn) sendBtn.disabled = !hasProvider;
   };
@@ -33786,9 +34131,10 @@ function appendViewAiMessage(container, role, text, extraClass) {
 
 async function callViewAi(userMessage, contextJson) {
   // Reuse the same provider logic as the main AI chat
+  const effectiveConfig = getEffectiveAiConfig();
   const providerUrl = state.ui?.aiProviderUrl || localStorage.getItem("ai_provider_url") || "";
-  const apiKey      = state.ui?.aiApiKey      || localStorage.getItem("ai_api_key")      || "";
-  const model       = state.ui?.aiModel       || localStorage.getItem("ai_model")        || "claude-sonnet-4-6";
+  const apiKey      = effectiveConfig?.apiKey || state.ui?.aiApiKey || localStorage.getItem("ai_api_key") || "";
+  const model       = effectiveConfig?.model || state.ui?.aiModel || localStorage.getItem("ai_model") || "claude-sonnet-4-6";
 
   const systemPrompt = `You are an expert military RF communications and operations planning assistant embedded in RF Planner.
 The user is working in a specialized view. Here is the current scenario context (JSON):
