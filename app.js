@@ -1780,6 +1780,19 @@ const dom = {
   clearTakProfileBtn: document.querySelector("#clearTakProfileBtn"),
   takSettingsSummary: document.querySelector("#takSettingsSummary"),
   takDefaultStreamToggle: document.querySelector("#takDefaultStreamToggle"),
+  takTriggeredPromptingToggle: document.querySelector("#takTriggeredPromptingToggle"),
+  takTriggeredPromptingSection: document.querySelector("#takTriggeredPromptingSection"),
+  takTriggerChips: document.querySelector("#takTriggerChips"),
+  takTriggerNewInput: document.querySelector("#takTriggerNewInput"),
+  takTriggerAddBtn: document.querySelector("#takTriggerAddBtn"),
+  takTriggeredSystemPrompt: document.querySelector("#takTriggeredSystemPrompt"),
+  takTriggeredIncludeMapContextToggle: document.querySelector("#takTriggeredIncludeMapContextToggle"),
+  takTriggeredNotifyToggle: document.querySelector("#takTriggeredNotifyToggle"),
+  takTriggeredLogToggle: document.querySelector("#takTriggeredLogToggle"),
+  takTriggeredStatusText: document.querySelector("#takTriggeredStatusText"),
+  takTriggeredCountReceived: document.querySelector("#takTriggeredCountReceived"),
+  takTriggeredCountReplied: document.querySelector("#takTriggeredCountReplied"),
+  takTriggeredCountFailed: document.querySelector("#takTriggeredCountFailed"),
   takCertPasswordModal: document.querySelector("#takCertPasswordModal"),
   takCertPasswordTitle: document.querySelector("#takCertPasswordTitle"),
   takCertPasswordFileName: document.querySelector("#takCertPasswordFileName"),
@@ -1953,12 +1966,14 @@ const dom = {
   tacticalEditorUnitType: document.querySelector("#tacticalEditorUnitType"),
   tacticalEditorUnitSize: document.querySelector("#tacticalEditorUnitSize"),
   tacticalEditorCotType: document.querySelector("#tacticalEditorCotType"),
-  tacticalEditorSidc: document.querySelector("#tacticalEditorSidc"),
   tacticalEditorLat: document.querySelector("#tacticalEditorLat"),
   tacticalEditorLon: document.querySelector("#tacticalEditorLon"),
+  tacticalEditorLocationRow: document.querySelector("#tacticalEditorLocationRow"),
+  tacticalEditorLocationLabel: document.querySelector("#tacticalEditorLocationLabel"),
+  tacticalEditorLocationDisplay: document.querySelector("#tacticalEditorLocationDisplay"),
   tacticalEditorGeometrySummary: document.querySelector("#tacticalEditorGeometrySummary"),
-  tacticalEditorRemarks: document.querySelector("#tacticalEditorRemarks"),
   tacticalEditorAssetLinks: document.querySelector("#tacticalEditorAssetLinks"),
+  tacticalEditorAddEmitterBtn: document.querySelector("#tacticalEditorAddEmitterBtn"),
   tacticalEditorPreview: document.querySelector("#tacticalEditorPreview"),
   tacticalEditorPreviewLabel: document.querySelector("#tacticalEditorPreviewLabel"),
   tacticalEditorValidation: document.querySelector("#tacticalEditorValidation"),
@@ -2064,6 +2079,30 @@ const dom = {
   siteStudySecondaryAsset: document.querySelector("#siteStudySecondaryAsset"),
   siteStudyCandidateContent: document.querySelector("#siteStudyCandidateContent"),
   siteStudyObjectiveContent: document.querySelector("#siteStudyObjectiveContent"),
+  siteStudyPrimaryAssetBtn: document.querySelector("#siteStudyPrimaryAssetBtn"),
+  siteStudyPrimaryAssetDropdown: document.querySelector("#siteStudyPrimaryAssetDropdown"),
+  siteStudyPrimaryAssetModeMenu: document.querySelector("#siteStudyPrimaryAssetModeMenu"),
+  siteStudyPrimaryAssetSearchShell: document.querySelector("#siteStudyPrimaryAssetSearchShell"),
+  siteStudyPrimaryAssetSearch: document.querySelector("#siteStudyPrimaryAssetSearch"),
+  siteStudyPrimaryAssetList: document.querySelector("#siteStudyPrimaryAssetList"),
+  siteStudySecondaryAssetBtn: document.querySelector("#siteStudySecondaryAssetBtn"),
+  siteStudySecondaryAssetDropdown: document.querySelector("#siteStudySecondaryAssetDropdown"),
+  siteStudySecondaryAssetModeMenu: document.querySelector("#siteStudySecondaryAssetModeMenu"),
+  siteStudySecondaryAssetSearchShell: document.querySelector("#siteStudySecondaryAssetSearchShell"),
+  siteStudySecondaryAssetSearch: document.querySelector("#siteStudySecondaryAssetSearch"),
+  siteStudySecondaryAssetList: document.querySelector("#siteStudySecondaryAssetList"),
+  siteStudyCandidateContentBtn: document.querySelector("#siteStudyCandidateContentBtn"),
+  siteStudyCandidateContentDropdown: document.querySelector("#siteStudyCandidateContentDropdown"),
+  siteStudyCandidateContentModeMenu: document.querySelector("#siteStudyCandidateContentModeMenu"),
+  siteStudyCandidateContentSearchShell: document.querySelector("#siteStudyCandidateContentSearchShell"),
+  siteStudyCandidateContentSearch: document.querySelector("#siteStudyCandidateContentSearch"),
+  siteStudyCandidateContentList: document.querySelector("#siteStudyCandidateContentList"),
+  siteStudyObjectiveContentBtn: document.querySelector("#siteStudyObjectiveContentBtn"),
+  siteStudyObjectiveContentDropdown: document.querySelector("#siteStudyObjectiveContentDropdown"),
+  siteStudyObjectiveContentModeMenu: document.querySelector("#siteStudyObjectiveContentModeMenu"),
+  siteStudyObjectiveContentSearchShell: document.querySelector("#siteStudyObjectiveContentSearchShell"),
+  siteStudyObjectiveContentSearch: document.querySelector("#siteStudyObjectiveContentSearch"),
+  siteStudyObjectiveContentList: document.querySelector("#siteStudyObjectiveContentList"),
   siteStudyLinkPreset: document.querySelector("#siteStudyLinkPreset"),
   siteStudyClearancePolicy: document.querySelector("#siteStudyClearancePolicy"),
   siteStudyGridMeters: document.querySelector("#siteStudyGridMeters"),
@@ -2258,6 +2297,12 @@ const state = {
     labelDefaultPolygon: false,
     labelDefaultLine: false,
     defaultTakStreamEnabled: true,
+    takTriggeredPromptingEnabled: false,
+    takTriggerPrefixes: ["/ai"],
+    takTriggeredSystemPrompt: "",
+    takTriggeredIncludeMapContext: false,
+    takTriggeredNotify: true,
+    takTriggeredLog: true,
     autoFetchWeatherOnSim: false,
     tacticalMarkerSize: 60,
   },
@@ -2414,6 +2459,9 @@ const state = {
     gpsLastPublishStatus: "idle",
     gpsLastPublishMessage: "",
     gpsLastSentFixKey: "",
+    triggeredPromptCountReceived: 0,
+    triggeredPromptCountReplied: 0,
+    triggeredPromptCountFailed: 0,
   },
   takIdentity: {
     callsign: "RF SIM",
@@ -3747,12 +3795,14 @@ async function pollTakLiveContacts({ immediate = false } = {}) {
       syncCesiumEntities();
     }
     renderMapTakDebugPanel();
+    updateTakTriggeredStatusDisplay();
   } catch (error) {
     state.takLive.status = "error";
     state.takLive.message = error.message;
     state.takRuntime.status = "error";
     state.takRuntime.message = error.message;
     pushClientTakDebug("status", "TAK poll failed", error.message, "error");
+    updateTakTriggeredStatusDisplay();
   } finally {
     if (state.session.token && state.session.activeProjectId === currentProjectId && isTakEnabledForProject(currentProjectId)) {
       state.takLive.pollTimerId = window.setTimeout(() => {
@@ -3760,6 +3810,164 @@ async function pollTakLiveContacts({ immediate = false } = {}) {
       }, 5000);
     }
   }
+}
+
+// ── TAK Triggered Prompting ─────────────────────────────────────────────────
+
+function renderTakTriggerChips() {
+  if (!dom.takTriggerChips) return;
+  const prefixes = state.settings.takTriggerPrefixes || ["/ai"];
+  dom.takTriggerChips.innerHTML = prefixes.map((p, i) => `
+    <span class="tak-trigger-chip">
+      <span class="tak-trigger-chip-text">${escapeHtml(p)}</span>
+      <button type="button" class="tak-trigger-chip-remove" data-index="${i}" aria-label="Remove ${escapeHtml(p)}">&#10005;</button>
+    </span>
+  `).join("");
+  dom.takTriggerChips.querySelectorAll(".tak-trigger-chip-remove").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const idx = Number(btn.dataset.index);
+      state.settings.takTriggerPrefixes = state.settings.takTriggerPrefixes.filter((_, i) => i !== idx);
+      if (!state.settings.takTriggerPrefixes.length) state.settings.takTriggerPrefixes = ["/ai"];
+      renderTakTriggerChips();
+      persistSettings();
+    });
+  });
+}
+
+function addTakTriggerPrefix(raw) {
+  const prefix = raw.trim().toLowerCase().replace(/\s+/g, "");
+  if (!prefix) return;
+  const existing = state.settings.takTriggerPrefixes || [];
+  if (existing.includes(prefix)) return;
+  state.settings.takTriggerPrefixes = [...existing, prefix];
+  renderTakTriggerChips();
+  persistSettings();
+}
+
+function syncTakTriggeredPromptingUi() {
+  const enabled = Boolean(state.settings.takTriggeredPromptingEnabled);
+  dom.takTriggeredPromptingSection?.classList.toggle("tak-triggered-disabled", !enabled);
+  dom.takTriggeredPromptingSection?.querySelectorAll("input, textarea, button").forEach((el) => {
+    if (el.id === "takTriggerAddBtn" || el.classList.contains("tak-trigger-chip-remove")) {
+      el.disabled = !enabled;
+    } else if (el.tagName !== "BUTTON" || el.id !== "takTriggeredPromptingToggle") {
+      el.disabled = !enabled;
+    }
+  });
+  updateTakTriggeredStatusDisplay();
+}
+
+function updateTakTriggeredStatusDisplay() {
+  if (!dom.takTriggeredStatusText) return;
+  const enabled = Boolean(state.settings.takTriggeredPromptingEnabled);
+  if (!enabled) {
+    dom.takTriggeredStatusText.textContent = "Disabled.";
+    dom.takTriggeredStatusText.dataset.level = "idle";
+    return;
+  }
+  const takStatus = state.takRuntime.status;
+  if (takStatus === "connected") {
+    dom.takTriggeredStatusText.textContent = "Active — listening for TAK GeoChat triggers.";
+    dom.takTriggeredStatusText.dataset.level = "ok";
+  } else if (takStatus === "error") {
+    dom.takTriggeredStatusText.textContent = "TAK connection error — triggers will not fire.";
+    dom.takTriggeredStatusText.dataset.level = "error";
+  } else {
+    dom.takTriggeredStatusText.textContent = "Waiting for TAK connection…";
+    dom.takTriggeredStatusText.dataset.level = "idle";
+  }
+  if (dom.takTriggeredCountReceived) dom.takTriggeredCountReceived.textContent = String(state.takRuntime.triggeredPromptCountReceived);
+  if (dom.takTriggeredCountReplied) dom.takTriggeredCountReplied.textContent = String(state.takRuntime.triggeredPromptCountReplied);
+  if (dom.takTriggeredCountFailed) dom.takTriggeredCountFailed.textContent = String(state.takRuntime.triggeredPromptCountFailed);
+}
+
+/**
+ * Entry point for incoming TAK GeoChat messages.
+ * Call this when a GeoChat CoT event is received from the TAK server.
+ * @param {{ senderUid: string, senderCallsign: string, text: string, chatroom?: string }} msg
+ */
+async function handleIncomingTakChatMessage(msg) {
+  if (!state.settings.takTriggeredPromptingEnabled) return;
+  const prefixes = (state.settings.takTriggerPrefixes || ["/ai"]).map((p) => p.toLowerCase());
+  const text = (msg.text || "").trim();
+  const lc = text.toLowerCase();
+  const matchedPrefix = prefixes.find((p) => lc.startsWith(p));
+  if (!matchedPrefix) return;
+
+  const prompt = text.slice(matchedPrefix.length).trim();
+  if (!prompt) return;
+
+  state.takRuntime.triggeredPromptCountReceived++;
+  updateTakTriggeredStatusDisplay();
+  pushClientTakDebug("inbound", "TAK triggered prompt received", `From ${msg.senderCallsign || msg.senderUid}: ${prompt.slice(0, 80)}`, "info");
+
+  if (state.settings.takTriggeredNotify) {
+    setStatus(`TAK prompt from ${msg.senderCallsign || msg.senderUid}: "${prompt.slice(0, 60)}${prompt.length > 60 ? "…" : ""}"`);
+  }
+
+  if (state.settings.takTriggeredLog) {
+    appendAiMessage("system", `[TAK Prompt from ${escapeHtml(msg.senderCallsign || msg.senderUid)}] ${escapeHtml(prompt)}`);
+  }
+
+  try {
+    const systemPrefix = (state.settings.takTriggeredSystemPrompt || "").trim();
+    const mapContext = state.settings.takTriggeredIncludeMapContext ? buildAiMapContext() : "";
+    const fullPrompt = [systemPrefix, mapContext, prompt].filter(Boolean).join("\n\n");
+
+    const response = await runAiPromptHeadless(fullPrompt);
+    if (!response) throw new Error("No response from AI provider.");
+
+    state.takRuntime.triggeredPromptCountReplied++;
+    if (state.settings.takTriggeredLog) {
+      appendAiMessage("assistant", `[TAK Reply to ${escapeHtml(msg.senderCallsign || msg.senderUid)}] ${escapeHtml(response)}`);
+    }
+    pushClientTakDebug("outbound", "TAK triggered reply sent", `To ${msg.senderCallsign || msg.senderUid}: ${response.slice(0, 80)}`, "info");
+    await sendTakChatReply({ toUid: msg.senderUid, toCallsign: msg.senderCallsign, text: response });
+  } catch (err) {
+    state.takRuntime.triggeredPromptCountFailed++;
+    pushClientTakDebug("outbound", "TAK triggered reply failed", err.message, "error");
+  } finally {
+    updateTakTriggeredStatusDisplay();
+  }
+}
+
+/**
+ * Stub: send a GeoChat reply back to the originating TAK contact.
+ * Replace with real CoT/GeoChat publish when the backend supports it.
+ */
+async function sendTakChatReply({ toUid, toCallsign, text }) {
+  const projectId = state.session.activeProjectId;
+  const token = state.session.token;
+  if (!projectId || !token) throw new Error("No active project or session.");
+  await apiFetch(`/projects/${projectId}/tak-chat`, {
+    method: "POST",
+    body: JSON.stringify({ toUid, toCallsign, text }),
+  });
+}
+
+/**
+ * Stub: run an AI prompt without updating the main chat UI thread.
+ * Wraps the existing AI provider call pattern for headless use.
+ */
+async function runAiPromptHeadless(prompt) {
+  const provider = state.ai.provider;
+  const apiKey = state.ai.apiKey;
+  const model = state.ai.model;
+  if (!provider || !apiKey) throw new Error("No AI provider configured.");
+  // Delegate to the existing AI stream infrastructure with a one-shot callback
+  return new Promise((resolve, reject) => {
+    let accumulated = "";
+    runAiStreamRequest({
+      prompt,
+      provider,
+      apiKey,
+      model,
+      onChunk: (chunk) => { accumulated += chunk; },
+      onDone: () => resolve(accumulated.trim()),
+      onError: reject,
+      headless: true,
+    });
+  });
 }
 
 function refreshTakLiveFeed({ immediate = false } = {}) {
@@ -4557,24 +4765,40 @@ function deleteTacticalObject(objectId, { silent = false } = {}) {
   }
 }
 
-function buildTacticalEditorAssetLinks(selectedIds = []) {
+// Working list of linked asset IDs while the tactical editor is open
+let _tacticalEditorLinkedAssetIds = [];
+
+function renderTacticalEditorAssetLinks() {
   if (!dom.tacticalEditorAssetLinks) return;
-  const selected = new Set((selectedIds || []).map(String));
-  if (!state.assets.length) {
-    dom.tacticalEditorAssetLinks.innerHTML = '<div class="tactical-asset-link-empty">No RF emitters are available to link.</div>';
+  const ids = _tacticalEditorLinkedAssetIds;
+  if (!ids.length) {
+    dom.tacticalEditorAssetLinks.innerHTML = '<div class="tactical-asset-link-empty">No RF emitters linked.</div>';
     return;
   }
-  dom.tacticalEditorAssetLinks.innerHTML = state.assets.map((asset) => `
-    <label class="tactical-asset-link-row">
-      <input type="checkbox" value="${escapeHtml(asset.id)}" ${selected.has(String(asset.id)) ? "checked" : ""}>
-      <span>${escapeHtml(asset.name || asset.emitterLabel || asset.unit || asset.id)} <span class="fine-print">(${escapeHtml(asset.type || "asset")})</span></span>
-    </label>
-  `).join("");
+  const countHeader = `<div class="tactical-asset-link-count">${ids.length} emitter${ids.length === 1 ? "" : "s"} linked</div>`;
+  const rows = ids.map((id) => {
+    const asset = state.assets.find((a) => String(a.id) === String(id));
+    const label = asset
+      ? escapeHtml(asset.name || asset.emitterLabel || asset.unit || asset.id)
+      : `<em>Unknown (${escapeHtml(String(id))})</em>`;
+    const sub = asset ? escapeHtml(asset.type || "RF Emitter") : "";
+    return `<div class="tactical-asset-link-row" data-asset-id="${escapeHtml(String(id))}">
+      <span class="tactical-asset-link-name">${label}${sub ? ` <span class="fine-print">(${sub})</span>` : ""}</span>
+      <button type="button" class="ghost-button small tactical-asset-unlink-btn" data-asset-id="${escapeHtml(String(id))}" aria-label="Unlink">&#10005;</button>
+    </div>`;
+  }).join("");
+  dom.tacticalEditorAssetLinks.innerHTML = countHeader + rows;
+  dom.tacticalEditorAssetLinks.querySelectorAll(".tactical-asset-unlink-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const rmId = btn.dataset.assetId;
+      _tacticalEditorLinkedAssetIds = _tacticalEditorLinkedAssetIds.filter((i) => String(i) !== String(rmId));
+      renderTacticalEditorAssetLinks();
+    });
+  });
 }
 
 function getSelectedTacticalEditorAssetIds() {
-  return [...(dom.tacticalEditorAssetLinks?.querySelectorAll('input[type="checkbox"]:checked') ?? [])]
-    .map((input) => String(input.value));
+  return [..._tacticalEditorLinkedAssetIds].map(String);
 }
 
 function updateTacticalEditorPreview() {
@@ -4621,6 +4845,7 @@ function syncTacticalEditorUi() {
   dom.tacticalEditorUnitSize?.closest("label")?.classList.toggle("hidden", !isUnit);
   dom.tacticalEditorLat?.closest("label")?.classList.toggle("hidden", !isPoint);
   dom.tacticalEditorLon?.closest("label")?.classList.toggle("hidden", !isPoint);
+  dom.tacticalEditorLocationRow?.classList.toggle("hidden", !isPoint);
   const isEditMode = state.tacticalEditor.mode === "edit";
   dom.tacticalEditorRelocateBtn?.classList.toggle("hidden", !(isPoint && isEditMode));
   updateTacticalEditorPreview();
@@ -4632,6 +4857,8 @@ function closeTacticalEditorModal() {
   state.tacticalEditor.mode = null;
   state.tacticalEditor.targetId = null;
   state.tacticalEditor.workingCopy = null;
+  _tacticalEditorLinkedAssetIds = [];
+  _emitterLinkCallback = null;
 }
 
 function openTacticalEditorModal(object, { mode = "create", live = false } = {}) {
@@ -4654,13 +4881,26 @@ function openTacticalEditorModal(object, { mode = "create", live = false } = {})
   dom.tacticalEditorUnitType.value = normalizeToUnitType(tactical.unitType);
   dom.tacticalEditorUnitSize.value = tactical.size || "battalion";
   dom.tacticalEditorCotType.value = tactical.cotType || "";
-  dom.tacticalEditorSidc.value = tactical.sidc || "";
-  dom.tacticalEditorLat.value = tactical.geometryType === "Point" ? Number(tactical.coordinates[0] ?? 0).toFixed(6) : "";
-  dom.tacticalEditorLon.value = tactical.geometryType === "Point" ? Number(tactical.coordinates[1] ?? 0).toFixed(6) : "";
+  const isPoint = tactical.geometryType === "Point";
+  const lat = isPoint ? Number(tactical.coordinates[0] ?? 0) : null;
+  const lon = isPoint ? Number(tactical.coordinates[1] ?? 0) : null;
+  dom.tacticalEditorLat.value = isPoint ? lat.toFixed(6) : "";
+  dom.tacticalEditorLon.value = isPoint ? lon.toFixed(6) : "";
+  if (dom.tacticalEditorLocationDisplay) {
+    if (isPoint && Number.isFinite(lat) && Number.isFinite(lon)) {
+      const coordSys = state.settings.coordinateSystem;
+      dom.tacticalEditorLocationDisplay.value = formatCoordinate(lat, lon, coordSys);
+      if (dom.tacticalEditorLocationLabel) {
+        dom.tacticalEditorLocationLabel.textContent = coordinateSystemStatusLabel(coordSys);
+      }
+    } else {
+      dom.tacticalEditorLocationDisplay.value = "";
+    }
+  }
   dom.tacticalEditorGeometrySummary.value = formatTacticalGeometrySummary(tactical);
-  dom.tacticalEditorRemarks.value = tactical.remarks || "";
   dom.tacticalEditorValidation.textContent = live ? "Live TAK items are rendered read-only. Use Promote later if you want persistence." : "";
-  buildTacticalEditorAssetLinks(tactical.linkedAssetIds);
+  _tacticalEditorLinkedAssetIds = (tactical.linkedAssetIds || []).map(String);
+  renderTacticalEditorAssetLinks();
   syncTacticalEditorUi();
   dom.tacticalEditorModal?.classList.remove("hidden");
   updateModalBodyState();
@@ -4752,9 +4992,7 @@ function saveTacticalEditor() {
     unitType: dom.tacticalEditorUnitType.value,
     size: dom.tacticalEditorUnitSize.value,
     cotType: dom.tacticalEditorCotType.value.trim(),
-    sidc: dom.tacticalEditorSidc.value.trim(),
     coordinates,
-    remarks: dom.tacticalEditorRemarks.value.trim(),
     linkedAssetIds: getSelectedTacticalEditorAssetIds(),
     lastModified: nowIso(),
   });
@@ -7042,6 +7280,12 @@ const emitterModal = {
     this.originalAssetPayload = null;
     clearPendingToLink();
     updateEmitterToLinkBadge(null);
+    // If opened from tactical editor link mode and user cancelled, reopen the tactical editor
+    if (_emitterLinkCallback) {
+      _emitterLinkCallback = null;
+      dom.tacticalEditorModal?.classList.remove("hidden");
+      updateModalBodyState();
+    }
   },
 
   onFormChanged() {
@@ -7641,6 +7885,11 @@ const emitterModal = {
       state.editingAssetId = null;
       refreshActionButtons();
       this.close();
+      if (_emitterLinkCallback) {
+        const cb = _emitterLinkCallback;
+        _emitterLinkCallback = null;
+        cb(asset.id);
+      }
       return;
     }
 
@@ -8095,6 +8344,11 @@ function wireEvents() {
   dom.workspaceProjectReloadBtn?.addEventListener("click", onWorkspaceProjectReload);
   dom.workspaceProjectSnapshotBtn?.addEventListener("click", () => onWorkspaceProjectSnapshot().catch((error) => setStatus(error.message, true)));
   dom.workspaceProjectDeleteBtn?.addEventListener("click", () => onWorkspaceProjectDelete().catch((error) => setStatus(error.message, true)));
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".ss-picker-wrap")) {
+      document.querySelectorAll(".ss-picker-dropdown:not(.hidden)").forEach((d) => d.classList.add("hidden"));
+    }
+  });
   document.addEventListener("click", closeTopBarMenus);
   document.addEventListener("click", closeTerrainHeatmapDropdown);
   document.addEventListener("click", closeTerrainContourDropdown);
@@ -8229,6 +8483,19 @@ function wireEvents() {
     input.addEventListener("input", syncTacticalEditorUi);
     input.addEventListener("change", syncTacticalEditorUi);
   });
+  const updateLocationDisplay = () => {
+    const lat = parseFloat(dom.tacticalEditorLat?.value);
+    const lon = parseFloat(dom.tacticalEditorLon?.value);
+    if (dom.tacticalEditorLocationDisplay) {
+      if (Number.isFinite(lat) && Number.isFinite(lon)) {
+        dom.tacticalEditorLocationDisplay.value = formatCoordinate(lat, lon, state.settings.coordinateSystem);
+      } else {
+        dom.tacticalEditorLocationDisplay.value = "";
+      }
+    }
+  };
+  dom.tacticalEditorLat?.addEventListener("input", updateLocationDisplay);
+  dom.tacticalEditorLon?.addEventListener("input", updateLocationDisplay);
   dom.tacticalEditorCloseBtn?.addEventListener("click", closeTacticalEditorModal);
   dom.tacticalEditorCancelBtn?.addEventListener("click", closeTacticalEditorModal);
   dom.tacticalEditorSaveBtn?.addEventListener("click", saveTacticalEditor);
@@ -8238,6 +8505,24 @@ function wireEvents() {
     startTacticalRelocation(tacticalId);
   });
   addModalBackdropClose(dom.tacticalEditorModal, closeTacticalEditorModal);
+  dom.tacticalEditorAddEmitterBtn?.addEventListener("click", () => {
+    const workingCopy = state.tacticalEditor.workingCopy;
+    if (!workingCopy) return;
+    // Stash current tactical editor state so we can reopen it after emitter is saved
+    _emitterLinkCallback = (newAssetId) => {
+      if (!_tacticalEditorLinkedAssetIds.includes(String(newAssetId))) {
+        _tacticalEditorLinkedAssetIds.push(String(newAssetId));
+      }
+      renderTacticalEditorAssetLinks();
+      // Reopen the tactical editor
+      dom.tacticalEditorModal?.classList.remove("hidden");
+      updateModalBodyState();
+    };
+    // Close the tactical editor temporarily while the emitter modal is open
+    dom.tacticalEditorModal?.classList.add("hidden");
+    updateModalBodyState();
+    emitterModal.open();
+  });
 
   const importFileInput = document.querySelector("#importFileInput");
   if (importFileInput) {
@@ -8425,6 +8710,28 @@ function wireEvents() {
   dom.takClientCertPasswordInput?.addEventListener("change", onTakDraftFieldChanged);
   dom.takCaCertPasswordInput?.addEventListener("change", onTakDraftFieldChanged);
   dom.takDefaultStreamToggle?.addEventListener("change", onSettingsChanged);
+  dom.takTriggeredPromptingToggle?.addEventListener("change", onSettingsChanged);
+  dom.takTriggeredSystemPrompt?.addEventListener("input", onSettingsChanged);
+  dom.takTriggeredIncludeMapContextToggle?.addEventListener("change", onSettingsChanged);
+  dom.takTriggeredNotifyToggle?.addEventListener("change", onSettingsChanged);
+  dom.takTriggeredLogToggle?.addEventListener("change", onSettingsChanged);
+  dom.takTriggerAddBtn?.addEventListener("click", () => {
+    const val = dom.takTriggerNewInput?.value || "";
+    if (val.trim()) {
+      addTakTriggerPrefix(val);
+      if (dom.takTriggerNewInput) dom.takTriggerNewInput.value = "";
+    }
+  });
+  dom.takTriggerNewInput?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const val = dom.takTriggerNewInput.value || "";
+      if (val.trim()) {
+        addTakTriggerPrefix(val);
+        dom.takTriggerNewInput.value = "";
+      }
+    }
+  });
   dom.autoFetchWeatherOnSimToggle?.addEventListener("change", onSettingsChanged);
   dom.tacticalMarkerSizeInput?.addEventListener("input", () => {
     if (dom.tacticalMarkerSizeValue) dom.tacticalMarkerSizeValue.textContent = dom.tacticalMarkerSizeInput.value + "px";
@@ -8692,6 +8999,14 @@ function loadSettings() {
     if (typeof parsed.labelDefaultPolygon === "boolean") state.settings.labelDefaultPolygon = parsed.labelDefaultPolygon;
     if (typeof parsed.labelDefaultLine === "boolean") state.settings.labelDefaultLine = parsed.labelDefaultLine;
     if (typeof parsed.defaultTakStreamEnabled === "boolean") state.settings.defaultTakStreamEnabled = parsed.defaultTakStreamEnabled;
+    if (typeof parsed.takTriggeredPromptingEnabled === "boolean") state.settings.takTriggeredPromptingEnabled = parsed.takTriggeredPromptingEnabled;
+    if (Array.isArray(parsed.takTriggerPrefixes) && parsed.takTriggerPrefixes.every((p) => typeof p === "string")) {
+      state.settings.takTriggerPrefixes = parsed.takTriggerPrefixes.length ? parsed.takTriggerPrefixes : ["/ai"];
+    }
+    if (typeof parsed.takTriggeredSystemPrompt === "string") state.settings.takTriggeredSystemPrompt = parsed.takTriggeredSystemPrompt;
+    if (typeof parsed.takTriggeredIncludeMapContext === "boolean") state.settings.takTriggeredIncludeMapContext = parsed.takTriggeredIncludeMapContext;
+    if (typeof parsed.takTriggeredNotify === "boolean") state.settings.takTriggeredNotify = parsed.takTriggeredNotify;
+    if (typeof parsed.takTriggeredLog === "boolean") state.settings.takTriggeredLog = parsed.takTriggeredLog;
     if (typeof parsed.autoFetchWeatherOnSim === "boolean") state.settings.autoFetchWeatherOnSim = parsed.autoFetchWeatherOnSim;
     if (typeof parsed.tacticalMarkerSize === "number" && parsed.tacticalMarkerSize >= 30 && parsed.tacticalMarkerSize <= 120) {
       state.settings.tacticalMarkerSize = parsed.tacticalMarkerSize;
@@ -9364,6 +9679,12 @@ function onSettingsChanged() {
   if (dom.labelDefaultPolygonToggle) state.settings.labelDefaultPolygon = dom.labelDefaultPolygonToggle.checked;
   if (dom.labelDefaultLineToggle) state.settings.labelDefaultLine = dom.labelDefaultLineToggle.checked;
   if (dom.takDefaultStreamToggle) state.settings.defaultTakStreamEnabled = dom.takDefaultStreamToggle.checked;
+  if (dom.takTriggeredPromptingToggle) state.settings.takTriggeredPromptingEnabled = dom.takTriggeredPromptingToggle.checked;
+  if (dom.takTriggeredSystemPrompt) state.settings.takTriggeredSystemPrompt = dom.takTriggeredSystemPrompt.value.trim();
+  if (dom.takTriggeredIncludeMapContextToggle) state.settings.takTriggeredIncludeMapContext = dom.takTriggeredIncludeMapContextToggle.checked;
+  if (dom.takTriggeredNotifyToggle) state.settings.takTriggeredNotify = dom.takTriggeredNotifyToggle.checked;
+  if (dom.takTriggeredLogToggle) state.settings.takTriggeredLog = dom.takTriggeredLogToggle.checked;
+  syncTakTriggeredPromptingUi();
   if (dom.autoFetchWeatherOnSimToggle) state.settings.autoFetchWeatherOnSim = dom.autoFetchWeatherOnSimToggle.checked;
   const prevMarkerSize = state.settings.tacticalMarkerSize;
   if (dom.tacticalMarkerSizeInput) state.settings.tacticalMarkerSize = Number(dom.tacticalMarkerSizeInput.value);
@@ -9384,6 +9705,13 @@ function applySettings() {
   if (dom.labelDefaultPolygonToggle) dom.labelDefaultPolygonToggle.checked = state.settings.labelDefaultPolygon ?? false;
   if (dom.labelDefaultLineToggle) dom.labelDefaultLineToggle.checked = state.settings.labelDefaultLine ?? false;
   if (dom.takDefaultStreamToggle) dom.takDefaultStreamToggle.checked = state.settings.defaultTakStreamEnabled !== false;
+  if (dom.takTriggeredPromptingToggle) dom.takTriggeredPromptingToggle.checked = Boolean(state.settings.takTriggeredPromptingEnabled);
+  if (dom.takTriggeredSystemPrompt) dom.takTriggeredSystemPrompt.value = state.settings.takTriggeredSystemPrompt || "";
+  if (dom.takTriggeredIncludeMapContextToggle) dom.takTriggeredIncludeMapContextToggle.checked = Boolean(state.settings.takTriggeredIncludeMapContext);
+  if (dom.takTriggeredNotifyToggle) dom.takTriggeredNotifyToggle.checked = state.settings.takTriggeredNotify !== false;
+  if (dom.takTriggeredLogToggle) dom.takTriggeredLogToggle.checked = state.settings.takTriggeredLog !== false;
+  renderTakTriggerChips();
+  syncTakTriggeredPromptingUi();
   if (dom.autoFetchWeatherOnSimToggle) {
     dom.autoFetchWeatherOnSimToggle.checked = Boolean(state.settings.autoFetchWeatherOnSim);
     const box = dom.autoFetchWeatherOnSimToggle.closest(".settings-check-row")?.querySelector(".settings-xbox");
@@ -20442,6 +20770,12 @@ function addAsset(latlng) {
   }
   focusPlacedAsset(asset, marker);
   scheduleTopoRefresh();
+  // If opened from tactical editor link mode, add asset to the linked list and reopen editor
+  if (_emitterLinkCallback) {
+    const cb = _emitterLinkCallback;
+    _emitterLinkCallback = null;
+    cb(asset.id);
+  }
 }
 
 function focusPlacedAsset(asset, marker) {
@@ -20843,35 +21177,129 @@ function getSiteStudyGeometryOptionEntries() {
   });
 }
 
-function renderSiteStudyAssetOptions() {
-  if (!dom.siteStudyPrimaryAsset || !dom.siteStudySecondaryAsset) {
+function getSsToEntries() {
+  return (_toState.units || []).map((unit) => ({
+    id: `to:${unit.id}`,
+    label: [unit.label, unit.designator].filter(Boolean).join(" · ") || String(unit.id),
+  }));
+}
+
+function getSsMapAssetEntries() {
+  return state.assets.map((asset, i) => ({
+    id: `asset:${asset.id}`,
+    label: `${i + 1}. ${asset.name} (${asset.unit})`,
+  }));
+}
+
+function getSsMapContentEntries() {
+  return getSiteStudyGeometryOptionEntries().map((e) => ({ id: e.id, label: e.name }));
+}
+
+function renderSsPickerList(listEl, entries, selectedValue, query) {
+  if (!listEl) return;
+  const q = (query || "").toLowerCase().trim();
+  const filtered = q ? entries.filter((e) => e.label.toLowerCase().includes(q)) : entries;
+  if (!filtered.length) {
+    listEl.innerHTML = `<div class="ss-picker-empty">${entries.length ? "No matches" : "Nothing available"}</div>`;
     return;
   }
-  const selects = [dom.siteStudyPrimaryAsset, dom.siteStudySecondaryAsset];
-  selects.forEach((select, index) => {
-    const emptyLabel = index === 0 ? "Select asset or endpoint" : "Optional secondary asset";
-    const existingValue = select.value;
-    select.innerHTML = [`<option value="">${emptyLabel}</option>`]
-      .concat(state.assets.map((asset, assetIndex) =>
-        `<option value="${escapeHtml(asset.id)}">${escapeHtml(`${assetIndex + 1}. ${asset.name} (${asset.unit})`)}</option>`
-      ))
-      .join("");
-    select.value = state.assets.some((asset) => asset.id === existingValue) ? existingValue : "";
+  listEl.innerHTML = "";
+  filtered.forEach((entry) => {
+    const row = document.createElement("div");
+    row.className = `ss-picker-item${entry.id === selectedValue ? " selected" : ""}`;
+    row.innerHTML = `<span class="ss-picker-check">${entry.id === selectedValue ? "✓" : ""}</span><span>${escapeHtml(entry.label)}</span>`;
+    listEl.appendChild(row);
+  });
+}
+
+function initSsPicker({ btn, dropdown, modeMenu, searchShell, search, list, hidden, defaultLabel }) {
+  if (!btn || !dropdown || !hidden) return;
+  if (btn._ssPickerInit) return;
+  btn._ssPickerInit = true;
+
+  const closeAll = () => document.querySelectorAll(".ss-picker-dropdown:not(.hidden)").forEach((d) => d.classList.add("hidden"));
+
+  const resetToModeMenu = () => {
+    modeMenu?.classList.remove("hidden");
+    searchShell?.classList.add("hidden");
+    list?.classList.add("hidden");
+    if (search) search.value = "";
+  };
+
+  const openMode = (getEntries) => {
+    modeMenu?.classList.add("hidden");
+    searchShell?.classList.remove("hidden");
+    list?.classList.remove("hidden");
+    const entries = getEntries();
+    renderSsPickerList(list, entries, hidden.value, "");
+    search?.focus();
+    if (search) {
+      search.oninput = () => renderSsPickerList(list, entries, hidden.value, search.value);
+    }
+    list.onclick = (e) => {
+      const row = e.target.closest(".ss-picker-item");
+      if (!row) return;
+      const idx = [...list.querySelectorAll(".ss-picker-item")].indexOf(row);
+      const entry = entries.filter((en) => {
+        const q = (search?.value || "").toLowerCase().trim();
+        return !q || en.label.toLowerCase().includes(q);
+      })[idx];
+      if (!entry) return;
+      const isSame = hidden.value === entry.id;
+      hidden.value = isSame ? "" : entry.id;
+      btn.textContent = isSame ? defaultLabel : entry.label;
+      btn.classList.toggle("ss-picker-btn--selected", !isSame);
+      hidden.dispatchEvent(new Event("change", { bubbles: true }));
+      closeAll();
+      resetToModeMenu();
+    };
+  };
+
+  btn.addEventListener("click", () => {
+    const isOpen = !dropdown.classList.contains("hidden");
+    closeAll();
+    resetToModeMenu();
+    if (!isOpen) dropdown.classList.remove("hidden");
+  });
+
+  modeMenu?.querySelectorAll(".ss-picker-mode-btn").forEach((modeBtn) => {
+    modeBtn.addEventListener("click", () => {
+      const mode = modeBtn.dataset.mode;
+      if (mode === "to") openMode(getSsToEntries);
+      if (mode === "map") openMode(dropdown.dataset.contentType === "geometry" ? getSsMapContentEntries : getSsMapAssetEntries);
+    });
+  });
+
+  const backBtn = searchShell?.querySelector(".ss-picker-back-btn");
+  if (backBtn) backBtn.addEventListener("click", resetToModeMenu);
+}
+
+function renderSiteStudyAssetOptions() {
+  [
+    { btn: dom.siteStudyPrimaryAssetBtn, dropdown: dom.siteStudyPrimaryAssetDropdown, modeMenu: dom.siteStudyPrimaryAssetModeMenu, searchShell: dom.siteStudyPrimaryAssetSearchShell, search: dom.siteStudyPrimaryAssetSearch, list: dom.siteStudyPrimaryAssetList, hidden: dom.siteStudyPrimaryAsset, defaultLabel: "Select asset or endpoint" },
+    { btn: dom.siteStudySecondaryAssetBtn, dropdown: dom.siteStudySecondaryAssetDropdown, modeMenu: dom.siteStudySecondaryAssetModeMenu, searchShell: dom.siteStudySecondaryAssetSearchShell, search: dom.siteStudySecondaryAssetSearch, list: dom.siteStudySecondaryAssetList, hidden: dom.siteStudySecondaryAsset, defaultLabel: "Optional secondary asset" },
+  ].forEach((cfg) => {
+    initSsPicker(cfg);
+    if (!cfg.hidden || !cfg.btn) return;
+    const allEntries = [...getSsToEntries(), ...getSsMapAssetEntries()];
+    const found = allEntries.find((e) => e.id === cfg.hidden.value);
+    cfg.btn.textContent = found ? found.label : cfg.defaultLabel;
+    cfg.btn.classList.toggle("ss-picker-btn--selected", !!found);
   });
 }
 
 function renderSiteStudyContentOptions() {
-  const entries = getSiteStudyGeometryOptionEntries();
   [
-    { select: dom.siteStudyCandidateContent, emptyLabel: "Select area, corridor, or polygon" },
-    { select: dom.siteStudyObjectiveContent, emptyLabel: "Optional objective / threat geometry" },
-  ].forEach(({ select, emptyLabel }) => {
-    if (!select) return;
-    const existingValue = select.value;
-    select.innerHTML = [`<option value="">${emptyLabel}</option>`]
-      .concat(entries.map((entry) => `<option value="${escapeHtml(entry.id)}">${escapeHtml(entry.name)}</option>`))
-      .join("");
-    select.value = entries.some((entry) => entry.id === existingValue) ? existingValue : "";
+    { btn: dom.siteStudyCandidateContentBtn, dropdown: dom.siteStudyCandidateContentDropdown, modeMenu: dom.siteStudyCandidateContentModeMenu, searchShell: dom.siteStudyCandidateContentSearchShell, search: dom.siteStudyCandidateContentSearch, list: dom.siteStudyCandidateContentList, hidden: dom.siteStudyCandidateContent, defaultLabel: "Select area, corridor, or polygon" },
+    { btn: dom.siteStudyObjectiveContentBtn, dropdown: dom.siteStudyObjectiveContentDropdown, modeMenu: dom.siteStudyObjectiveContentModeMenu, searchShell: dom.siteStudyObjectiveContentSearchShell, search: dom.siteStudyObjectiveContentSearch, list: dom.siteStudyObjectiveContentList, hidden: dom.siteStudyObjectiveContent, defaultLabel: "Optional objective / threat geometry" },
+  ].forEach((cfg) => {
+    if (cfg.dropdown) cfg.dropdown.dataset.contentType = "geometry";
+    initSsPicker(cfg);
+    if (!cfg.hidden || !cfg.btn) return;
+    const allEntries = [...getSsToEntries(), ...getSsMapContentEntries()];
+    const found = allEntries.find((e) => e.id === cfg.hidden.value);
+    cfg.btn.textContent = found ? found.label : cfg.defaultLabel;
+    cfg.btn.classList.toggle("ss-picker-btn--selected", !!found);
   });
 }
 
@@ -20892,13 +21320,13 @@ function syncSiteStudyUi() {
   if (!dom.siteStudyTypeSelect) {
     return;
   }
-  renderSiteStudyAssetOptions();
-  renderSiteStudyContentOptions();
   dom.siteStudyTypeSelect.value = state.siteStudy.type;
   dom.siteStudyPrimaryAsset.value = state.siteStudy.primaryAssetId;
   dom.siteStudySecondaryAsset.value = state.siteStudy.secondaryAssetId;
   dom.siteStudyCandidateContent.value = state.siteStudy.candidateContentId;
   dom.siteStudyObjectiveContent.value = state.siteStudy.objectiveContentId;
+  renderSiteStudyAssetOptions();
+  renderSiteStudyContentOptions();
   dom.siteStudyLinkPreset.value = state.siteStudy.linkPreset;
   dom.siteStudyClearancePolicy.value = state.siteStudy.clearancePolicy;
   dom.siteStudyGridMeters.value = String(state.siteStudy.gridMeters);
@@ -22801,8 +23229,22 @@ async function runSiteStudy() {
   syncSiteStudyDraftFromDom();
   closeSiteStudyAnalysisModal();
   const preset = SITE_STUDY_LINK_PRESETS[state.siteStudy.linkPreset] ?? SITE_STUDY_LINK_PRESETS["rocket-m5-omni"];
-  const primaryAsset = state.assets.find((asset) => asset.id === state.siteStudy.primaryAssetId) ?? null;
-  const secondaryAsset = state.assets.find((asset) => asset.id === state.siteStudy.secondaryAssetId) ?? null;
+  const resolveSsAsset = (id) => {
+    if (!id) return null;
+    if (id.startsWith("asset:")) return state.assets.find((a) => a.id === id.slice(6)) ?? null;
+    if (id.startsWith("to:")) {
+      const unitId = Number(id.slice(3));
+      const unit = (_toState.units || []).find((u) => u.id === unitId);
+      if (!unit) return null;
+      // Use the first linked emitter's position as the asset endpoint
+      const linked = state.assets.find((a) => a.toUnitId === unitId);
+      if (linked) return linked;
+      return null;
+    }
+    return state.assets.find((a) => a.id === id) ?? null;
+  };
+  const primaryAsset = resolveSsAsset(state.siteStudy.primaryAssetId);
+  const secondaryAsset = resolveSsAsset(state.siteStudy.secondaryAssetId);
   const candidateGeometry = serializeSiteStudyGeometry(state.siteStudy.candidateContentId);
   const objectiveGeometry = serializeSiteStudyGeometry(state.siteStudy.objectiveContentId);
 
@@ -28823,40 +29265,59 @@ function _syncCesiumEntitiesImmediate() {
     });
   }
 
-  const compositeIconToDataUrl = (framePath, mainPath, echelonPath, size = 128) => {
-    const key = `${framePath}|${mainPath}|${echelonPath}`;
-    if (_cesiumBillboardCache.has(key)) return Promise.resolve(_cesiumBillboardCache.get(key));
-    const canvas = document.createElement("canvas");
-    canvas.width = size;
-    canvas.height = size;
-    const ctx = canvas.getContext("2d");
-    const loadImg = (src) => new Promise((resolve) => {
-      if (!src) { resolve(null); return; }
-      const img = new Image();
-      img.onload = () => resolve(img);
-      img.onerror = () => resolve(null);
-      img.src = src;
-    });
-    return Promise.all([loadImg(framePath), loadImg(mainPath), loadImg(echelonPath)])
-      .then(([frame, main, echelon]) => {
-        if (frame) ctx.drawImage(frame, 0, 0, size, size);
-        if (main)  ctx.drawImage(main,  0, 0, size, size);
-        if (echelon) ctx.drawImage(echelon, 0, 0, size, size);
-        const url = canvas.toDataURL("image/png");
-        _cesiumBillboardCache.set(key, url);
-        return url;
-      });
-  };
-
   const buildTacticalBillboardUrl = (object) => {
     const aff = normalizeTacticalAffiliation(object.affiliation);
     const type = normalizeToUnitType(object.unitType || deriveTacticalUnitTypeFromCotType(object.cotType, object.domain));
     const size = object.size || "battalion";
     const unit = normalizeToUnit({ id: 0, label: "", affiliation: aff, type, size, frameOnly: isGenericCotTrackType(object.cotType) });
+
     const framePath = resolveMilstdFramePath(unit);
     const mainPath = unit.frameOnly ? null : resolveMilstdMainPath(unit);
     const echelonPath = unit.frameOnly ? null : (MILSTD_ECHELON_PATHS[size] || null);
-    return compositeIconToDataUrl(framePath, mainPath, echelonPath, 128);
+
+    const key = `${framePath}|${mainPath}|${echelonPath}`;
+    if (_cesiumBillboardCache.has(key)) return Promise.resolve(_cesiumBillboardCache.get(key));
+
+    // Fetch each SVG as text, inject explicit width/height, then render to
+    // canvas as data-URL images so the browser composites them at a fixed size.
+    const SIZE = 192;
+    const fetchSvgDataUrl = (src) => {
+      if (!src) return Promise.resolve(null);
+      return fetch(src)
+        .then((r) => r.text())
+        .then((svgText) => {
+          // Inject width/height so the Image element knows the intrinsic size
+          const sized = svgText.replace(/^<svg /, `<svg width="${SIZE}" height="${SIZE}" `);
+          return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(sized)}`;
+        })
+        .catch(() => null);
+    };
+
+    const loadDataUrl = (dataUrl) => new Promise((resolve) => {
+      if (!dataUrl) { resolve(null); return; }
+      const img = new Image(SIZE, SIZE);
+      img.onload = () => resolve(img);
+      img.onerror = () => resolve(null);
+      img.src = dataUrl;
+    });
+
+    const promise = Promise.all([framePath, mainPath, echelonPath].map(fetchSvgDataUrl))
+      .then((dataUrls) => Promise.all(dataUrls.map(loadDataUrl)))
+      .then(([frame, main, echelon]) => {
+        const canvas = document.createElement("canvas");
+        canvas.width = SIZE;
+        canvas.height = SIZE;
+        const ctx = canvas.getContext("2d");
+        if (frame)   ctx.drawImage(frame,   0, 0, SIZE, SIZE);
+        if (main)    ctx.drawImage(main,    0, 0, SIZE, SIZE);
+        if (echelon) ctx.drawImage(echelon, 0, 0, SIZE, SIZE);
+        const url = canvas.toDataURL("image/png");
+        _cesiumBillboardCache.set(key, url);
+        return url;
+      });
+
+    _cesiumBillboardCache.set(key, promise);
+    return promise;
   };
 
   const addCesiumTacticalObject = (object, idPrefix, zIndexBase = 18) => {
@@ -32500,6 +32961,8 @@ function esc(s) {
 
 // The emitter currently being edited (set when modal opens)
 let _currentEmitterEditId = null;
+// Callback set when tactical editor opens the emitter modal for linking
+let _emitterLinkCallback = null;
 const _toPickerState = {
   mode: "emitter-link",
   selectedUnitIds: new Set(),
@@ -33143,12 +33606,19 @@ function buildMilstdCustomLayout(unit = null) {
 
 function renderToCustomSymbolShapes(type, stroke = "#000000", milstd = false, unit = null) {
   const normalizedType = normalizeToUnitType(type);
-  if (!["infantry", "light_infantry", "mechanized_infantry", "airborne_infantry", "armor", "recon"].includes(normalizedType)) {
-    return "";
-  }
+  const HANDLED = [
+    "infantry", "light_infantry", "mechanized_infantry", "airborne_infantry",
+    "armor", "recon",
+    "signal", "ew", "artillery", "engineer", "medical", "military_intelligence",
+    "air_defense", "special_forces", "logistics",
+  ];
+  if (!HANDLED.includes(normalizedType)) return "";
+
   if (milstd) {
     const layout = buildMilstdCustomLayout(unit);
-    const applyStroke = (markup) => markup.replaceAll('stroke-width="5"', `stroke="${stroke}" stroke-width="5"`);
+    const s = stroke;
+    const sw = 'stroke-width="5"';
+    const applyStroke = (markup) => markup.replaceAll(sw, `stroke="${s}" ${sw}`);
     const reconLine = applyStroke(layout.reconLine);
     const xLines = applyStroke(layout.xLines);
     const oval = applyStroke(layout.oval);
@@ -33156,49 +33626,115 @@ function renderToCustomSymbolShapes(type, stroke = "#000000", milstd = false, un
     const wrap = (markup) => layout.clipPath
       ? `<defs>${layout.clipPath}</defs><g clip-path="url(#milstd-custom-clip)">${markup}</g>`
       : markup;
+    // Shapes for the large milstd card view (viewBox 0 0 612 792, symbol area ~183–429 x, 276–516 y)
+    const cx = 306, cy = 396, r = 60;
+    const artCircle = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${s}" stroke-width="5"/>`;
+    // Signal: sine wave across the symbol area
+    const sigWave = `<path d="M183,396 C213,336 243,336 273,396 S333,456 363,396 S423,336 429,396" fill="none" stroke="${s}" stroke-width="5" stroke-linecap="round"/>`;
+    // EW: sine wave with vertical terminal bars
+    const ewWave = `<line x1="183" y1="396" x2="183" y2="346" stroke="${s}" stroke-width="5" stroke-linecap="round"/>
+      <path d="M183,396 C213,336 243,336 273,396 S333,456 363,396 S423,336 429,396" fill="none" stroke="${s}" stroke-width="5" stroke-linecap="round"/>
+      <line x1="429" y1="396" x2="429" y2="346" stroke="${s}" stroke-width="5" stroke-linecap="round"/>`;
+    // Engineer: castle battlements (T shape)
+    const engCastle = `<line x1="210" y1="441" x2="402" y2="441" stroke="${s}" stroke-width="5" stroke-linecap="round"/>
+      <line x1="210" y1="441" x2="210" y2="366" stroke="${s}" stroke-width="5" stroke-linecap="round"/>
+      <line x1="402" y1="441" x2="402" y2="366" stroke="${s}" stroke-width="5" stroke-linecap="round"/>
+      <line x1="183" y1="366" x2="240" y2="366" stroke="${s}" stroke-width="5" stroke-linecap="round"/>
+      <line x1="372" y1="366" x2="429" y2="366" stroke="${s}" stroke-width="5" stroke-linecap="round"/>`;
+    // Medical: cross
+    const medCross = `<line x1="${cx}" y1="321" x2="${cx}" y2="471" stroke="${s}" stroke-width="5" stroke-linecap="round"/>
+      <line x1="231" y1="${cy}" x2="381" y2="${cy}" stroke="${s}" stroke-width="5" stroke-linecap="round"/>`;
+    // Military Intelligence: vertical line with two horizontal tick marks
+    const miShape = `<line x1="${cx}" y1="306" x2="${cx}" y2="486" stroke="${s}" stroke-width="5" stroke-linecap="round"/>
+      <line x1="258" y1="351" x2="354" y2="351" stroke="${s}" stroke-width="5" stroke-linecap="round"/>
+      <line x1="258" y1="441" x2="354" y2="441" stroke="${s}" stroke-width="5" stroke-linecap="round"/>`;
+    // Air Defense: upward arc (chevron/umbrella)
+    const adArc = `<path d="M183,441 Q306,276 429,441" fill="none" stroke="${s}" stroke-width="5" stroke-linecap="round"/>`;
+    // Special Forces: vertical bar (de Oppresso Liber)
+    const sfBar = `<line x1="${cx}" y1="306" x2="${cx}" y2="486" stroke="${s}" stroke-width="5" stroke-linecap="round"/>`;
+    // Logistics: box with angled top-right corner
+    const logBox = `<polyline points="210,351 210,441 402,441 402,351 363,306 210,306 210,351 402,351" fill="none" stroke="${s}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>`;
+
     switch (normalizedType) {
-      case "recon":
-        return wrap(reconLine);
+      case "recon":           return wrap(reconLine);
       case "infantry":
-      case "light_infantry":
-        return wrap(xLines);
-      case "mechanized_infantry":
-        return wrap(`${xLines}${oval}`);
-      case "airborne_infantry":
-        return wrap(`${xLines}${canopy}`);
-      case "armor":
-        return wrap(oval);
-      default:
-        return "";
+      case "light_infantry":  return wrap(xLines);
+      case "mechanized_infantry": return wrap(`${xLines}${oval}`);
+      case "airborne_infantry":   return wrap(`${xLines}${canopy}`);
+      case "armor":           return wrap(oval);
+      case "signal":          return sigWave;
+      case "ew":              return ewWave;
+      case "artillery":       return artCircle;
+      case "engineer":        return engCastle;
+      case "medical":         return medCross;
+      case "military_intelligence": return miShape;
+      case "air_defense":     return adArc;
+      case "special_forces":  return sfBar;
+      case "logistics":       return logBox;
+      default:                return "";
     }
   }
 
-  const reconLine = `<line x1="12" y1="40" x2="44" y2="16" stroke="${stroke}" stroke-width="1.8" stroke-linecap="round"/>`;
+  // Small icon shapes (viewBox 0 0 56 60, symbol area approx x:8-48, y:14-46)
+  const sw = "1.8";
+  const lc = "round";
+  const reconLine = `<line x1="12" y1="40" x2="44" y2="16" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${lc}"/>`;
   const xLines = `
-    <line x1="12" y1="16" x2="44" y2="40" stroke="${stroke}" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="44" y1="16" x2="12" y2="40" stroke="${stroke}" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="12" y1="16" x2="44" y2="40" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${lc}"/>
+    <line x1="44" y1="16" x2="12" y2="40" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${lc}"/>
   `;
   const oval = `
-    <path d="M22 34c-3.5 0-6.5-2.8-6.5-6.25S18.5 21.5 22 21.5" fill="none" stroke="${stroke}" stroke-width="1.8" stroke-linecap="round"/>
-    <path d="M34 21.5c3.5 0 6.5 2.8 6.5 6.25S37.5 34 34 34" fill="none" stroke="${stroke}" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="22" y1="21.5" x2="34" y2="21.5" stroke="${stroke}" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="22" y1="34" x2="34" y2="34" stroke="${stroke}" stroke-width="1.8" stroke-linecap="round"/>
+    <path d="M22 34c-3.5 0-6.5-2.8-6.5-6.25S18.5 21.5 22 21.5" fill="none" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${lc}"/>
+    <path d="M34 21.5c3.5 0 6.5 2.8 6.5 6.25S37.5 34 34 34" fill="none" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${lc}"/>
+    <line x1="22" y1="21.5" x2="34" y2="21.5" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${lc}"/>
+    <line x1="22" y1="34" x2="34" y2="34" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${lc}"/>
   `;
-  const canopy = `<path d="M18 18c0-3.8 10-3.8 10 0c0-3.8 10-3.8 10 0" fill="none" stroke="${stroke}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>`;
+  const canopy = `<path d="M18 18c0-3.8 10-3.8 10 0c0-3.8 10-3.8 10 0" fill="none" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${lc}" stroke-linejoin="${lc}"/>`;
+  // Signal: sine wave
+  const sigWaveS = `<path d="M10,28 C14,20 18,20 22,28 S30,36 34,28 S40,20 46,28" fill="none" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${lc}"/>`;
+  // EW: sine wave with vertical terminal bars
+  const ewWaveS = `<line x1="10" y1="28" x2="10" y2="20" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${lc}"/>
+    <path d="M10,28 C14,20 18,20 22,28 S30,36 34,28 S40,20 46,28" fill="none" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${lc}"/>
+    <line x1="46" y1="28" x2="46" y2="20" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${lc}"/>`;
+  // Artillery: circle
+  const artCircleS = `<circle cx="28" cy="28" r="9" fill="none" stroke="${stroke}" stroke-width="${sw}"/>`;
+  // Engineer: castle T shape
+  const engCastleS = `<line x1="14" y1="35" x2="42" y2="35" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${lc}"/>
+    <line x1="14" y1="35" x2="14" y2="24" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${lc}"/>
+    <line x1="42" y1="35" x2="42" y2="24" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${lc}"/>
+    <line x1="10" y1="24" x2="20" y2="24" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${lc}"/>
+    <line x1="36" y1="24" x2="46" y2="24" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${lc}"/>`;
+  // Medical: cross
+  const medCrossS = `<line x1="28" y1="18" x2="28" y2="38" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${lc}"/>
+    <line x1="18" y1="28" x2="38" y2="28" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${lc}"/>`;
+  // Military Intelligence: vertical with two tick marks
+  const miShapeS = `<line x1="28" y1="16" x2="28" y2="40" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${lc}"/>
+    <line x1="20" y1="21" x2="36" y2="21" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${lc}"/>
+    <line x1="20" y1="35" x2="36" y2="35" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${lc}"/>`;
+  // Air Defense: upward arc
+  const adArcS = `<path d="M10,36 Q28,14 46,36" fill="none" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${lc}"/>`;
+  // Special Forces: single vertical bar
+  const sfBarS = `<line x1="28" y1="16" x2="28" y2="40" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${lc}"/>`;
+  // Logistics: box shape
+  const logBoxS = `<polyline points="14,24 14,38 42,38 42,24 36,17 14,17 14,24 42,24" fill="none" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${lc}" stroke-linejoin="${lc}"/>`;
+
   switch (normalizedType) {
-    case "recon":
-      return reconLine;
+    case "recon":           return reconLine;
     case "infantry":
-    case "light_infantry":
-      return xLines;
-    case "mechanized_infantry":
-      return `${xLines}${oval}`;
-    case "airborne_infantry":
-      return `${xLines}${canopy}`;
-    case "armor":
-      return oval;
-    default:
-      return "";
+    case "light_infantry":  return xLines;
+    case "mechanized_infantry": return `${xLines}${oval}`;
+    case "airborne_infantry":   return `${xLines}${canopy}`;
+    case "armor":           return oval;
+    case "signal":          return sigWaveS;
+    case "ew":              return ewWaveS;
+    case "artillery":       return artCircleS;
+    case "engineer":        return engCastleS;
+    case "medical":         return medCrossS;
+    case "military_intelligence": return miShapeS;
+    case "air_defense":     return adArcS;
+    case "special_forces":  return sfBarS;
+    case "logistics":       return logBoxS;
+    default:                return "";
   }
 }
 

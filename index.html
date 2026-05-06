@@ -420,22 +420,78 @@
                 <option value="link">Direct Link Study</option>
               </select>
             </label>
-            <label class="span-2">
+            <div class="span-2 ss-picker-label">
               Primary Asset / Endpoint
-              <select id="siteStudyPrimaryAsset"></select>
-            </label>
-            <label class="span-2">
+              <div class="ss-picker-wrap" id="siteStudyPrimaryAssetWrap">
+                <button type="button" class="ss-picker-btn" id="siteStudyPrimaryAssetBtn">Select asset or endpoint</button>
+                <div class="ss-picker-dropdown hidden" id="siteStudyPrimaryAssetDropdown">
+                  <div class="ss-picker-mode-menu" id="siteStudyPrimaryAssetModeMenu">
+                    <button type="button" class="ss-picker-mode-btn" data-mode="to">Add from TO</button>
+                    <button type="button" class="ss-picker-mode-btn" data-mode="map">Add from Map Contents</button>
+                  </div>
+                  <div class="ss-picker-search-shell hidden" id="siteStudyPrimaryAssetSearchShell">
+                    <button type="button" class="ss-picker-back-btn" id="siteStudyPrimaryAssetBack">← Back</button>
+                    <input type="text" class="ss-picker-search" id="siteStudyPrimaryAssetSearch" placeholder="Search…">
+                  </div>
+                  <div class="ss-picker-list hidden" id="siteStudyPrimaryAssetList"></div>
+                </div>
+              </div>
+              <input type="hidden" id="siteStudyPrimaryAsset" value="">
+            </div>
+            <div class="span-2 ss-picker-label">
               Secondary Asset / Endpoint
-              <select id="siteStudySecondaryAsset"></select>
-            </label>
-            <label class="span-2">
+              <div class="ss-picker-wrap" id="siteStudySecondaryAssetWrap">
+                <button type="button" class="ss-picker-btn" id="siteStudySecondaryAssetBtn">Optional secondary asset</button>
+                <div class="ss-picker-dropdown hidden" id="siteStudySecondaryAssetDropdown">
+                  <div class="ss-picker-mode-menu" id="siteStudySecondaryAssetModeMenu">
+                    <button type="button" class="ss-picker-mode-btn" data-mode="to">Add from TO</button>
+                    <button type="button" class="ss-picker-mode-btn" data-mode="map">Add from Map Contents</button>
+                  </div>
+                  <div class="ss-picker-search-shell hidden" id="siteStudySecondaryAssetSearchShell">
+                    <button type="button" class="ss-picker-back-btn" id="siteStudySecondaryAssetBack">← Back</button>
+                    <input type="text" class="ss-picker-search" id="siteStudySecondaryAssetSearch" placeholder="Search…">
+                  </div>
+                  <div class="ss-picker-list hidden" id="siteStudySecondaryAssetList"></div>
+                </div>
+              </div>
+              <input type="hidden" id="siteStudySecondaryAsset" value="">
+            </div>
+            <div class="span-2 ss-picker-label">
               Candidate Area / Corridor
-              <select id="siteStudyCandidateContent"></select>
-            </label>
-            <label class="span-2">
+              <div class="ss-picker-wrap" id="siteStudyCandidateContentWrap">
+                <button type="button" class="ss-picker-btn" id="siteStudyCandidateContentBtn">Select area, corridor, or polygon</button>
+                <div class="ss-picker-dropdown hidden" id="siteStudyCandidateContentDropdown">
+                  <div class="ss-picker-mode-menu" id="siteStudyCandidateContentModeMenu">
+                    <button type="button" class="ss-picker-mode-btn" data-mode="to">Add from TO</button>
+                    <button type="button" class="ss-picker-mode-btn" data-mode="map">Add from Map Contents</button>
+                  </div>
+                  <div class="ss-picker-search-shell hidden" id="siteStudyCandidateContentSearchShell">
+                    <button type="button" class="ss-picker-back-btn" id="siteStudyCandidateContentBack">← Back</button>
+                    <input type="text" class="ss-picker-search" id="siteStudyCandidateContentSearch" placeholder="Search…">
+                  </div>
+                  <div class="ss-picker-list hidden" id="siteStudyCandidateContentList"></div>
+                </div>
+              </div>
+              <input type="hidden" id="siteStudyCandidateContent" value="">
+            </div>
+            <div class="span-2 ss-picker-label">
               Objective / Threat / Target Area
-              <select id="siteStudyObjectiveContent"></select>
-            </label>
+              <div class="ss-picker-wrap" id="siteStudyObjectiveContentWrap">
+                <button type="button" class="ss-picker-btn" id="siteStudyObjectiveContentBtn">Optional objective / threat geometry</button>
+                <div class="ss-picker-dropdown hidden" id="siteStudyObjectiveContentDropdown">
+                  <div class="ss-picker-mode-menu" id="siteStudyObjectiveContentModeMenu">
+                    <button type="button" class="ss-picker-mode-btn" data-mode="to">Add from TO</button>
+                    <button type="button" class="ss-picker-mode-btn" data-mode="map">Add from Map Contents</button>
+                  </div>
+                  <div class="ss-picker-search-shell hidden" id="siteStudyObjectiveContentSearchShell">
+                    <button type="button" class="ss-picker-back-btn" id="siteStudyObjectiveContentBack">← Back</button>
+                    <input type="text" class="ss-picker-search" id="siteStudyObjectiveContentSearch" placeholder="Search…">
+                  </div>
+                  <div class="ss-picker-list hidden" id="siteStudyObjectiveContentList"></div>
+                </div>
+              </div>
+              <input type="hidden" id="siteStudyObjectiveContent" value="">
+            </div>
             <label>
               Link Preset
               <select id="siteStudyLinkPreset">
@@ -927,10 +983,6 @@
                 <input id="tacticalEditorCotType" type="text" maxlength="64" placeholder="a-f-G-U-C">
               </label>
               <label>
-                <span>SIDC</span>
-                <input id="tacticalEditorSidc" type="text" maxlength="32" placeholder="Optional SIDC">
-              </label>
-              <label>
                 <span>Latitude</span>
                 <input id="tacticalEditorLat" type="number" step="0.000001" placeholder="34.123456">
               </label>
@@ -938,20 +990,22 @@
                 <span>Longitude</span>
                 <input id="tacticalEditorLon" type="number" step="0.000001" placeholder="-117.123456">
               </label>
+              <label class="emitter-span-2" id="tacticalEditorLocationRow">
+                <span id="tacticalEditorLocationLabel">Location</span>
+                <input id="tacticalEditorLocationDisplay" type="text" readonly placeholder="—">
+              </label>
               <label class="emitter-span-2">
                 <span>Geometry Summary</span>
                 <input id="tacticalEditorGeometrySummary" type="text" readonly>
               </label>
-              <label class="emitter-span-2">
-                <span>Remarks</span>
-                <textarea id="tacticalEditorRemarks" rows="4" placeholder="Optional details, mission context, or CoT remarks"></textarea>
-              </label>
               <div class="emitter-span-2 tactical-asset-link-panel">
                 <div class="field-label-row">
                   <span>Link RF Emitters</span>
-                  <span class="fine-print">Optional. Linking updates emitter `toUnitId` without creating or deleting RF assets.</span>
+                  <button type="button" id="tacticalEditorAddEmitterBtn" class="ghost-button small">+ Add RF Emitter</button>
                 </div>
-                <div id="tacticalEditorAssetLinks" class="tactical-asset-link-list"></div>
+                <div id="tacticalEditorAssetLinks" class="tactical-asset-link-list">
+                  <div class="tactical-asset-link-empty">No RF emitters linked.</div>
+                </div>
               </div>
             </div>
             <aside class="tactical-editor-preview">
@@ -2496,6 +2550,73 @@
               <button id="clearTakProfileBtn" class="ghost-button small" type="button">Clear Draft</button>
             </div>
             <div class="weather-summary ai-summary" id="takSettingsSummary">Save a TAK server profile to assign it to server-backed projects.</div>
+
+            <!-- TAK Triggered Prompting -->
+            <div class="menu-title-row tak-triggered-title-row">
+              <strong>TAK Triggered Prompting</strong>
+              <label class="settings-toggle-inline">
+                <input id="takTriggeredPromptingToggle" type="checkbox">
+                <span class="settings-toggle-label">Enable</span>
+              </label>
+            </div>
+            <div id="takTriggeredPromptingSection" class="tak-triggered-section">
+              <p class="tak-triggered-description">
+                When enabled, TAK contacts can send a GeoChat message beginning with the trigger prefix to
+                automatically route their text as an AI prompt to your linked AI provider. The AI response
+                is sent back as a GeoChat reply to the originating contact. Messages not starting with the
+                trigger are ignored.
+              </p>
+              <div class="settings-modal-grid tak-triggered-grid">
+                <label class="settings-span-2 tak-triggered-trigger-row">
+                  Trigger Prefix
+                  <span class="fine-print">Case-insensitive. The text that must start the message to activate AI routing.</span>
+                  <div class="tak-trigger-input-row">
+                    <div class="tak-trigger-chips" id="takTriggerChips"></div>
+                    <div class="tak-trigger-add-row">
+                      <input id="takTriggerNewInput" type="text" maxlength="32" placeholder="/ai">
+                      <button id="takTriggerAddBtn" class="ghost-button small" type="button">Add</button>
+                    </div>
+                  </div>
+                </label>
+                <label class="settings-span-2">
+                  System Prompt Prefix
+                  <span class="fine-print">Optional. Prepended to every TAK-triggered AI request before the contact's message. Useful for context like "You are assisting a TAK operator in the field."</span>
+                  <textarea id="takTriggeredSystemPrompt" rows="3" placeholder="Optional context injected before every TAK-triggered AI request…"></textarea>
+                </label>
+                <label class="settings-check-row settings-span-2">
+                  <input id="takTriggeredIncludeMapContextToggle" type="checkbox">
+                  <span>Include current map context in TAK-triggered requests</span>
+                </label>
+                <label class="settings-check-row settings-span-2">
+                  <input id="takTriggeredNotifyToggle" type="checkbox" checked>
+                  <span>Show in-app notification when a TAK-triggered prompt is received</span>
+                </label>
+                <label class="settings-check-row settings-span-2">
+                  <input id="takTriggeredLogToggle" type="checkbox" checked>
+                  <span>Log TAK-triggered exchanges in the AI chat history panel</span>
+                </label>
+                <div class="settings-span-2 tak-triggered-status-row">
+                  <div class="tak-triggered-status-label">
+                    <span class="eyebrow">Status</span>
+                    <span id="takTriggeredStatusText" class="tak-triggered-status-text">Waiting for TAK connection…</span>
+                  </div>
+                  <div class="tak-triggered-counters">
+                    <div class="tak-triggered-counter">
+                      <span id="takTriggeredCountReceived" class="tak-triggered-count">0</span>
+                      <span class="tak-triggered-count-label">Received</span>
+                    </div>
+                    <div class="tak-triggered-counter">
+                      <span id="takTriggeredCountReplied" class="tak-triggered-count">0</span>
+                      <span class="tak-triggered-count-label">Replied</span>
+                    </div>
+                    <div class="tak-triggered-counter">
+                      <span id="takTriggeredCountFailed" class="tak-triggered-count">0</span>
+                      <span class="tak-triggered-count-label">Failed</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </section>
         </section>
