@@ -8235,9 +8235,11 @@ body.emitter-modal-open {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  text-align: center;
 }
 .tactical-map-label.tactical-map-label--point {
-  margin-left: 6px;
+  margin-left: 0;
+  transform: translateY(-2px);
 }
 .tactical-readonly-badge {
   color: #38bdf8;

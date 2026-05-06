@@ -3466,9 +3466,9 @@ function applyTacticalLabel(object, layer) {
   if (!object?.showLabel || !object?.name) return;
   layer.bindTooltip(object.name, {
     permanent: true,
-    direction: isTacticalPointGeometry(object.geometryType) ? "right" : "center",
+    direction: isTacticalPointGeometry(object.geometryType) ? "top" : "center",
     className: `tactical-map-label${isTacticalPointGeometry(object.geometryType) ? " tactical-map-label--point" : ""}`,
-    offset: isTacticalPointGeometry(object.geometryType) ? [28, 0] : [0, 0],
+    offset: isTacticalPointGeometry(object.geometryType) ? [0, -10] : [0, 0],
     interactive: false,
   });
 }
@@ -18343,6 +18343,23 @@ function upsertTacticalObjectFromPlanUnit(unit, action, coordinates) {
   return nextObject;
 }
 
+function tryPlaceAiPlanUnitAsTactical(action, coordinates, touchedObjects) {
+  const unitReference = action.planUnitId ?? action.unitId ?? action.name ?? action.label ?? action.designator;
+  const unit = resolveToUnitReference(unitReference);
+  if (!unit || !coordinates || !Number.isFinite(Number(coordinates.lat)) || !Number.isFinite(Number(coordinates.lon))) {
+    return null;
+  }
+  const tactical = upsertTacticalObjectFromPlanUnit(unit, action, coordinates);
+  const descriptor = buildAiRecentActionObject("unit", unit);
+  if (descriptor) {
+    rememberAiActionObject(touchedObjects, descriptor);
+  }
+  return {
+    unit,
+    tactical,
+  };
+}
+
 async function executeAiAction(action, { placedAssetIds = [], touchedObjects = [] } = {}) {
   if (!action || typeof action.type !== "string") {
     return "I couldn't apply one action because it was malformed.";
@@ -18796,6 +18813,10 @@ async function executeAiAction(action, { placedAssetIds = [], touchedObjects = [
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
       return "I couldn't place the marker because no valid coordinates were provided.";
     }
+    const tacticalPlacement = tryPlaceAiPlanUnitAsTactical(action, { lat, lon }, touchedObjects);
+    if (tacticalPlacement) {
+      return `Placed [**${tacticalPlacement.tactical.name}**](${buildTacticalContentId(tacticalPlacement.tactical.id)}) as the matching tactical unit symbol for "${tacticalPlacement.unit.label || tacticalPlacement.unit.designator || tacticalPlacement.unit.id}" at ${lat.toFixed(5)}, ${lon.toFixed(5)}.`;
+    }
     const rawSize = Number(action.size ?? action.sizePt ?? action.pointSize);
     const markerStyle = {
       icon: "dot",
@@ -18850,6 +18871,10 @@ async function executeAiAction(action, { placedAssetIds = [], touchedObjects = [
 
     if (shapeType === "point" || shapeType === "marker") {
       const pt = toLatLng(rawCoords[0]);
+      const tacticalPlacement = tryPlaceAiPlanUnitAsTactical(action, { lat: pt.lat, lon: pt.lng }, touchedObjects);
+      if (tacticalPlacement) {
+        return `Placed [**${tacticalPlacement.tactical.name}**](${buildTacticalContentId(tacticalPlacement.tactical.id)}) as the matching tactical unit symbol for "${tacticalPlacement.unit.label || tacticalPlacement.unit.designator || tacticalPlacement.unit.id}" at ${pt.lat.toFixed(5)}, ${pt.lng.toFixed(5)}.`;
+      }
       const markerStyle = { icon: "dot", color: action.color ?? "#ffffff", size: 24, outlineColor: "#0b1220", outlineWidth: 2 };
       const index = state.importedItems.filter((i) => i.drawn).length;
       const pointName = (typeof action.name === "string" && action.name.trim()) ? action.name.trim() : `Point ${index + 1}`;
