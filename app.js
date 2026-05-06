@@ -6203,6 +6203,7 @@ async function loadServerAiProviderSettings() {
       setActiveAiDraft(activeConfig.provider, activeConfig.apiKey, activeConfig.model, activeConfig.id, activeConfig.label);
       state.ai.serverWideDraftEnabled = Boolean(activeConfig.serverWide);
     }
+    setAiStatusFromCurrentConfig();
 
     persistAiProviderSettings();
     syncAiUi();
@@ -6504,6 +6505,7 @@ async function onWorkspaceLogin(credentials = null) {
   await loadServerTakSettings();
   await loadEmitterProfileLibrary();
   await loadServerAiProviderSettings();
+  await autoConnectAiProviderIfConfigured({ openPanelOnSuccess: false, force: true });
   syncWorkspaceUi();
   closeWorkspaceMenu();
   setAuthScreenStatus("", false);
@@ -6533,6 +6535,7 @@ async function onWorkspaceRegister(credentials = null) {
   await loadServerTakSettings();
   await loadEmitterProfileLibrary();
   await loadServerAiProviderSettings();
+  await autoConnectAiProviderIfConfigured({ openPanelOnSuccess: false, force: true });
   syncWorkspaceUi();
   closeWorkspaceMenu();
   setAuthScreenStatus("", false);
@@ -7770,9 +7773,7 @@ async function init() {
   updateMapOverlayMetrics();
   updateClock();
   syncAiUi();
-  if (state.ai.provider && state.ai.apiKey && state.ai.status === "pending") {
-    testAiProviderConnection({ openPanelOnSuccess: false });
-  }
+  void autoConnectAiProviderIfConfigured({ openPanelOnSuccess: false });
   loadAiChatHistory();
   window.setInterval(updateClock, 1000);
   setStatus("Ready.");
@@ -10388,6 +10389,25 @@ function endAiPanelResize() {
   refreshCurrentViewLayout();
 }
 
+async function autoConnectAiProviderIfConfigured({ openPanelOnSuccess = false, force = false } = {}) {
+  const effectiveConfig = getEffectiveAiConfig();
+  const provider = effectiveConfig?.provider || state.ai.provider;
+  const apiKey = effectiveConfig?.apiKey || state.ai.apiKey;
+  const isLocal = Boolean(getAiProviderMeta(provider)?.isLocalModel);
+  const hasConfig = Boolean(provider && (apiKey || isLocal));
+  if (!hasConfig) {
+    return false;
+  }
+  if (state.ai.requestInFlight || state.ai.status === "testing") {
+    return false;
+  }
+  if (!force && state.ai.status === "ready") {
+    return false;
+  }
+  await testAiProviderConnection({ openPanelOnSuccess });
+  return state.ai.status === "ready";
+}
+
 function loadAiProviderSettings() {
   if (!canUsePersistentBrowserStorage()) {
     state.ai.savedConfigs = [];
@@ -10401,13 +10421,20 @@ function loadAiProviderSettings() {
   }
   try {
     const parsed = JSON.parse(stored);
-    state.ai.savedConfigs = [];
+    state.ai.savedConfigs = Array.isArray(parsed.configs)
+      ? parsed.configs.map(sanitizeAiSavedConfig).filter(Boolean)
+      : [];
     const activeConfigId = typeof parsed.activeConfigId === "string" ? parsed.activeConfigId : "";
     const storedProvider = typeof parsed.provider === "string" ? parsed.provider : "";
     const storedModel = typeof parsed.model === "string" ? parsed.model : "";
     const storedConfigLabel = typeof parsed.configLabel === "string" ? parsed.configLabel.trim() : "";
-    const isLocalProvider = getAiProviderMeta(storedProvider)?.isLocalModel;
-    setActiveAiDraft(storedProvider, "", storedModel, activeConfigId, storedConfigLabel);
+    const activeConfig = state.ai.savedConfigs.find((config) => config.id === activeConfigId) ?? null;
+    const restoredProvider = activeConfig?.provider || storedProvider;
+    const restoredApiKey = activeConfig?.apiKey || "";
+    const restoredModel = activeConfig?.model || storedModel;
+    const restoredLabel = activeConfig?.label || storedConfigLabel;
+    const isLocalProvider = getAiProviderMeta(restoredProvider)?.isLocalModel;
+    setActiveAiDraft(restoredProvider, restoredApiKey, restoredModel, activeConfig?.id || activeConfigId, restoredLabel);
     if (typeof parsed.localModelUrl === "string") {
       state.ai.localModelUrl = parsed.localModelUrl.trim();
     }
@@ -10435,6 +10462,7 @@ function loadAiProviderSettings() {
       state.ai.agentProfilePinned = false;
       state.ai.agentProfileReason = "Disabled specialist mode reset to general.";
     }
+    setAiStatusFromCurrentConfig();
     if (state.ai.provider && isLocalProvider) {
       state.ai.status = "pending";
       state.ai.statusMessage = "Stored local-model provider found. Revalidating access...";
@@ -10643,7 +10671,7 @@ function onAiServerWideKeyChanged() {
   syncAiUi();
 }
 
-function saveAiProvider() {
+async function saveAiProvider() {
   const isLocal = getAiProviderMeta(state.ai.provider)?.isLocalModel;
   if (!state.ai.provider || (!isLocal && !state.ai.apiKey)) {
     state.ai.status = "offline";
@@ -10673,9 +10701,11 @@ function saveAiProvider() {
     if (state.ai.status !== "ready") {
       state.ai.statusMessage = `Updated ${getAiSavedConfigDisplayLabel(updatedConfig)}.`;
     }
+    setAiStatusFromCurrentConfig();
     persistAiProviderSettings();
     syncAiProviderSettingsToServer().catch((error) => setStatus(`AI key sync failed: ${error.message}`, true));
     syncAiUi();
+    await autoConnectAiProviderIfConfigured({ openPanelOnSuccess: false, force: true });
     return;
   }
 
@@ -10709,9 +10739,11 @@ function saveAiProvider() {
       state.ai.statusMessage = `Saved ${state.ai.savedConfigs.length} AI key${state.ai.savedConfigs.length === 1 ? "" : "s"}.`;
     }
   }
+  setAiStatusFromCurrentConfig();
   persistAiProviderSettings();
   syncAiProviderSettingsToServer().catch((error) => setStatus(`AI key sync failed: ${error.message}`, true));
   syncAiUi();
+  await autoConnectAiProviderIfConfigured({ openPanelOnSuccess: false, force: true });
 }
 
 function deleteAiProvider() {
