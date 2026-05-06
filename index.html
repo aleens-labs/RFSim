@@ -2142,6 +2142,12 @@
             </label>
           </div>
           <div id="aiServerWideKeyHint" class="settings-inline-help hidden">When enabled by kyle.hicks, this Claude key becomes the sitewide fallback for users granted access from Site Analytics.</div>
+          <div class="button-row compact-button-row settings-modal-actions ai-key-actions">
+            <button id="saveAiProviderBtn" class="ghost-button small" type="button">Save Key</button>
+            <button id="testAiConnectionBtn" class="primary-button small" type="button">Test Connection</button>
+            <button id="clearAiProviderBtn" class="ghost-button small" type="button">Clear Draft</button>
+          </div>
+          <div class="weather-summary ai-summary" id="aiProviderSummary">Add a provider and API key to enable the AI planning assistant.</div>
           <div class="ai-agent-profiles-section">
             <div class="menu-title-row ai-agent-profiles-header">
               <strong>Agent Profiles</strong>
@@ -2373,12 +2379,6 @@
             </div>
           </div>
 
-          <div class="button-row compact-button-row settings-modal-actions">
-            <button id="saveAiProviderBtn" class="ghost-button small" type="button">Save Key</button>
-            <button id="testAiConnectionBtn" class="primary-button small" type="button">Test Connection</button>
-            <button id="clearAiProviderBtn" class="ghost-button small" type="button">Clear Draft</button>
-          </div>
-          <div class="weather-summary ai-summary" id="aiProviderSummary">Add a provider and API key to enable the AI planning assistant.</div>
         </section>
         </section>
         <section class="settings-tab-panel" data-settings-panel="tak" role="tabpanel" hidden>

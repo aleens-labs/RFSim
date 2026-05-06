@@ -5665,77 +5665,110 @@ button:focus {
 }
 
 .ai-agent-profiles-list {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.ai-agent-profile-card {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  background: linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.015));
-}
-
-.ai-agent-profile-card.is-disabled {
-  opacity: 0.62;
-}
-
-.ai-agent-profile-card-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.ai-agent-profile-card-title {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-}
-
-.ai-agent-profile-card-title strong {
-  color: var(--text);
-  font-size: 0.84rem;
-  line-height: 1.25;
-}
-
-.ai-agent-profile-card-title span {
-  color: var(--muted);
-  font-size: 0.73rem;
-  line-height: 1.35;
-}
-
-.ai-agent-profile-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  color: var(--text);
-  font-size: 0.76rem;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.ai-agent-profile-toggle input[type="checkbox"] {
-  width: 14px;
-  height: 14px;
-  margin: 0;
-  accent-color: var(--accent);
-}
-
-.ai-agent-profile-description {
-  color: var(--text);
-  font-size: 0.78rem;
-  line-height: 1.5;
-}
-
-.ai-agent-profile-triggers {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  max-height: 120px;
+  overflow-y: auto;
+  padding: 4px 2px;
+}
+
+.ai-agent-profile-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px 4px 5px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.04);
+  white-space: nowrap;
+  transition: opacity 0.15s;
+}
+
+.ai-agent-profile-chip.is-disabled {
+  opacity: 0.45;
+}
+
+.ai-agent-profile-chip-toggle {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.ai-agent-profile-chip-toggle.is-always-on {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.ai-agent-profile-chip-toggle input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.ai-agent-profile-chip-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 13px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.06);
+  color: var(--accent, #7dd3fc);
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.ai-agent-profile-chip-name {
+  color: var(--text);
+  font-size: 0.76rem;
+  line-height: 1.2;
+}
+
+.ai-agent-profile-info-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1;
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+.ai-agent-profile-info-btn:hover {
+  opacity: 1;
+  color: var(--text);
+}
+
+.ai-agent-profile-tooltip-popup {
+  position: fixed;
+  z-index: 9999;
+  max-width: 260px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  background: var(--panel, #1a1a2e);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+  pointer-events: auto;
+}
+
+.ai-agent-profile-tooltip-description {
+  color: var(--text);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  margin-bottom: 7px;
+}
+
+.ai-agent-profile-tooltip-triggers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
 }
 
 .ai-agent-profile-trigger {
@@ -5755,6 +5788,10 @@ button:focus {
 
 .settings-modal-actions {
   margin-top: 0;
+}
+
+.ai-key-actions {
+  margin-top: 2px;
 }
 
 .tak-profile-row {
@@ -6065,7 +6102,7 @@ body.settings-modal-open {
   }
 
   .ai-agent-profiles-list {
-    grid-template-columns: 1fr;
+    max-height: 100px;
   }
 
   .tak-cert-grid {

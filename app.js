@@ -5661,29 +5661,27 @@ function renderAiAgentProfileSettings() {
     const triggers = getAiAgentProfileTriggerSummary(profileId);
     const isGeneral = profileId === "general";
     const isEnabled = isGeneral || enabled.has(profileId);
-    const triggerMarkup = triggers.length
-      ? triggers.map((trigger) => `<span class="ai-agent-profile-trigger">${escapeHtml(trigger)}</span>`).join("")
+    const triggerList = triggers.length
+      ? triggers.map((t) => `<span class="ai-agent-profile-trigger">${escapeHtml(t)}</span>`).join("")
       : `<span class="ai-agent-profile-trigger-note">Fallback mode when no specialist trigger is strong.</span>`;
+    const tooltipHtml = `
+      <div class="ai-agent-profile-tooltip-description">${escapeHtml(profile.summary)}</div>
+      <div class="ai-agent-profile-tooltip-triggers">${triggerList}</div>
+    `.trim();
     return `
-      <article class="ai-agent-profile-card${isEnabled ? "" : " is-disabled"}" data-ai-agent-profile-card="${profileId}">
-        <div class="ai-agent-profile-card-header">
-          <div class="ai-agent-profile-card-title">
-            <strong>${escapeHtml(profile.label)}</strong>
-            <span>${escapeHtml(profile.indicatorLabel || profile.label)}</span>
-          </div>
-          <label class="ai-agent-profile-toggle">
-            <input
-              type="checkbox"
-              data-ai-agent-profile-id="${profileId}"
-              ${isEnabled ? "checked" : ""}
-              ${isGeneral ? "disabled" : ""}
-            >
-            <span>${isGeneral ? "Always on" : "Enabled"}</span>
-          </label>
-        </div>
-        <div class="ai-agent-profile-description">${escapeHtml(profile.summary)}</div>
-        <div class="ai-agent-profile-triggers">${triggerMarkup}</div>
-      </article>
+      <div class="ai-agent-profile-chip${isEnabled ? "" : " is-disabled"}" data-ai-agent-profile-card="${profileId}">
+        <label class="ai-agent-profile-chip-toggle${isGeneral ? " is-always-on" : ""}">
+          <input
+            type="checkbox"
+            data-ai-agent-profile-id="${profileId}"
+            ${isEnabled ? "checked" : ""}
+            ${isGeneral ? "disabled" : ""}
+          >
+          <span class="ai-agent-profile-chip-box" aria-hidden="true">${isEnabled ? "✕" : ""}</span>
+        </label>
+        <span class="ai-agent-profile-chip-name">${escapeHtml(profile.label)}</span>
+        <button type="button" class="ai-agent-profile-info-btn" aria-label="About ${escapeHtml(profile.label)}" data-ai-profile-tooltip="${escapeHtml(tooltipHtml)}">ⓘ</button>
+      </div>
     `;
   }).join("");
 }
@@ -5800,7 +5798,7 @@ function setAiAgentProfile(profileId, { confidence = 1, reason = "", pinned = fa
   state.ai.agentProfileId = next;
   state.ai.agentProfileConfidence = confidence;
   state.ai.agentProfileReason = reason || getAiAgentProfile(next).summary;
-  state.ai.agentProfilePinned = Boolean(pinned);
+  state.ai.agentProfilePinned = next === "general" ? false : Boolean(pinned);
   state.ai.agentProfileLastUpdatedAt = new Date().toISOString();
 }
 
@@ -5999,6 +5997,7 @@ function serializeAiSavedConfigForClientStorage(config) {
     id: config.id,
     label: config.label,
     provider: config.provider,
+    apiKey: config.apiKey,
     model: config.model,
     localModelUrl: config.localModelUrl || "",
     serverWide: Boolean(config.serverWide),
@@ -8462,9 +8461,41 @@ function wireEvents() {
     setEnabledAiAgentProfileIds([...nextEnabled], {
       reason: `${AI_AGENT_PROFILES[profileId].label} was disabled in AI Integration settings.`,
     });
+    const chip = input.closest(".ai-agent-profile-chip");
+    if (chip) {
+      chip.classList.toggle("is-disabled", !input.checked);
+      const box = chip.querySelector(".ai-agent-profile-chip-box");
+      if (box) box.textContent = input.checked ? "✕" : "";
+    }
     persistAiProviderSettings();
     syncAiUi();
     setStatus(`${AI_AGENT_PROFILES[profileId].label} ${input.checked ? "enabled" : "disabled"} for AI auto-switching.`);
+  });
+  dom.aiAgentProfilesList?.addEventListener("click", (event) => {
+    const btn = event.target.closest(".ai-agent-profile-info-btn");
+    if (!btn) return;
+    event.stopPropagation();
+    const existing = document.querySelector(".ai-agent-profile-tooltip-popup");
+    if (existing && existing.dataset.forBtn === btn.dataset.aiProfileTooltip) {
+      existing.remove();
+      return;
+    }
+    document.querySelectorAll(".ai-agent-profile-tooltip-popup").forEach((el) => el.remove());
+    const popup = document.createElement("div");
+    popup.className = "ai-agent-profile-tooltip-popup";
+    popup.dataset.forBtn = btn.dataset.aiProfileTooltip;
+    popup.innerHTML = btn.dataset.aiProfileTooltip;
+    document.body.appendChild(popup);
+    const btnRect = btn.getBoundingClientRect();
+    popup.style.left = `${Math.min(btnRect.right + 8, window.innerWidth - popup.offsetWidth - 8)}px`;
+    popup.style.top = `${Math.max(btnRect.top - popup.offsetHeight / 2 + btn.offsetHeight / 2, 8)}px`;
+    const close = (e) => {
+      if (!popup.contains(e.target) && e.target !== btn) {
+        popup.remove();
+        document.removeEventListener("click", close, true);
+      }
+    };
+    setTimeout(() => document.addEventListener("click", close, true), 0);
   });
   dom.aiChatForm.addEventListener("submit", onAiChatSubmit);
   dom.aiChatModelSelect.addEventListener("change", onAiModelChanged);
@@ -10426,11 +10457,12 @@ function loadAiProviderSettings() {
       : [];
     const activeConfigId = typeof parsed.activeConfigId === "string" ? parsed.activeConfigId : "";
     const storedProvider = typeof parsed.provider === "string" ? parsed.provider : "";
+    const storedApiKey = typeof parsed.apiKey === "string" ? parsed.apiKey.trim() : "";
     const storedModel = typeof parsed.model === "string" ? parsed.model : "";
     const storedConfigLabel = typeof parsed.configLabel === "string" ? parsed.configLabel.trim() : "";
     const activeConfig = state.ai.savedConfigs.find((config) => config.id === activeConfigId) ?? null;
     const restoredProvider = activeConfig?.provider || storedProvider;
-    const restoredApiKey = activeConfig?.apiKey || "";
+    const restoredApiKey = activeConfig?.apiKey || storedApiKey;
     const restoredModel = activeConfig?.model || storedModel;
     const restoredLabel = activeConfig?.label || storedConfigLabel;
     const isLocalProvider = getAiProviderMeta(restoredProvider)?.isLocalModel;
@@ -10439,7 +10471,7 @@ function loadAiProviderSettings() {
       state.ai.localModelUrl = parsed.localModelUrl.trim();
     }
     state.ai.enabledAgentProfileIds = normalizeEnabledAiAgentProfileIds(parsed.enabledAgentProfileIds);
-    if (typeof parsed.agentProfileId === "string" && AI_AGENT_PROFILES[parsed.agentProfileId]) {
+    if (Boolean(parsed.agentProfilePinned) && typeof parsed.agentProfileId === "string" && AI_AGENT_PROFILES[parsed.agentProfileId]) {
       state.ai.agentProfileId = parsed.agentProfileId;
     }
     if (!isAiAgentProfileEnabled(state.ai.agentProfileId)) {
@@ -10489,18 +10521,22 @@ function persistAiProviderSettings() {
   if (!canUsePersistentBrowserStorage()) {
     return;
   }
+  const persistedAgentProfileId = state.ai.agentProfilePinned
+    ? (state.ai.agentProfileId || "general")
+    : "general";
   setSessionScopedItem(AI_PROVIDER_STORAGE_KEY, JSON.stringify({
     configs: state.ai.savedConfigs.map(serializeAiSavedConfigForClientStorage).filter(Boolean),
     activeConfigId: state.ai.activeConfigId,
     configLabel: state.ai.configLabel,
     provider: state.ai.provider,
+    apiKey: state.ai.apiKey,
     model: state.ai.model,
     localModelUrl: state.ai.localModelUrl,
     enabledAgentProfileIds: normalizeEnabledAiAgentProfileIds(state.ai.enabledAgentProfileIds),
-    agentProfileId: state.ai.agentProfileId,
+    agentProfileId: persistedAgentProfileId,
     agentProfileConfidence: state.ai.agentProfileConfidence,
     agentProfileReason: state.ai.agentProfileReason,
-    agentProfilePinned: state.ai.agentProfilePinned,
+    agentProfilePinned: Boolean(state.ai.agentProfilePinned && persistedAgentProfileId !== "general"),
     agentProfileLastUpdatedAt: state.ai.agentProfileLastUpdatedAt,
     panelOpen: state.ai.panelOpen,
     aiPanelWidth: state.ui.aiPanelWidth,
@@ -11308,6 +11344,7 @@ function clearAiChat() {
   state.ai.messages = [];
   setAiAgentProfile("general", { confidence: 0.35, reason: "Chat cleared; reverted to general mode.", pinned: false });
   clearAiAttachments();
+  persistAiProviderSettings();
   syncAiUi();
   renderAiEmptyState();
 }
