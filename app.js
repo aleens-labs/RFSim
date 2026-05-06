@@ -8986,6 +8986,19 @@ function applySavedMapState(rawSaved) {
   state.tacticalLayers.forEach((layer) => layer?.remove?.());
   state.tacticalLayers.clear();
 
+  // Restore tactical objects (unit symbols placed on map)
+  if (Array.isArray(saved.tacticalObjects)) {
+    saved.tacticalObjects.forEach((raw) => {
+      try {
+        const object = normalizeTacticalObject(raw);
+        state.tacticalObjects.push(object);
+        renderTacticalObjectLayer(object);
+      } catch (err) {
+        console.warn(`[restore] skipped tactical object ${raw?.id} (${raw?.name}):`, err.message);
+      }
+    });
+  }
+
   // Restore assets — ensure every record carries version metadata after migration.
   if (Array.isArray(saved.assets)) {
     saved.assets.forEach((asset) => {
@@ -31678,26 +31691,6 @@ function findAnalyticsUserRecord(value = "") {
 
 function decorateAnalyticsUsernameCell(cell, userRecord) {
   if (!cell) {
-    return;
-  }
-
-  if (contentId.startsWith("plan-unit:")) {
-    const unit = getPlanUnitById(contentId.slice("plan-unit:".length));
-    if (!unit) {
-      return;
-    }
-    const focusUnit = () => {
-      initPlanViewIfNeeded();
-      _toState.selectedUnit = unit.id;
-      renderToView();
-      centerPlanUnitInView(unit.id);
-    };
-    if (state.ui?.currentView !== "plan") {
-      switchView("plan", true);
-      requestAnimationFrame(focusUnit);
-    } else {
-      focusUnit();
-    }
     return;
   }
   const label = String(cell.textContent || "").trim();
