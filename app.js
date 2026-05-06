@@ -1943,6 +1943,7 @@ const dom = {
   tacticalEditorCloseBtn: document.querySelector("#tacticalEditorCloseBtn"),
   tacticalEditorCancelBtn: document.querySelector("#tacticalEditorCancelBtn"),
   tacticalEditorSaveBtn: document.querySelector("#tacticalEditorSaveBtn"),
+  tacticalEditorRelocateBtn: document.querySelector("#tacticalEditorRelocateBtn"),
   tacticalEditorSubtitle: document.querySelector("#tacticalEditorSubtitle"),
   tacticalEditorName: document.querySelector("#tacticalEditorName"),
   tacticalEditorDesignator: document.querySelector("#tacticalEditorDesignator"),
@@ -2214,6 +2215,7 @@ const state = {
   planningDrawHandlerBound: false,
   relocatingImportedItemId: null,
   relocatingCircleItemId: null,
+  relocatingTacticalId: null,
   worker: createSimulationWorker(),
   pendingInspection: null,
   pendingPlanningRequestId: null,
@@ -3489,7 +3491,7 @@ function createTacticalLeafletLayer(object, contentId, { live = false } = {}) {
   if (tactical.geometryType === "Point") {
     const layer = L.marker([Number(tactical.coordinates[0]), Number(tactical.coordinates[1])], {
       icon: buildTacticalPointIcon(tactical),
-      draggable: !live && !tactical.readOnly,
+      draggable: false,
       pane: getMapContentPaneName(contentId),
     });
     layer.bindPopup(renderTacticalPopup(tactical, { live }));
@@ -3498,16 +3500,6 @@ function createTacticalLeafletLayer(object, contentId, { live = false } = {}) {
       layer.on("contextmenu", (event) => {
         L.DomEvent.stopPropagation(event);
         editMapContent(contentId);
-      });
-      layer.on("dragend", () => {
-        const markerLatLng = layer.getLatLng();
-        const existing = getTacticalObjectById(tactical.id);
-        if (!existing) return;
-        existing.coordinates = [Number(markerLatLng.lat), Number(markerLatLng.lng)];
-        existing.lastModified = nowIso();
-        layer.setPopupContent(renderTacticalPopup(existing));
-        saveMapState();
-        syncCesiumEntities();
       });
     }
     applyTacticalLabel(tactical, layer);
@@ -4629,6 +4621,8 @@ function syncTacticalEditorUi() {
   dom.tacticalEditorUnitSize?.closest("label")?.classList.toggle("hidden", !isUnit);
   dom.tacticalEditorLat?.closest("label")?.classList.toggle("hidden", !isPoint);
   dom.tacticalEditorLon?.closest("label")?.classList.toggle("hidden", !isPoint);
+  const isEditMode = state.tacticalEditor.mode === "edit";
+  dom.tacticalEditorRelocateBtn?.classList.toggle("hidden", !(isPoint && isEditMode));
   updateTacticalEditorPreview();
 }
 
@@ -8238,6 +8232,11 @@ function wireEvents() {
   dom.tacticalEditorCloseBtn?.addEventListener("click", closeTacticalEditorModal);
   dom.tacticalEditorCancelBtn?.addEventListener("click", closeTacticalEditorModal);
   dom.tacticalEditorSaveBtn?.addEventListener("click", saveTacticalEditor);
+  dom.tacticalEditorRelocateBtn?.addEventListener("click", () => {
+    const tacticalId = state.tacticalEditor?.targetId;
+    closeTacticalEditorModal();
+    startTacticalRelocation(tacticalId);
+  });
   addModalBackdropClose(dom.tacticalEditorModal, closeTacticalEditorModal);
 
   const importFileInput = document.querySelector("#importFileInput");
@@ -8338,6 +8337,7 @@ function wireEvents() {
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
       if (state.relocatingAssetId) { finishAssetRelocation(null); }
+      else if (state.relocatingTacticalId) { finishTacticalRelocation(null); }
       else if (state.relocatingImportedItemId) { finishImportedPointRelocation(null); }
       else if (state.relocatingCircleItemId) { finishCircleRelocation(null); }
       else if (state.placingTactical || state.pendingTacticalPlacement) { cancelPendingTacticalPlacement(); cancelDrawing(); }
@@ -20060,6 +20060,10 @@ function onMapClick(event) {
     finishAssetRelocation(event.latlng);
     return;
   }
+  if (state.relocatingTacticalId) {
+    finishTacticalRelocation(event.latlng);
+    return;
+  }
   if (state.relocatingImportedItemId) {
     if (state.ui.suppressImportedRelocateClick) {
       state.ui.suppressImportedRelocateClick = false;
@@ -20181,6 +20185,60 @@ function finishAssetRelocation(latlng) {
     void publishTakContentById(`asset:${asset.id}`);
   }
   setStatus(`${asset.name} relocated.`);
+}
+
+// ── Tactical point relocation ─────────────────────────────────────────────────
+
+function startTacticalRelocation(tacticalId) {
+  const object = getTacticalObjectById(tacticalId);
+  if (!object || object.geometryType !== "Point") return;
+  finishTacticalRelocation(null);           // cancel any prior relocation
+  finishAssetRelocation(null);
+  finishImportedPointRelocation(null);
+  state.relocatingTacticalId = tacticalId;
+  dom.map?.classList.add("asset-placement-active");
+  dom.cesiumContainer?.classList.add("asset-placement-active");
+  dom.mapStage?.classList.add("asset-placement-active");
+  if (state.map) state.map.getContainer().style.cursor = "crosshair";
+  updateCenterCrosshairVisibility();
+  setStatus(`Click map to relocate ${object.name || "unit"}. Press Esc to cancel.`);
+}
+
+function snapshotTacticalForRelocation(object) {
+  const savedCoords = [...object.coordinates];
+  return {
+    restore() {
+      const obj = getTacticalObjectById(object.id);
+      if (!obj) return;
+      obj.coordinates = savedCoords;
+      obj.lastModified = nowIso();
+      renderTacticalObjectLayer(obj);
+      saveMapState();
+      syncCesiumEntities();
+    },
+  };
+}
+
+function finishTacticalRelocation(latlng) {
+  const tacticalId = state.relocatingTacticalId;
+  state.relocatingTacticalId = null;
+  dom.map?.classList.remove("asset-placement-active");
+  dom.cesiumContainer?.classList.remove("asset-placement-active");
+  dom.mapStage?.classList.remove("asset-placement-active");
+  if (state.map) state.map.getContainer().style.cursor = "";
+  updateCenterCrosshairVisibility();
+  if (!latlng || !tacticalId) return;
+  const object = getTacticalObjectById(tacticalId);
+  if (!object || object.geometryType !== "Point") return;
+  const before = snapshotTacticalForRelocation(object);
+  object.coordinates = [Number(latlng.lat), Number(latlng.lng)];
+  object.lastModified = nowIso();
+  renderTacticalObjectLayer(object);
+  const after = snapshotTacticalForRelocation(object);
+  pushEditUndoEntry(`Relocated ${object.name || "unit"}`, [before], () => [after]);
+  saveMapState();
+  syncCesiumEntities();
+  setStatus(`${object.name || "Unit"} relocated.`);
 }
 
 function startImportedPointRelocation(itemId) {
