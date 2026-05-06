@@ -28822,19 +28822,35 @@ function _syncCesiumEntitiesImmediate() {
     });
   }
 
+  const buildTacticalBillboardUrl = (object) => {
+    const aff = normalizeTacticalAffiliation(object.affiliation);
+    const type = normalizeToUnitType(object.unitType || deriveTacticalUnitTypeFromCotType(object.cotType, object.domain));
+    const size = object.size || "battalion";
+    const unit = normalizeToUnit({ id: 0, label: "", affiliation: aff, type, size, frameOnly: isGenericCotTrackType(object.cotType) });
+    const svgStr = ms2525Svg(unit);
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgStr)}`;
+  };
+
   const addCesiumTacticalObject = (object, idPrefix, zIndexBase = 18) => {
     if (object.geometryType === "Point" && Array.isArray(object.coordinates) && object.coordinates.length >= 2) {
-      const color = C.Color.fromCssColorString(getTacticalAffiliationColor(object.affiliation));
+      const iconUrl = buildTacticalBillboardUrl(object);
+      const iconSize = object.readOnly ? 36 : 44;
+      const markerPixelSize = iconSize;
       safeAddEntity({
         id: `${idPrefix}:${object.uid || object.id}`,
         position: C.Cartesian3.fromDegrees(Number(object.coordinates[1]), Number(object.coordinates[0]), 0),
-        point: {
-          pixelSize: object.readOnly ? 11 : 13,
-          color,
-          outlineColor: C.Color.WHITE,
-          outlineWidth: 2,
+        billboard: {
+          image: iconUrl,
+          width: iconSize,
+          height: iconSize,
           heightReference: C.HeightReference.CLAMP_TO_GROUND,
-          disableDepthTestDistance: 0,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          verticalOrigin: C.VerticalOrigin.BOTTOM,
+          horizontalOrigin: C.HorizontalOrigin.CENTER,
+          scaleByDistance: new C.NearFarScalar(800, 1.0, 30000, 0.6),
+          translucencyByDistance: new C.NearFarScalar(1200, 1, 85000, 0.2),
+          distanceDisplayCondition: new C.DistanceDisplayCondition(0, 200000),
+          pixelOffset: new C.Cartesian2(0, 0),
         },
         label: {
           ...buildCesiumLabelOptions({
@@ -28844,7 +28860,7 @@ function _syncCesiumEntitiesImmediate() {
             font: "bold 13px Bahnschrift",
             heightReference: C.HeightReference.CLAMP_TO_GROUND,
             anchorMode: "right",
-            markerPixelSize: object.readOnly ? 11 : 13,
+            markerPixelSize,
           }),
         },
       });
