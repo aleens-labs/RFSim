@@ -1539,12 +1539,12 @@ body:not(.ai-panel-open) .ai-panel {
   width: 100%;
   min-width: 0;
   border: none;
-  background: transparent;
+  background: var(--bg-input);
   color: var(--text);
   font-size: 0.8rem;
   font-weight: 600;
   line-height: 1.1;
-  padding: 0;
+  padding: 2px 4px;
   box-shadow: none;
   appearance: auto;
   color-scheme: inherit;
@@ -1555,20 +1555,10 @@ body:not(.ai-panel-open) .ai-panel {
   box-shadow: none;
 }
 
-/* Force select dropdown to match the active color-scheme so the
-   OS-rendered popup uses dark bg in dark theme, light bg in light theme */
-body:not(.theme-light) .ai-agent-mode-select {
-  color-scheme: dark;
-}
-body.theme-light .ai-agent-mode-select {
-  color-scheme: light;
-  background: #ffffff;
-  color: #1b2430;
-}
 body.theme-light .ai-agent-mode-indicator {
-  background: #ffffff;
-  border-color: #b8c4d2;
-  color: #1b2430;
+  background: var(--bg-input);
+  border-color: var(--border);
+  color: var(--text);
 }
 
 .ai-chat-model-select {
@@ -3954,6 +3944,7 @@ select {
   background: var(--bg-input);
   color: var(--text);
   appearance: none;
+  color-scheme: inherit;
 }
 
 input[type="color"] {
@@ -6920,6 +6911,8 @@ body.emitter-modal-open {
   flex-direction: column;
   gap: 10px;
   padding: 12px;
+  max-height: 260px;
+  overflow-y: auto;
 }
 
 .analytics-user-detail-item {

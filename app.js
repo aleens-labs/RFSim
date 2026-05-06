@@ -4581,8 +4581,8 @@ function updateTacticalEditorPreview() {
   const previewAffiliation = normalizeTacticalAffiliation(dom.tacticalEditorAffiliation?.value || "friendly");
   const cotType = (dom.tacticalEditorCotType?.value || "").trim();
   const previewType = normalizeToUnitType(
-    deriveTacticalUnitTypeFromCotType(cotType, dom.tacticalEditorDomain?.value || "ground")
-    || dom.tacticalEditorUnitType?.value
+    dom.tacticalEditorUnitType?.value
+    || deriveTacticalUnitTypeFromCotType(cotType, dom.tacticalEditorDomain?.value || "ground")
     || "infantry"
   );
   const previewSize = dom.tacticalEditorUnitSize?.value || "battalion";
