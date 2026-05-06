@@ -559,6 +559,17 @@ function runSiteStudy(payload) {
         policyLabel: clearancePolicyLabel(clearancePolicy),
         sourceLabel: terrain ? (terrain.osmBuildingsEnabled ? "OSM Buildings" : "DTED/Cesium") : "No terrain",
         worstPointLabel: profile.worstPoint ? `${profile.worstPoint.lat.toFixed(4)}, ${profile.worstPoint.lon.toFixed(4)}` : "Not available",
+        analysis: {
+          candidateCount: candidates.length,
+          legCount: 1,
+          passesPolicy: profile.passesPolicy,
+          fadeMarginDb: profile.fadeMarginDb,
+          rssiDbm: profile.rssiDbm,
+          minClearanceM: profile.minClearanceM,
+          minFresnelClearanceM: profile.minFresnelClearanceM,
+          bestMetricLabel: profile.passesPolicy ? "Policy compliant" : "Height constrained",
+          worstMetricLabel: "Single-link viability",
+        },
         legs: [serializeLeg("Candidate → Endpoint", candidate, endpoint, profile)],
       });
     }
@@ -585,6 +596,16 @@ function runSiteStudy(payload) {
         policyLabel: "Visibility + Backhaul",
         sourceLabel: terrain ? "DTED/Cesium" : "No terrain",
         worstPointLabel: backhaulProfile?.worstPoint ? `${backhaulProfile.worstPoint.lat.toFixed(4)}, ${backhaulProfile.worstPoint.lon.toFixed(4)}` : "Not available",
+        analysis: {
+          candidateCount: candidates.length,
+          objectiveSampleCount: objectiveSamples.length,
+          visibleCount,
+          visibilityPercent: objectiveSamples.length ? (visibleCount / objectiveSamples.length) * 100 : 0,
+          backhaulFadeMarginDb: backhaulProfile?.fadeMarginDb ?? null,
+          backhaulRssiDbm: backhaulProfile?.rssiDbm ?? null,
+          bestMetricLabel: "Objective visibility",
+          worstMetricLabel: backhaulProfile ? "Backhaul support" : "No backhaul selected",
+        },
         legs: backhaulProfile ? [serializeLeg("Sensor → Backhaul", candidate, backhaul, backhaulProfile)] : [],
       });
     }
@@ -616,6 +637,16 @@ function runSiteStudy(payload) {
         policyLabel: "Masking + Connectivity",
         sourceLabel: terrain ? "DTED/Cesium" : "No terrain",
         worstPointLabel: toA.worstPoint ? `${toA.worstPoint.lat.toFixed(4)}, ${toA.worstPoint.lon.toFixed(4)}` : "Not available",
+        analysis: {
+          candidateCount: candidates.length,
+          threatSampleCount: threatSamples.length,
+          blockedThreatCount: threatBlocked,
+          maskingPercent: maskingScore,
+          connectivityScore,
+          supportLegCount: toB ? 2 : 1,
+          bestMetricLabel: "Threat masking",
+          worstMetricLabel: "Support connectivity",
+        },
         legs: [serializeLeg("CP → Support A", candidate, supportA, toA)].concat(toB ? [serializeLeg("CP → Support B", candidate, supportB, toB)] : []),
       });
     }
@@ -759,10 +790,14 @@ function serializeLeg(label, from, to, profile) {
     label,
     distanceKm: profile.distanceKm,
     geometricLosClear: profile.geometricLosClear,
+    passesPolicy: profile.passesPolicy,
     minClearanceM: profile.minClearanceM,
     minFresnelClearanceM: profile.minFresnelClearanceM,
     fadeMarginDb: profile.fadeMarginDb,
     pathLossDb: profile.pathLossDb,
+    rssiDbm: profile.rssiDbm,
+    buildingBlocked: profile.buildingBlocked,
+    requiredExtraTxHeightM: profile.requiredExtraTxHeightM,
     path: [
       { lat: from.lat, lon: from.lon },
       { lat: to.lat, lon: to.lon },

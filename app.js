@@ -1399,7 +1399,9 @@ function computeLinkBudget(profile) {
   return { txDbm, eirpDbm, fspl10km, rxPower10km, margin10km, maxRangeM };
 }
 
-const PROFILE_STORAGE_KEY = "ew-sim-emitter-profiles";
+const EMITTER_PROFILE_LEGACY_STORAGE_KEY = "ew-sim-emitter-profiles";
+const EMITTER_PROFILE_STORAGE_KEY = "ew-sim-emitter-profiles-library";
+const PROFILE_STORAGE_KEY = EMITTER_PROFILE_STORAGE_KEY;
 const SETTINGS_STORAGE_KEY = "ew-sim-map-settings";
 const CESIUM_ION_TOKEN_STORAGE_KEY = "ew-sim-cesium-ion-token";
 const AI_PROVIDER_STORAGE_KEY = "ew-sim-ai-provider";
@@ -2066,6 +2068,16 @@ const dom = {
   siteStudySummary: document.querySelector("#siteStudySummary"),
   siteStudyList: document.querySelector("#siteStudyList"),
   siteStudyDetail: document.querySelector("#siteStudyDetail"),
+  siteStudyOpenAnalysisBtn: document.querySelector("#siteStudyOpenAnalysisBtn"),
+  siteStudyAnalysisModal: document.querySelector("#siteStudyAnalysisModal"),
+  siteStudyAnalysisCloseBtn: document.querySelector("#siteStudyAnalysisCloseBtn"),
+  siteStudyAnalysisTitle: document.querySelector("#siteStudyAnalysisTitle"),
+  siteStudyAnalysisSubtitle: document.querySelector("#siteStudyAnalysisSubtitle"),
+  siteStudyAnalysisSummary: document.querySelector("#siteStudyAnalysisSummary"),
+  siteStudyAnalysisMetrics: document.querySelector("#siteStudyAnalysisMetrics"),
+  siteStudyAnalysisVisual: document.querySelector("#siteStudyAnalysisVisual"),
+  siteStudyAnalysisLegs: document.querySelector("#siteStudyAnalysisLegs"),
+  siteStudyAnalysisFocusBtn: document.querySelector("#siteStudyAnalysisFocusBtn"),
   runSiteStudyBtn: document.querySelector("#runSiteStudyBtn"),
   centerCoordinateLabel: document.querySelector("#centerCoordinateLabel"),
   centerCoordinateValue: document.querySelector("#centerCoordinateValue"),
@@ -2250,6 +2262,14 @@ const state = {
     observedAt: "",
   },
   profiles: [],
+  emitterProfiles: {
+    items: [],
+    activeProfileId: "",
+    searchText: "",
+    usingServer: false,
+    loading: false,
+    statusMessage: "",
+  },
   gps: {
     geolocationWatchId: null,
     serialPort: null,
@@ -2286,6 +2306,9 @@ const state = {
     terrainId: null,
     markersLayer: L.layerGroup(),
     lastRunSummary: "",
+    lastRunElapsedMs: 0,
+    lastRunEngine: "",
+    markerRefs: [],
   },
   ui: {
     resizeActive: false,
@@ -2438,26 +2461,553 @@ function timeoutAfter(ms, message = "Operation timed out") {
   });
 }
 
-function createDefaultProfiles() {
-  return [
-    {
-      id: generateId(),
-      profileName: "Standard VHF",
-      type: "radio",
-      force: "friendly",
-      name: "RF-01",
-      unit: "Alpha",
-      frequencyMHz: 350,
-      powerW: 50,
-      antennaHeightM: 10,
-      antennaGainDbi: 2.1,
-      receiverSensitivityDbm: -95,
-      systemLossDb: 1.5,
-      icon: "radio",
-      color: "#38bdf8",
-      notes: "",
+function createDefaultEmitterProfilePayload() {
+  return {
+    radioType: "",
+    programKey: "",
+    type: "radio",
+    emitterLabel: "radio",
+    force: "friendly",
+    name: "",
+    unit: "",
+    icon: "radio",
+    color: "#38bdf8",
+    notes: "",
+    rf: {
+      frequencyMHz: 150,
+      bandwidthKHz: null,
+      modulation: "FM",
+      waveform: "analog",
+      duplex: "simplex",
+      channelSpacingKHz: null,
     },
-  ];
+    tx: {
+      powerW: 5,
+      dutyCycle: 1,
+      papr: 0,
+      spectralEfficiency: null,
+    },
+    rx: {
+      sensitivityDbm: -107,
+      noiseFigDb: null,
+      requiredSnrDb: null,
+      acrDb: null,
+      bdrDb: null,
+    },
+    antenna: {
+      type: "whip",
+      gainDbi: 2.15,
+      pattern: "omnidirectional",
+      polarization: "vertical",
+      heightM: 2,
+      cableLossDb: 0.5,
+      systemLossDb: 3,
+    },
+    prop: {
+      model: "itu-p525",
+      clutter: "open",
+      terrainEnabled: true,
+      diffractionEnabled: true,
+      nvisEnabled: false,
+      ionoModel: "simple",
+      timeDayEffects: false,
+      solarIndex: 80,
+    },
+    network: {
+      isManet: false,
+      relayCapable: false,
+      maxHops: 1,
+      latencyMs: null,
+      adaptiveDataRate: false,
+      satcomEnabled: false,
+      satType: "GEO",
+      satUplinkMHz: null,
+      satDownlinkMHz: null,
+      satGainDbi: null,
+    },
+    locationDefaults: {
+      gridLocation: "",
+      colocateAssetId: "",
+    },
+  };
+}
+
+function normalizeEmitterProfilePayload(value) {
+  const base = createDefaultEmitterProfilePayload();
+  const src = value && typeof value === "object" ? value : {};
+  const obj = (entry) => (entry && typeof entry === "object" ? entry : {});
+  const str = (entry, fallback = "") => typeof entry === "string" ? entry : fallback;
+  const bool = (entry, fallback = false) => typeof entry === "boolean" ? entry : fallback;
+  const num = (entry, fallback = null) => Number.isFinite(Number(entry)) ? Number(entry) : fallback;
+  return {
+    radioType: str(src.radioType, base.radioType),
+    programKey: str(src.programKey, base.programKey),
+    type: EMITTER_ICONS[str(src.type, base.type)] ? str(src.type, base.type) : base.type,
+    emitterLabel: str(src.emitterLabel, base.emitterLabel),
+    force: FORCE_COLORS[str(src.force, "")] ? str(src.force, base.force) : base.force,
+    name: str(src.name, base.name),
+    unit: str(src.unit, base.unit),
+    icon: EMITTER_ICONS[str(src.icon, base.icon)] ? str(src.icon, base.icon) : base.icon,
+    color: str(src.color, base.color),
+    notes: str(src.notes, base.notes),
+    rf: {
+      frequencyMHz: num(obj(src.rf).frequencyMHz, base.rf.frequencyMHz),
+      bandwidthKHz: num(obj(src.rf).bandwidthKHz, base.rf.bandwidthKHz),
+      modulation: str(obj(src.rf).modulation, base.rf.modulation),
+      waveform: str(obj(src.rf).waveform, base.rf.waveform),
+      duplex: str(obj(src.rf).duplex, base.rf.duplex),
+      channelSpacingKHz: num(obj(src.rf).channelSpacingKHz, base.rf.channelSpacingKHz),
+    },
+    tx: {
+      powerW: num(obj(src.tx).powerW, base.tx.powerW),
+      dutyCycle: num(obj(src.tx).dutyCycle, base.tx.dutyCycle),
+      papr: num(obj(src.tx).papr, base.tx.papr),
+      spectralEfficiency: num(obj(src.tx).spectralEfficiency, base.tx.spectralEfficiency),
+    },
+    rx: {
+      sensitivityDbm: num(obj(src.rx).sensitivityDbm, base.rx.sensitivityDbm),
+      noiseFigDb: num(obj(src.rx).noiseFigDb, base.rx.noiseFigDb),
+      requiredSnrDb: num(obj(src.rx).requiredSnrDb, base.rx.requiredSnrDb),
+      acrDb: num(obj(src.rx).acrDb, base.rx.acrDb),
+      bdrDb: num(obj(src.rx).bdrDb, base.rx.bdrDb),
+    },
+    antenna: {
+      type: str(obj(src.antenna).type, base.antenna.type),
+      gainDbi: num(obj(src.antenna).gainDbi, base.antenna.gainDbi),
+      pattern: str(obj(src.antenna).pattern, base.antenna.pattern),
+      polarization: str(obj(src.antenna).polarization, base.antenna.polarization),
+      heightM: num(obj(src.antenna).heightM, base.antenna.heightM),
+      cableLossDb: num(obj(src.antenna).cableLossDb, base.antenna.cableLossDb),
+      systemLossDb: num(obj(src.antenna).systemLossDb, base.antenna.systemLossDb),
+    },
+    prop: {
+      model: str(obj(src.prop).model, base.prop.model),
+      clutter: str(obj(src.prop).clutter, base.prop.clutter),
+      terrainEnabled: bool(obj(src.prop).terrainEnabled, base.prop.terrainEnabled),
+      diffractionEnabled: bool(obj(src.prop).diffractionEnabled, base.prop.diffractionEnabled),
+      nvisEnabled: bool(obj(src.prop).nvisEnabled, base.prop.nvisEnabled),
+      ionoModel: str(obj(src.prop).ionoModel, base.prop.ionoModel),
+      timeDayEffects: bool(obj(src.prop).timeDayEffects, base.prop.timeDayEffects),
+      solarIndex: num(obj(src.prop).solarIndex, base.prop.solarIndex),
+    },
+    network: {
+      isManet: bool(obj(src.network).isManet, base.network.isManet),
+      relayCapable: bool(obj(src.network).relayCapable, base.network.relayCapable),
+      maxHops: num(obj(src.network).maxHops, base.network.maxHops),
+      latencyMs: num(obj(src.network).latencyMs, base.network.latencyMs),
+      adaptiveDataRate: bool(obj(src.network).adaptiveDataRate, base.network.adaptiveDataRate),
+      satcomEnabled: bool(obj(src.network).satcomEnabled, base.network.satcomEnabled),
+      satType: str(obj(src.network).satType, base.network.satType),
+      satUplinkMHz: num(obj(src.network).satUplinkMHz, base.network.satUplinkMHz),
+      satDownlinkMHz: num(obj(src.network).satDownlinkMHz, base.network.satDownlinkMHz),
+      satGainDbi: num(obj(src.network).satGainDbi, base.network.satGainDbi),
+    },
+    locationDefaults: {
+      gridLocation: str(obj(src.locationDefaults).gridLocation, base.locationDefaults.gridLocation),
+      colocateAssetId: str(obj(src.locationDefaults).colocateAssetId, base.locationDefaults.colocateAssetId),
+    },
+  };
+}
+
+function buildEmitterProfilePayloadFromProgram(radioType = "", programKey = "") {
+  const program = RADIO_LIBRARY[radioType]?.programs?.[programKey];
+  if (!program) {
+    return createDefaultEmitterProfilePayload();
+  }
+  return normalizeEmitterProfilePayload({
+    radioType,
+    programKey,
+    emitterLabel: RADIO_LIBRARY[radioType]?.label || "radio",
+    rf: {
+      frequencyMHz: program.rf?.frequencyMHz,
+      bandwidthKHz: program.rf?.bandwidthKHz,
+      modulation: program.rf?.modulation,
+      waveform: program.rf?.waveform,
+      duplex: program.rf?.duplex,
+      channelSpacingKHz: program.rf?.channelSpacingKHz,
+    },
+    tx: {
+      powerW: program.tx?.powerW,
+      dutyCycle: program.tx?.dutyCycle,
+      papr: program.tx?.papr,
+      spectralEfficiency: program.tx?.spectralEfficiency,
+    },
+    rx: {
+      sensitivityDbm: program.rx?.sensitivityDbm,
+      noiseFigDb: program.rx?.noiseFigDb,
+      requiredSnrDb: program.rx?.requiredSnrDb,
+      acrDb: program.rx?.acrDb,
+      bdrDb: program.rx?.bdrDb,
+    },
+    antenna: {
+      type: program.antenna?.type,
+      gainDbi: program.antenna?.gainDbi,
+      pattern: program.antenna?.pattern,
+      polarization: program.antenna?.polarization,
+      heightM: program.antenna?.heightM,
+      cableLossDb: program.antenna?.cableLossDb,
+      systemLossDb: program.antenna?.systemLossDb,
+    },
+    prop: {
+      model: program.prop?.model,
+      clutter: program.prop?.clutter,
+      terrainEnabled: program.prop?.terrainEnabled,
+      diffractionEnabled: program.prop?.diffractionEnabled,
+      nvisEnabled: program.prop?.nvisEnabled,
+      ionoModel: program.prop?.ionoModel,
+      timeDayEffects: program.prop?.timeDayEffects,
+      solarIndex: program.prop?.solarIndex,
+    },
+    network: {
+      isManet: program.net?.isManet,
+      relayCapable: program.net?.relayCapable,
+      maxHops: program.net?.maxHops,
+      latencyMs: program.net?.latencyMs,
+      adaptiveDataRate: program.net?.adaptiveDataRate,
+      satcomEnabled: program.net?.satcomEnabled,
+      satType: program.net?.satType,
+      satUplinkMHz: program.net?.satUplinkMHz,
+      satDownlinkMHz: program.net?.satDownlinkMHz,
+      satGainDbi: program.net?.satGainDbi,
+    },
+  });
+}
+
+function buildEmitterProfilePayloadFromAsset(asset) {
+  const ext = asset?.ext && typeof asset.ext === "object" ? asset.ext : {};
+  return normalizeEmitterProfilePayload({
+    radioType: ext.radioType || "",
+    programKey: ext.programKey || "",
+    type: asset?.type || "radio",
+    emitterLabel: asset?.emitterLabel || asset?.name || "radio",
+    force: asset?.force || "friendly",
+    name: asset?.name || "",
+    unit: asset?.unit || "",
+    icon: asset?.icon || asset?.type || "radio",
+    color: asset?.color || FORCE_COLORS[asset?.force] || "#38bdf8",
+    notes: asset?.notes || "",
+    rf: {
+      frequencyMHz: asset?.frequencyMHz,
+      bandwidthKHz: asset?.bandwidthKHz ?? ext.bandwidthKHz,
+      modulation: asset?.modulation ?? ext.modulation,
+      waveform: asset?.waveform ?? ext.waveform,
+      duplex: asset?.duplex ?? ext.duplex,
+      channelSpacingKHz: asset?.channelSpacingKHz ?? ext.channelSpacingKHz,
+    },
+    tx: {
+      powerW: asset?.powerW,
+      dutyCycle: asset?.dutyCycle ?? ext.dutyCycle,
+      papr: asset?.papr ?? ext.papr,
+      spectralEfficiency: asset?.spectralEfficiency ?? ext.spectralEfficiency,
+    },
+    rx: {
+      sensitivityDbm: asset?.receiverSensitivityDbm,
+      noiseFigDb: asset?.noiseFigDb ?? ext.noiseFigDb,
+      requiredSnrDb: asset?.requiredSnrDb ?? ext.requiredSnrDb,
+      acrDb: asset?.acrDb ?? ext.acrDb,
+      bdrDb: asset?.bdrDb ?? ext.bdrDb,
+    },
+    antenna: {
+      type: asset?.antennaType ?? ext.antennaType,
+      gainDbi: asset?.antennaGainDbi,
+      pattern: asset?.radPattern ?? ext.radPattern,
+      polarization: asset?.polarization ?? ext.polarization,
+      heightM: asset?.antennaHeightM,
+      cableLossDb: asset?.cableLossDb ?? ext.cableLossDb,
+      systemLossDb: asset?.systemLossDb,
+    },
+    prop: {
+      model: asset?.propModel ?? ext.propModel,
+      clutter: asset?.clutterType ?? ext.clutterType,
+      terrainEnabled: asset?.terrainEnabled ?? ext.terrainEnabled,
+      diffractionEnabled: asset?.diffractionEnabled ?? ext.diffractionEnabled,
+      nvisEnabled: asset?.nvisEnabled ?? ext.nvisEnabled,
+      ionoModel: asset?.ionoModel ?? ext.ionoModel,
+      timeDayEffects: asset?.timeDayEffects ?? ext.timeDayEffects,
+      solarIndex: asset?.solarIndex ?? ext.solarIndex,
+    },
+    network: {
+      isManet: asset?.isManet ?? ext.isManet,
+      relayCapable: asset?.relayCapable ?? ext.relayCapable,
+      maxHops: asset?.maxHops ?? ext.maxHops,
+      latencyMs: asset?.latencyMs ?? ext.latencyMs,
+      adaptiveDataRate: asset?.adaptiveDataRate ?? ext.adaptiveDataRate,
+      satcomEnabled: asset?.satcomEnabled ?? ext.satcomEnabled,
+      satType: asset?.satType ?? ext.satType,
+      satUplinkMHz: asset?.satUplinkMHz ?? ext.satUplinkMHz,
+      satDownlinkMHz: asset?.satDownlinkMHz ?? ext.satDownlinkMHz,
+      satGainDbi: asset?.satGainDbi ?? ext.satGainDbi,
+    },
+    locationDefaults: {
+      gridLocation: ext.locationGrid || "",
+      colocateAssetId: ext.colocateAssetId || "",
+    },
+  });
+}
+
+function buildEmitterProfilePayloadFromLegacyProfile(profile) {
+  return normalizeEmitterProfilePayload({
+    type: profile?.type || "radio",
+    emitterLabel: profile?.name || "radio",
+    force: profile?.force || "friendly",
+    name: profile?.name || "",
+    unit: profile?.unit || "",
+    icon: profile?.icon || profile?.type || "radio",
+    color: profile?.color || "#38bdf8",
+    notes: profile?.notes || "",
+    rf: {
+      frequencyMHz: profile?.frequencyMHz,
+    },
+    tx: {
+      powerW: profile?.powerW,
+    },
+    rx: {
+      sensitivityDbm: profile?.receiverSensitivityDbm,
+    },
+    antenna: {
+      gainDbi: profile?.antennaGainDbi,
+      heightM: profile?.antennaHeightM,
+      systemLossDb: profile?.systemLossDb,
+    },
+  });
+}
+
+function normalizeEmitterProfileRecord(value) {
+  const src = value && typeof value === "object" ? value : {};
+  const profile = normalizeEmitterProfilePayload(src.profile);
+  return {
+    id: typeof src.id === "string" && src.id.trim() ? src.id.trim() : generateId(),
+    name: typeof src.name === "string" && src.name.trim() ? src.name.trim() : "Untitled Profile",
+    version: Math.max(1, Number(src.version) || 1),
+    assetType: typeof src.assetType === "string" && src.assetType ? src.assetType : profile.type,
+    emitterLabel: typeof src.emitterLabel === "string" && src.emitterLabel ? src.emitterLabel : profile.emitterLabel,
+    force: typeof src.force === "string" && src.force ? src.force : profile.force,
+    icon: typeof src.icon === "string" && src.icon ? src.icon : profile.icon,
+    color: typeof src.color === "string" && src.color ? src.color : profile.color,
+    frequencyMHz: Number.isFinite(Number(src.frequencyMHz)) ? Number(src.frequencyMHz) : profile.rf.frequencyMHz,
+    powerW: Number.isFinite(Number(src.powerW)) ? Number(src.powerW) : profile.tx.powerW,
+    waveform: typeof src.waveform === "string" ? src.waveform : profile.rf.waveform,
+    updatedAt: typeof src.updatedAt === "string" ? src.updatedAt : nowIso(),
+    createdAt: typeof src.createdAt === "string" ? src.createdAt : nowIso(),
+    profile,
+  };
+}
+
+function formatEmitterProfileListMeta(profile) {
+  const freq = Number(profile?.frequencyMHz ?? profile?.profile?.rf?.frequencyMHz ?? 0);
+  const power = Number(profile?.powerW ?? profile?.profile?.tx?.powerW ?? 0);
+  const waveform = profile?.waveform || profile?.profile?.rf?.waveform || "";
+  return `${freq > 0 ? `${freq.toFixed(freq >= 100 ? 0 : 3)} MHz` : "No frequency"}${power > 0 ? ` · ${power} W` : ""}${waveform ? ` · ${waveform}` : ""}`;
+}
+
+function buildEmitterAssetFromProfilePayload(payload, { profileRef = null } = {}) {
+  const normalized = normalizeEmitterProfilePayload(payload);
+  const asset = {
+    type: normalized.type,
+    emitterLabel: normalized.emitterLabel,
+    force: normalized.force,
+    name: normalized.name || "Emitter",
+    unit: normalized.unit || "",
+    icon: normalized.icon,
+    color: normalized.color || FORCE_COLORS[normalized.force] || FORCE_COLORS.friendly,
+    notes: normalized.notes || "",
+    frequencyMHz: normalized.rf.frequencyMHz,
+    bandwidthKHz: normalized.rf.bandwidthKHz,
+    waveform: normalized.rf.waveform,
+    modulation: normalized.rf.modulation,
+    duplex: normalized.rf.duplex,
+    channelSpacingKHz: normalized.rf.channelSpacingKHz,
+    powerW: normalized.tx.powerW,
+    dutyCycle: normalized.tx.dutyCycle,
+    papr: normalized.tx.papr,
+    spectralEfficiency: normalized.tx.spectralEfficiency,
+    antennaHeightM: normalized.antenna.heightM,
+    antennaGainDbi: normalized.antenna.gainDbi,
+    antennaType: normalized.antenna.type,
+    radPattern: normalized.antenna.pattern,
+    polarization: normalized.antenna.polarization,
+    cableLossDb: normalized.antenna.cableLossDb,
+    receiverSensitivityDbm: normalized.rx.sensitivityDbm,
+    noiseFigDb: normalized.rx.noiseFigDb,
+    requiredSnrDb: normalized.rx.requiredSnrDb,
+    acrDb: normalized.rx.acrDb,
+    bdrDb: normalized.rx.bdrDb,
+    systemLossDb: normalized.antenna.systemLossDb,
+    propModel: normalized.prop.model,
+    clutterType: normalized.prop.clutter,
+    terrainEnabled: normalized.prop.terrainEnabled,
+    diffractionEnabled: normalized.prop.diffractionEnabled,
+    nvisEnabled: normalized.prop.nvisEnabled,
+    ionoModel: normalized.prop.ionoModel,
+    timeDayEffects: normalized.prop.timeDayEffects,
+    solarIndex: normalized.prop.solarIndex,
+    isManet: normalized.network.isManet,
+    relayCapable: normalized.network.relayCapable,
+    maxHops: normalized.network.maxHops,
+    latencyMs: normalized.network.latencyMs,
+    adaptiveDataRate: normalized.network.adaptiveDataRate,
+    satcomEnabled: normalized.network.satcomEnabled,
+    satType: normalized.network.satType,
+    satUplinkMHz: normalized.network.satUplinkMHz,
+    satDownlinkMHz: normalized.network.satDownlinkMHz,
+    satGainDbi: normalized.network.satGainDbi,
+    ext: {
+      radioType: normalized.radioType,
+      programKey: normalized.programKey,
+      bandwidthKHz: normalized.rf.bandwidthKHz,
+      modulation: normalized.rf.modulation,
+      waveform: normalized.rf.waveform,
+      duplex: normalized.rf.duplex,
+      channelSpacingKHz: normalized.rf.channelSpacingKHz,
+      dutyCycle: normalized.tx.dutyCycle,
+      papr: normalized.tx.papr,
+      spectralEfficiency: normalized.tx.spectralEfficiency,
+      noiseFigDb: normalized.rx.noiseFigDb,
+      requiredSnrDb: normalized.rx.requiredSnrDb,
+      acrDb: normalized.rx.acrDb,
+      bdrDb: normalized.rx.bdrDb,
+      antennaType: normalized.antenna.type,
+      radPattern: normalized.antenna.pattern,
+      polarization: normalized.antenna.polarization,
+      cableLossDb: normalized.antenna.cableLossDb,
+      propModel: normalized.prop.model,
+      clutterType: normalized.prop.clutter,
+      terrainEnabled: normalized.prop.terrainEnabled,
+      diffractionEnabled: normalized.prop.diffractionEnabled,
+      nvisEnabled: normalized.prop.nvisEnabled,
+      ionoModel: normalized.prop.ionoModel,
+      timeDayEffects: normalized.prop.timeDayEffects,
+      solarIndex: normalized.prop.solarIndex,
+      isManet: normalized.network.isManet,
+      relayCapable: normalized.network.relayCapable,
+      maxHops: normalized.network.maxHops,
+      latencyMs: normalized.network.latencyMs,
+      adaptiveDataRate: normalized.network.adaptiveDataRate,
+      satcomEnabled: normalized.network.satcomEnabled,
+      satType: normalized.network.satType,
+      satUplinkMHz: normalized.network.satUplinkMHz,
+      satDownlinkMHz: normalized.network.satDownlinkMHz,
+      satGainDbi: normalized.network.satGainDbi,
+      locationGrid: normalized.locationDefaults.gridLocation,
+      colocateAssetId: normalized.locationDefaults.colocateAssetId,
+    },
+    profileId: "",
+    profileName: "",
+    profileVersion: null,
+  };
+  if (profileRef?.id) {
+    asset.profileId = profileRef.id;
+    asset.profileName = profileRef.name || "";
+    asset.profileVersion = Number(profileRef.version) || 1;
+  }
+  return asset;
+}
+
+function payloadsEqual(left, right) {
+  return JSON.stringify(normalizeEmitterProfilePayload(left)) === JSON.stringify(normalizeEmitterProfilePayload(right));
+}
+
+function findEmitterProfileById(profileId = "") {
+  return state.emitterProfiles.items.find((profile) => profile.id === profileId) ?? null;
+}
+
+function buildGuestEmitterProfilesFromLegacyRecords() {
+  if (!canUseEmitterProfileStorage()) {
+    return [];
+  }
+  try {
+    const raw = window.localStorage.getItem(EMITTER_PROFILE_LEGACY_STORAGE_KEY);
+    if (!raw) {
+      return [];
+    }
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed.map((legacyProfile) => normalizeEmitterProfileRecord({
+      id: legacyProfile.id || generateId(),
+      name: legacyProfile.profileName || legacyProfile.name || "Imported Legacy Profile",
+      version: 1,
+      profile: buildEmitterProfilePayloadFromLegacyProfile(legacyProfile),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+function persistGuestEmitterProfiles() {
+  if (!canUseEmitterProfileStorage()) {
+    return;
+  }
+  window.localStorage.setItem(EMITTER_PROFILE_STORAGE_KEY, JSON.stringify(state.emitterProfiles.items));
+}
+
+function syncEmitterProfileLibraryUi() {
+  if (emitterModal?.renderSavedProfileLibrary) {
+    emitterModal.renderSavedProfileLibrary();
+  }
+}
+
+function setEmitterProfileLibrary(items, { usingServer = false, statusMessage = "" } = {}) {
+  state.emitterProfiles.items = (Array.isArray(items) ? items : []).map(normalizeEmitterProfileRecord);
+  state.emitterProfiles.usingServer = usingServer;
+  state.emitterProfiles.statusMessage = statusMessage;
+  if (state.emitterProfiles.activeProfileId && !findEmitterProfileById(state.emitterProfiles.activeProfileId)) {
+    state.emitterProfiles.activeProfileId = "";
+  }
+  syncEmitterProfileLibraryUi();
+}
+
+async function loadEmitterProfileLibrary() {
+  state.emitterProfiles.loading = true;
+  try {
+    if (state.session.token) {
+      const payload = await apiFetch("/user/emitter-profiles");
+      setEmitterProfileLibrary(Array.isArray(payload?.profiles) ? payload.profiles : [], {
+        usingServer: true,
+        statusMessage: "Saved profiles are account-backed and available across projects.",
+      });
+      return;
+    }
+    if (!canUseEmitterProfileStorage()) {
+      setEmitterProfileLibrary([], {
+        usingServer: false,
+        statusMessage: "Guest mode could not access browser storage for emitter profiles.",
+      });
+      return;
+    }
+    let profiles = [];
+    let importedLegacy = false;
+    try {
+      const raw = window.localStorage.getItem(EMITTER_PROFILE_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        profiles = Array.isArray(parsed) ? parsed : [];
+      }
+    } catch {
+      profiles = [];
+    }
+    if (!profiles.length) {
+      profiles = buildGuestEmitterProfilesFromLegacyRecords();
+      importedLegacy = profiles.length > 0;
+      if (profiles.length) {
+        window.localStorage.setItem(EMITTER_PROFILE_STORAGE_KEY, JSON.stringify(profiles));
+      }
+    }
+    setEmitterProfileLibrary(profiles, {
+      usingServer: false,
+      statusMessage: importedLegacy
+        ? "Imported legacy browser-saved emitter profiles into the new library."
+        : "Saved profiles live in this browser while guest mode is active.",
+    });
+  } catch (error) {
+    state.emitterProfiles.statusMessage = `Emitter profile library unavailable: ${error.message}`;
+    setStatus(state.emitterProfiles.statusMessage, true);
+    syncEmitterProfileLibraryUi();
+  } finally {
+    state.emitterProfiles.loading = false;
+    syncEmitterProfileLibraryUi();
+  }
 }
 
 function isGuestSession() {
@@ -2470,6 +3020,10 @@ function hasWorkspaceAccess() {
 
 function canUsePersistentBrowserStorage() {
   return !isGuestSession();
+}
+
+function canUseEmitterProfileStorage() {
+  return true;
 }
 
 // Map state (assets, shapes, view) is always saved to localStorage regardless of
@@ -5593,10 +6147,12 @@ function clearSessionState({ preserveGuest = false } = {}) {
 
 async function hydrateSession() {
   if (isGuestSession()) {
+    await loadEmitterProfileLibrary();
     syncWorkspaceUi();
     return;
   }
   if (!state.session.token) {
+    await loadEmitterProfileLibrary();
     syncWorkspaceUi();
     return;
   }
@@ -5607,6 +6163,7 @@ async function hydrateSession() {
     loadTakIdentitySettings();
     await loadProjectList();
     await loadServerTakSettings();
+    await loadEmitterProfileLibrary();
     await loadServerAiProviderSettings();
     fireAnalyticsEvent({ event_type: "visit" });
   } catch (error) {
@@ -5827,6 +6384,7 @@ async function onWorkspaceLogin(credentials = null) {
   persistSessionStorage();
   await loadProjectList();
   await loadServerTakSettings();
+  await loadEmitterProfileLibrary();
   await loadServerAiProviderSettings();
   syncWorkspaceUi();
   closeWorkspaceMenu();
@@ -5855,6 +6413,7 @@ async function onWorkspaceRegister(credentials = null) {
   persistSessionStorage();
   await loadProjectList();
   await loadServerTakSettings();
+  await loadEmitterProfileLibrary();
   await loadServerAiProviderSettings();
   syncWorkspaceUi();
   closeWorkspaceMenu();
@@ -5869,6 +6428,7 @@ function onWorkspaceSignOut() {
     return;
   }
   clearSessionState();
+  void loadEmitterProfileLibrary();
   setAuthScreenMode("login");
   setAuthScreenStatus("Signed out. Sign in to continue.");
   syncWorkspaceUi();
@@ -6164,16 +6724,37 @@ const emitterModal = {
   radioTypeSelect: null,
   programSelect: null,
   libSummary: null,
+  savedProfileSearchInput: null,
+  savedProfileSelect: null,
+  profileNameInput: null,
+  newDraftBtn: null,
+  applySavedProfileBtn: null,
+  saveSavedProfileBtn: null,
+  saveProfileCopyBtn: null,
+  deleteSavedProfileBtn: null,
+  savedProfileSummary: null,
   tabs: null,
   panels: null,
   fields: {},
   linkBudgetEls: {},
+  currentSavedProfileLink: null,
+  originalAssetProfileLink: null,
+  originalAssetPayload: null,
 
   init() {
     this.backdrop      = document.querySelector("#emitterModal");
     this.radioTypeSelect = document.querySelector("#emitterRadioType");
     this.programSelect   = document.querySelector("#emitterProgramSelect");
     this.libSummary      = document.querySelector("#emitterLibSummary");
+    this.savedProfileSearchInput = document.querySelector("#emitterSavedProfileSearch");
+    this.savedProfileSelect = document.querySelector("#emitterSavedProfileSelect");
+    this.profileNameInput = document.querySelector("#emitterProfileNameInput");
+    this.newDraftBtn = document.querySelector("#emitterProfileNewBtn");
+    this.applySavedProfileBtn = document.querySelector("#emitterProfileApplyBtn");
+    this.saveSavedProfileBtn = document.querySelector("#emitterProfileSaveBtn");
+    this.saveProfileCopyBtn = document.querySelector("#emitterProfileSaveCopyBtn");
+    this.deleteSavedProfileBtn = document.querySelector("#emitterProfileDeleteBtn");
+    this.savedProfileSummary = document.querySelector("#emitterProfileSummary");
     this.tabs    = [...document.querySelectorAll(".emitter-tab")];
     this.panels  = [...document.querySelectorAll(".emitter-tab-panel")];
 
@@ -6191,6 +6772,10 @@ const emitterModal = {
       "emGridLocation","emColocateAsset",
     ];
     ids.forEach((id) => { this.fields[id] = document.querySelector(`#${id}`); });
+    ids.forEach((id) => {
+      this.fields[id]?.addEventListener("input", () => this.onFormChanged());
+      this.fields[id]?.addEventListener("change", () => this.onFormChanged());
+    });
 
     const lbIds = ["lb_txPower","lb_antennaGain","lb_cableLoss","lb_eirp","lb_fspl10","lb_rxPower10","lb_rxSens","lb_margin10","lb_maxRange"];
     lbIds.forEach((id) => { this.linkBudgetEls[id] = document.querySelector(`#${id}`); });
@@ -6205,6 +6790,19 @@ const emitterModal = {
 
     // Program → load profile
     this.programSelect.addEventListener("change", () => this.onProgramChange());
+    this.savedProfileSearchInput?.addEventListener("input", () => {
+      state.emitterProfiles.searchText = this.savedProfileSearchInput.value.trim().toLowerCase();
+      this.renderSavedProfileLibrary();
+    });
+    this.savedProfileSelect?.addEventListener("change", () => {
+      state.emitterProfiles.activeProfileId = this.savedProfileSelect.value || "";
+      this.syncSavedProfileSelectionUi();
+    });
+    this.newDraftBtn?.addEventListener("click", () => this.createNewDraft());
+    this.applySavedProfileBtn?.addEventListener("click", () => this.applySelectedSavedProfile());
+    this.saveSavedProfileBtn?.addEventListener("click", () => this.saveCurrentProfileToLibrary().catch((error) => setStatus(error.message, true)));
+    this.saveProfileCopyBtn?.addEventListener("click", () => this.saveCurrentProfileToLibrary({ saveAsCopy: true }).catch((error) => setStatus(error.message, true)));
+    this.deleteSavedProfileBtn?.addEventListener("click", () => this.deleteSelectedSavedProfile().catch((error) => setStatus(error.message, true)));
 
     // Live link budget update on any param change
     ["emFreqMHz","emPowerW","emAntennaGainDbi","emCableLossDb","emSystemLossDb","emRxSensDbm"].forEach((id) => {
@@ -6234,6 +6832,7 @@ const emitterModal = {
 
     // Open via add-emitter button in map contents header
     document.querySelector("#addEmitterBtn")?.addEventListener("click", () => this.open());
+    this.renderSavedProfileLibrary();
   },
 
   open(prefill = null) {
@@ -6241,6 +6840,9 @@ const emitterModal = {
     updateModalBodyState();
     setAssetPlacementMode(false);
     this.switchTab("rf");
+    this.originalAssetProfileLink = null;
+    this.originalAssetPayload = null;
+    this.currentSavedProfileLink = null;
     const isEditing = prefill && prefill.lat !== undefined;
     // Track which asset is being edited for TO linking
     _currentEmitterEditId = isEditing ? (prefill?.id ?? null) : null;
@@ -6253,11 +6855,23 @@ const emitterModal = {
     if (isEditing) {
       this.resetToDefaults();
       this.applyAsset(prefill);
+      this.originalAssetPayload = buildEmitterProfilePayloadFromAsset(prefill);
+      if (prefill?.profileId) {
+        this.originalAssetProfileLink = {
+          id: prefill.profileId,
+          name: prefill.profileName || "",
+          version: Number(prefill.profileVersion) || 1,
+        };
+        this.currentSavedProfileLink = { ...this.originalAssetProfileLink };
+        state.emitterProfiles.activeProfileId = prefill.profileId;
+      }
     } else if (prefill) {
-      this.applyProfile(prefill);
+      this.applyPayload(normalizeEmitterProfilePayload(prefill));
     } else {
       this.resetToDefaults();
     }
+    this.renderSavedProfileLibrary();
+    this.syncSavedProfileSelectionUi();
     const placeBtn = document.querySelector("#emitterPlaceBtn");
     if (placeBtn) placeBtn.textContent = isEditing ? "Save Changes" : "Place on Map";
     this.updateDerivedFields();
@@ -6292,8 +6906,226 @@ const emitterModal = {
     if (placeBtn) placeBtn.textContent = "Place on Map";
     state.editingAssetId = null;
     _currentEmitterEditId = null;
+    this.currentSavedProfileLink = null;
+    this.originalAssetProfileLink = null;
+    this.originalAssetPayload = null;
     clearPendingToLink();
     updateEmitterToLinkBadge(null);
+  },
+
+  onFormChanged() {
+    this.validateInputs();
+    this.updateSavedProfileStatus();
+  },
+
+  renderSavedProfileLibrary() {
+    if (!this.savedProfileSelect) {
+      return;
+    }
+    const query = state.emitterProfiles.searchText || "";
+    const filtered = state.emitterProfiles.items.filter((profile) => {
+      if (!query) {
+        return true;
+      }
+      const haystack = [
+        profile.name,
+        profile.emitterLabel,
+        profile.waveform,
+        formatEmitterProfileListMeta(profile),
+      ].join(" ").toLowerCase();
+      return haystack.includes(query);
+    });
+    this.savedProfileSelect.innerHTML = filtered.length
+      ? filtered.map((profile) => `<option value="${escapeHtml(profile.id)}">${escapeHtml(profile.name)} — ${escapeHtml(formatEmitterProfileListMeta(profile))}</option>`).join("")
+      : '<option value="">No saved profiles</option>';
+    const selectedId = state.emitterProfiles.activeProfileId || this.currentSavedProfileLink?.id || "";
+    this.savedProfileSelect.value = filtered.some((profile) => profile.id === selectedId) ? selectedId : "";
+    this.savedProfileSelect.toggleAttribute("disabled", !filtered.length);
+    this.syncSavedProfileSelectionUi();
+  },
+
+  syncSavedProfileSelectionUi() {
+    const selectedProfile = findEmitterProfileById(this.savedProfileSelect?.value || state.emitterProfiles.activeProfileId || "");
+    if (selectedProfile) {
+      state.emitterProfiles.activeProfileId = selectedProfile.id;
+      if (this.profileNameInput && (!this.profileNameInput.value.trim() || document.activeElement !== this.profileNameInput)) {
+        this.profileNameInput.value = selectedProfile.name;
+      }
+    }
+    this.applySavedProfileBtn?.toggleAttribute("disabled", !selectedProfile);
+    this.deleteSavedProfileBtn?.toggleAttribute("disabled", !selectedProfile);
+    this.updateSavedProfileStatus();
+  },
+
+  createNewDraft() {
+    state.emitterProfiles.activeProfileId = "";
+    this.currentSavedProfileLink = null;
+    this.savedProfileSelect && (this.savedProfileSelect.value = "");
+    if (this.profileNameInput) {
+      this.profileNameInput.value = this.fields.emName?.value?.trim() || "";
+    }
+    this.updateSavedProfileStatus();
+  },
+
+  applySelectedSavedProfile() {
+    const profile = findEmitterProfileById(this.savedProfileSelect?.value || state.emitterProfiles.activeProfileId || "");
+    if (!profile) {
+      setStatus("Select a saved emitter profile first.", true);
+      return;
+    }
+    this.applyPayload(profile.profile);
+    this.currentSavedProfileLink = {
+      id: profile.id,
+      name: profile.name,
+      version: profile.version,
+    };
+    state.emitterProfiles.activeProfileId = profile.id;
+    if (this.profileNameInput) {
+      this.profileNameInput.value = profile.name;
+    }
+    this.updateSavedProfileStatus();
+    setStatus(`Applied saved profile "${profile.name}".`);
+  },
+
+  resolveProfileRefForPayload(payload) {
+    if (this.currentSavedProfileLink?.id) {
+      const linked = findEmitterProfileById(this.currentSavedProfileLink.id);
+      if (linked && payloadsEqual(payload, linked.profile)) {
+        return { id: linked.id, name: linked.name, version: linked.version };
+      }
+    }
+    if (this.originalAssetProfileLink?.id && this.originalAssetPayload && payloadsEqual(payload, this.originalAssetPayload)) {
+      return { ...this.originalAssetProfileLink };
+    }
+    return null;
+  },
+
+  updateSavedProfileStatus() {
+    if (!this.savedProfileSummary) {
+      return;
+    }
+    const libraryMessage = state.emitterProfiles.loading
+      ? "Loading saved emitter profiles..."
+      : state.emitterProfiles.statusMessage;
+    const payload = this.readFields();
+    let message = libraryMessage || "Save this emitter configuration to reuse it across scenarios.";
+    if (this.currentSavedProfileLink?.id) {
+      const linked = findEmitterProfileById(this.currentSavedProfileLink.id);
+      if (linked) {
+        if (payloadsEqual(payload, linked.profile)) {
+          if ((Number(this.currentSavedProfileLink.version) || 0) < linked.version) {
+            message = `Emitter uses ${linked.name} v${this.currentSavedProfileLink.version}; saved profile v${linked.version} is available. Apply it to update this emitter.`;
+          } else {
+            message = `Linked to saved profile ${linked.name} v${linked.version}.`;
+          }
+        } else {
+          message = `Current form diverges from saved profile ${linked.name}. Saving these edits will detach the saved-profile link unless you reapply it.`;
+        }
+      } else if (this.originalAssetProfileLink?.id && this.originalAssetPayload && payloadsEqual(payload, this.originalAssetPayload)) {
+        message = `Linked profile ${this.originalAssetProfileLink.name || this.originalAssetProfileLink.id} is no longer in the library. This emitter keeps its resolved values.`;
+      } else {
+        message = `Linked profile ${this.currentSavedProfileLink.name || this.currentSavedProfileLink.id} is missing. Saving edited values will detach that saved-profile link.`;
+      }
+    } else {
+      const selected = findEmitterProfileById(this.savedProfileSelect?.value || state.emitterProfiles.activeProfileId || "");
+      if (selected) {
+        message = `Selected profile ${selected.name} v${selected.version}. ${formatEmitterProfileListMeta(selected)}`;
+      }
+    }
+    this.savedProfileSummary.textContent = message;
+  },
+
+  async saveCurrentProfileToLibrary({ saveAsCopy = false } = {}) {
+    const payload = this.readFields();
+    const requestedName = this.profileNameInput?.value?.trim() || payload.name.trim() || "Custom Profile";
+    let savedProfile = null;
+    const existingProfile = !saveAsCopy
+      ? findEmitterProfileById(this.savedProfileSelect?.value || state.emitterProfiles.activeProfileId || "")
+      : null;
+
+    if (state.session.token) {
+      if (existingProfile) {
+        const response = await apiFetch(`/user/emitter-profiles/${existingProfile.id}`, {
+          method: "PUT",
+          body: JSON.stringify({ name: requestedName, profile: payload }),
+        });
+        savedProfile = normalizeEmitterProfileRecord(response.profile);
+        state.emitterProfiles.items = state.emitterProfiles.items.map((profile) => profile.id === savedProfile.id ? savedProfile : profile);
+      } else {
+        const response = await apiFetch("/user/emitter-profiles", {
+          method: "POST",
+          body: JSON.stringify({ name: requestedName, profile: payload }),
+        });
+        savedProfile = normalizeEmitterProfileRecord(response.profile);
+        state.emitterProfiles.items.push(savedProfile);
+      }
+    } else {
+      const nextTimestamp = nowIso();
+      if (existingProfile) {
+        savedProfile = normalizeEmitterProfileRecord({
+          ...existingProfile,
+          name: requestedName,
+          version: (existingProfile.version || 1) + 1,
+          updatedAt: nextTimestamp,
+          profile: payload,
+        });
+        state.emitterProfiles.items = state.emitterProfiles.items.map((profile) => profile.id === savedProfile.id ? savedProfile : profile);
+      } else {
+        savedProfile = normalizeEmitterProfileRecord({
+          id: generateId(),
+          name: requestedName,
+          version: 1,
+          updatedAt: nextTimestamp,
+          createdAt: nextTimestamp,
+          profile: payload,
+        });
+        state.emitterProfiles.items.push(savedProfile);
+      }
+      persistGuestEmitterProfiles();
+    }
+
+    state.emitterProfiles.activeProfileId = savedProfile.id;
+    this.currentSavedProfileLink = {
+      id: savedProfile.id,
+      name: savedProfile.name,
+      version: savedProfile.version,
+    };
+    if (this.profileNameInput) {
+      this.profileNameInput.value = savedProfile.name;
+    }
+    this.renderSavedProfileLibrary();
+    setStatus(`Saved emitter profile "${savedProfile.name}"${saveAsCopy ? " as a copy" : ""}.`);
+  },
+
+  async deleteSelectedSavedProfile() {
+    const profile = findEmitterProfileById(this.savedProfileSelect?.value || state.emitterProfiles.activeProfileId || "");
+    if (!profile) {
+      setStatus("Select a saved emitter profile to delete.", true);
+      return;
+    }
+    if (!window.confirm(`Delete saved emitter profile "${profile.name}"?`)) {
+      return;
+    }
+    if (state.session.token) {
+      await apiFetch(`/user/emitter-profiles/${profile.id}`, { method: "DELETE" });
+    } else {
+      state.emitterProfiles.items = state.emitterProfiles.items.filter((entry) => entry.id !== profile.id);
+      persistGuestEmitterProfiles();
+    }
+    if (state.session.token) {
+      state.emitterProfiles.items = state.emitterProfiles.items.filter((entry) => entry.id !== profile.id);
+    }
+    state.emitterProfiles.activeProfileId = "";
+    if (this.savedProfileSelect) {
+      this.savedProfileSelect.value = "";
+    }
+    if (this.profileNameInput && this.profileNameInput.value.trim() === profile.name) {
+      this.profileNameInput.value = payloadsEqual(this.readFields(), profile.profile)
+        ? (this.fields.emName?.value?.trim() || "")
+        : this.profileNameInput.value;
+    }
+    this.renderSavedProfileLibrary();
+    setStatus(`Deleted saved emitter profile "${profile.name}".`);
   },
 
   switchTab(name) {
@@ -6311,6 +7143,7 @@ const emitterModal = {
       sel.disabled = true;
       sel.innerHTML = '<option value="">— Manual —</option>';
       this.libSummary.innerHTML = "<p>Configure all parameters manually.</p>";
+      this.onFormChanged();
       return;
     }
     sel.disabled = false;
@@ -6329,65 +7162,101 @@ const emitterModal = {
     const radio    = RADIO_LIBRARY[radioKey];
     const prog     = radio?.programs[progKey];
     if (!prog) return;
-    this.applyProfile(prog);
+    this.applyPayload(buildEmitterProfilePayloadFromProgram(radioKey, progKey));
+    this.currentSavedProfileLink = null;
     this.libSummary.innerHTML = `
       <strong>${radio.label}</strong><br>
       <em>${prog.label}</em><br>
       <span>${prog.rf.frequencyMHz} MHz · ${prog.tx.powerW} W · ${prog.antenna.gainDbi} dBi · ${prog.rf.waveform}</span>
     `;
+    this.updateSavedProfileStatus();
   },
 
-  applyProfile(prog) {
+  applyPayload(payload) {
+    const profile = normalizeEmitterProfilePayload(payload);
     const f = this.fields;
     const set = (id, val) => { if (f[id] && val !== undefined && val !== null) f[id].value = val; };
     const setCheck = (id, val) => { if (f[id]) f[id].checked = Boolean(val); };
+    if (this.radioTypeSelect) this.radioTypeSelect.value = profile.radioType || "";
+    if (this.programSelect) {
+      this.programSelect.disabled = !profile.radioType || !RADIO_LIBRARY[profile.radioType];
+      if (profile.radioType && RADIO_LIBRARY[profile.radioType]) {
+        this.programSelect.innerHTML = "";
+        Object.entries(RADIO_LIBRARY[profile.radioType].programs).forEach(([pKey, prog]) => {
+          const opt = document.createElement("option");
+          opt.value = pKey;
+          opt.textContent = prog.label;
+          this.programSelect.appendChild(opt);
+        });
+        this.programSelect.value = profile.programKey || this.programSelect.value || "";
+      } else {
+        this.programSelect.innerHTML = '<option value="">— Manual —</option>';
+      }
+    }
+    if (profile.radioType && RADIO_LIBRARY[profile.radioType]) {
+      const radio = RADIO_LIBRARY[profile.radioType];
+      const program = radio.programs?.[profile.programKey];
+      this.libSummary.innerHTML = program
+        ? `<strong>${radio.label}</strong><br><em>${program.label}</em><br><span>${program.rf.frequencyMHz} MHz · ${program.tx.powerW} W · ${program.antenna.gainDbi} dBi · ${program.rf.waveform}</span>`
+        : `<strong>${radio.label}</strong><br><span>Saved custom configuration based on this radio family.</span>`;
+    } else {
+      this.libSummary.innerHTML = "<p>Configure all parameters manually.</p>";
+    }
+    set("emName",             profile.name);
+    set("emUnit",             profile.unit);
+    set("emForce",            profile.force);
+    set("emIcon",             profile.icon);
+    set("emColor",            profile.color);
+    set("emNotes",            profile.notes);
 
     // RF
-    set("emFreqMHz",          prog.rf?.frequencyMHz);
-    set("emBandwidthKHz",     prog.rf?.bandwidthKHz);
-    set("emModulation",       prog.rf?.modulation);
-    set("emWaveform",         prog.rf?.waveform);
-    set("emDuplex",           prog.rf?.duplex);
-    set("emChannelSpacingKHz",prog.rf?.channelSpacingKHz);
+    set("emFreqMHz",          profile.rf.frequencyMHz);
+    set("emBandwidthKHz",     profile.rf.bandwidthKHz);
+    set("emModulation",       profile.rf.modulation);
+    set("emWaveform",         profile.rf.waveform);
+    set("emDuplex",           profile.rf.duplex);
+    set("emChannelSpacingKHz",profile.rf.channelSpacingKHz);
     // TX
-    set("emPowerW",           prog.tx?.powerW);
-    set("emDutyCycle",        prog.tx?.dutyCycle);
-    set("emPapr",             prog.tx?.papr);
-    set("emSpectralEff",      prog.tx?.spectralEfficiency);
+    set("emPowerW",           profile.tx.powerW);
+    set("emDutyCycle",        profile.tx.dutyCycle);
+    set("emPapr",             profile.tx.papr);
+    set("emSpectralEff",      profile.tx.spectralEfficiency);
     // RX
-    set("emRxSensDbm",        prog.rx?.sensitivityDbm);
-    set("emNoiseFigDb",       prog.rx?.noiseFigDb);
-    set("emReqSnrDb",         prog.rx?.requiredSnrDb);
-    set("emAcrDb",            prog.rx?.acrDb);
-    set("emBdrDb",            prog.rx?.bdrDb);
+    set("emRxSensDbm",        profile.rx.sensitivityDbm);
+    set("emNoiseFigDb",       profile.rx.noiseFigDb);
+    set("emReqSnrDb",         profile.rx.requiredSnrDb);
+    set("emAcrDb",            profile.rx.acrDb);
+    set("emBdrDb",            profile.rx.bdrDb);
     // Antenna
-    set("emAntennaType",      prog.antenna?.type);
-    set("emAntennaGainDbi",   prog.antenna?.gainDbi);
-    set("emRadPattern",       prog.antenna?.pattern);
-    set("emPolarization",     prog.antenna?.polarization);
-    set("emAntennaHeightM",   prog.antenna?.heightM);
-    set("emCableLossDb",      prog.antenna?.cableLossDb);
-    set("emSystemLossDb",     prog.antenna?.systemLossDb);
+    set("emAntennaType",      profile.antenna.type);
+    set("emAntennaGainDbi",   profile.antenna.gainDbi);
+    set("emRadPattern",       profile.antenna.pattern);
+    set("emPolarization",     profile.antenna.polarization);
+    set("emAntennaHeightM",   profile.antenna.heightM);
+    set("emCableLossDb",      profile.antenna.cableLossDb);
+    set("emSystemLossDb",     profile.antenna.systemLossDb);
     // Propagation
-    set("emPropModel",        prog.prop?.model);
-    set("emClutterType",      prog.prop?.clutter);
-    setCheck("emTerrainEnabled",    prog.prop?.terrainEnabled);
-    setCheck("emDiffractionEnabled",prog.prop?.diffractionEnabled);
-    setCheck("emNvisEnabled",       prog.prop?.nvisEnabled);
-    set("emIonoModel",        prog.prop?.ionoModel);
-    setCheck("emTimeDayEffects",    prog.prop?.timeDayEffects);
-    set("emSolarIndex",       prog.prop?.solarIndex);
+    set("emPropModel",        profile.prop.model);
+    set("emClutterType",      profile.prop.clutter);
+    setCheck("emTerrainEnabled",    profile.prop.terrainEnabled);
+    setCheck("emDiffractionEnabled",profile.prop.diffractionEnabled);
+    setCheck("emNvisEnabled",       profile.prop.nvisEnabled);
+    set("emIonoModel",        profile.prop.ionoModel);
+    setCheck("emTimeDayEffects",    profile.prop.timeDayEffects);
+    set("emSolarIndex",       profile.prop.solarIndex);
     // Network
-    setCheck("emIsManet",           prog.net?.isManet);
-    setCheck("emRelayCapable",      prog.net?.relayCapable);
-    set("emMaxHops",          prog.net?.maxHops);
-    set("emLatencyMs",        prog.net?.latencyMs);
-    setCheck("emAdaptiveDataRate",  prog.net?.adaptiveDataRate);
-    setCheck("emSatcomEnabled",     prog.net?.satcomEnabled);
-    set("emSatType",          prog.net?.satType);
-    set("emSatUplinkMHz",     prog.net?.satUplinkMHz);
-    set("emSatDownlinkMHz",   prog.net?.satDownlinkMHz);
-    set("emSatGainDbi",       prog.net?.satGainDbi);
+    setCheck("emIsManet",           profile.network.isManet);
+    setCheck("emRelayCapable",      profile.network.relayCapable);
+    set("emMaxHops",          profile.network.maxHops);
+    set("emLatencyMs",        profile.network.latencyMs);
+    setCheck("emAdaptiveDataRate",  profile.network.adaptiveDataRate);
+    setCheck("emSatcomEnabled",     profile.network.satcomEnabled);
+    set("emSatType",          profile.network.satType);
+    set("emSatUplinkMHz",     profile.network.satUplinkMHz);
+    set("emSatDownlinkMHz",   profile.network.satDownlinkMHz);
+    set("emSatGainDbi",       profile.network.satGainDbi);
+    set("emGridLocation",     profile.locationDefaults.gridLocation);
+    set("emColocateAsset",    profile.locationDefaults.colocateAssetId);
 
     this.updateDerivedFields();
     this.updateLinkBudget();
@@ -6395,45 +7264,18 @@ const emitterModal = {
   },
 
   applyAsset(asset) {
-    const f = this.fields;
-    const set = (id, val) => { if (f[id] && val !== undefined && val !== null) f[id].value = val; };
-    set("emName",          asset.name);
-    set("emUnit",          asset.unit);
-    set("emForce",         asset.force);
-    set("emColor",         asset.color ?? FORCE_COLORS[asset.force] ?? FORCE_COLORS.friendly);
-    set("emIcon",          asset.icon);
-    set("emNotes",         asset.notes);
-    set("emFreqMHz",       asset.frequencyMHz);
-    set("emPowerW",        asset.powerW);
-    set("emAntennaGainDbi",asset.antennaGainDbi);
-    set("emAntennaHeightM",asset.antennaHeightM);
-    set("emRxSensDbm",     asset.receiverSensitivityDbm);
-    set("emSystemLossDb",  asset.systemLossDb);
-    set("emGridLocation",  toMgrs(asset.lat, asset.lon));
-    set("emColocateAsset", "");
-    this.updateDerivedFields();
-    this.updateLinkBudget();
-    this.validateInputs();
+    const payload = buildEmitterProfilePayloadFromAsset(asset);
+    if (!payload.locationDefaults.gridLocation && Number.isFinite(asset?.lat) && Number.isFinite(asset?.lon)) {
+      payload.locationDefaults.gridLocation = toMgrs(asset.lat, asset.lon);
+    }
+    this.applyPayload(payload);
   },
 
   resetToDefaults() {
-    this.radioTypeSelect.value = "";
+    this.libSummary.innerHTML = "<p>Select a radio type and program to auto-fill parameters, or configure manually below.</p>";
     this.programSelect.disabled = true;
     this.programSelect.innerHTML = '<option value="">Select a radio type first</option>';
-    this.libSummary.innerHTML = "<p>Select a radio type and program to auto-fill parameters, or configure manually below.</p>";
-    // Sensible manual defaults
-    this.fields.emFreqMHz && (this.fields.emFreqMHz.value = "150");
-    this.fields.emPowerW && (this.fields.emPowerW.value = "5");
-    this.fields.emAntennaGainDbi && (this.fields.emAntennaGainDbi.value = "2.15");
-    this.fields.emAntennaHeightM && (this.fields.emAntennaHeightM.value = "2");
-    this.fields.emRxSensDbm && (this.fields.emRxSensDbm.value = "-107");
-    this.fields.emCableLossDb && (this.fields.emCableLossDb.value = "0.5");
-    this.fields.emSystemLossDb && (this.fields.emSystemLossDb.value = "3");
-    this.fields.emName && (this.fields.emName.value = "");
-    this.fields.emForce && (this.fields.emForce.value = "friendly");
-    this.fields.emColor && (this.fields.emColor.value = FORCE_COLORS.friendly);
-    this.fields.emGridLocation && (this.fields.emGridLocation.value = "");
-    this.fields.emColocateAsset && (this.fields.emColocateAsset.value = "");
+    this.applyPayload(createDefaultEmitterProfilePayload());
   },
 
   updateDerivedFields() {
@@ -6540,57 +7382,91 @@ const emitterModal = {
     const v = (id) => f[id]?.value;
     const n = (id) => parseFloat(f[id]?.value);
     const b = (id) => f[id]?.checked ?? false;
-    // type must be a valid asset category ("radio","jammer","relay","receiver")
-    // emitterLabel is the human-readable equipment name stored separately
-    const emitterLabel = this.radioTypeSelect.value
-      ? (RADIO_LIBRARY[this.radioTypeSelect.value]?.label ?? "radio")
-      : "radio";
     const iconVal = v("emIcon") || "radio";
-    return {
+    const radioType = this.radioTypeSelect?.value || "";
+    const programKey = this.programSelect?.value || "";
+    return normalizeEmitterProfilePayload({
+      radioType,
+      programKey,
       type: EMITTER_ICONS[iconVal] ? iconVal : "radio",
-      emitterLabel,
+      emitterLabel: radioType
+        ? (RADIO_LIBRARY[radioType]?.label ?? "radio")
+        : ((v("emName") || "").trim() || "radio"),
       force: v("emForce") || "friendly",
       name: v("emName") || "Emitter",
       unit: v("emUnit") || "",
       icon: iconVal,
       color: v("emColor") || FORCE_COLORS["friendly"],
       notes: v("emNotes") || "",
-      frequencyMHz: n("emFreqMHz") || 150,
-      powerW: n("emPowerW") || 5,
-      antennaHeightM: n("emAntennaHeightM") || 2,
-      antennaGainDbi: n("emAntennaGainDbi") || 2.15,
-      receiverSensitivityDbm: n("emRxSensDbm") || -107,
-      systemLossDb: n("emSystemLossDb") || 3,
-      // Extended fields stored on asset for future use
-      ext: {
+      rf: {
+        frequencyMHz: n("emFreqMHz") || 150,
         bandwidthKHz: n("emBandwidthKHz"),
         modulation: v("emModulation"),
         waveform: v("emWaveform"),
         duplex: v("emDuplex"),
+        channelSpacingKHz: n("emChannelSpacingKHz"),
+      },
+      tx: {
+        powerW: n("emPowerW") || 5,
         dutyCycle: n("emDutyCycle"),
+        papr: n("emPapr"),
+        spectralEfficiency: n("emSpectralEff"),
+      },
+      rx: {
+        sensitivityDbm: n("emRxSensDbm") || -107,
         noiseFigDb: n("emNoiseFigDb"),
         requiredSnrDb: n("emReqSnrDb"),
-        antennaType: v("emAntennaType"),
+        acrDb: n("emAcrDb"),
+        bdrDb: n("emBdrDb"),
+      },
+      antenna: {
+        type: v("emAntennaType"),
+        gainDbi: n("emAntennaGainDbi") || 2.15,
+        pattern: v("emRadPattern"),
+        polarization: v("emPolarization"),
+        heightM: n("emAntennaHeightM") || 2,
         cableLossDb: n("emCableLossDb"),
-        propModel: v("emPropModel"),
-        clutterType: v("emClutterType"),
+        systemLossDb: n("emSystemLossDb") || 3,
+      },
+      prop: {
+        model: v("emPropModel"),
+        clutter: v("emClutterType"),
+        terrainEnabled: b("emTerrainEnabled"),
+        diffractionEnabled: b("emDiffractionEnabled"),
+        nvisEnabled: b("emNvisEnabled"),
+        ionoModel: v("emIonoModel"),
+        timeDayEffects: b("emTimeDayEffects"),
+        solarIndex: n("emSolarIndex"),
+      },
+      network: {
         isManet: b("emIsManet"),
         relayCapable: b("emRelayCapable"),
+        maxHops: n("emMaxHops"),
+        latencyMs: n("emLatencyMs"),
+        adaptiveDataRate: b("emAdaptiveDataRate"),
         satcomEnabled: b("emSatcomEnabled"),
-        locationGrid: v("emGridLocation") || "",
+        satType: v("emSatType"),
+        satUplinkMHz: n("emSatUplinkMHz"),
+        satDownlinkMHz: n("emSatDownlinkMHz"),
+        satGainDbi: n("emSatGainDbi"),
+      },
+      locationDefaults: {
+        gridLocation: v("emGridLocation") || "",
         colocateAssetId: v("emColocateAsset") || "",
       },
-    };
+    });
   },
 
   placeOnMap() {
     this.validateInputs();
-    const data = this.readFields();
-    if (!data.name.trim()) {
+    const payload = this.readFields();
+    if (!payload.name.trim()) {
       document.querySelector("#emitterValidation").textContent = "Enter an emitter name before placing.";
       this.fields.emName?.focus();
       return;
     }
+    const profileRef = this.resolveProfileRefForPayload(payload);
+    const data = buildEmitterAssetFromProfilePayload(payload, { profileRef });
 
     let resolvedLocation = null;
     try {
@@ -6654,30 +7530,10 @@ const emitterModal = {
   },
 
   saveCustomProfile() {
-    const data = this.readFields();
-    const profileName = prompt("Save profile as:", data.name || "Custom Profile");
-    if (!profileName) return;
-    const profile = {
-      id: generateId(),
-      profileName,
-      type: data.type,
-      force: data.force,
-      name: data.name,
-      unit: data.unit,
-      frequencyMHz: data.frequencyMHz,
-      powerW: data.powerW,
-      antennaHeightM: data.antennaHeightM,
-      antennaGainDbi: data.antennaGainDbi,
-      receiverSensitivityDbm: data.receiverSensitivityDbm,
-      systemLossDb: data.systemLossDb,
-      icon: data.icon,
-      color: data.color,
-      notes: data.notes,
-    };
-    state.profiles.push(profile);
-    persistProfiles();
-    renderProfiles();
-    setStatus(`Saved profile "${profileName}".`);
+    if (this.profileNameInput && !this.profileNameInput.value.trim()) {
+      this.profileNameInput.value = this.fields.emName?.value?.trim() || "Custom Profile";
+    }
+    this.saveCurrentProfileToLibrary().catch((error) => setStatus(error.message, true));
   },
 };
 
@@ -6773,7 +7629,6 @@ async function init() {
   await hydrateSession();
   loadCesiumIonToken();
   loadSettings();
-  loadProfiles();
   applyBasemap(dom.basemapSelect.value);
   updateImageryMenuValue();
   wireEvents();
@@ -7529,10 +8384,6 @@ function wireEvents() {
   dom.dtedFolderInput?.addEventListener("change", onTerrainImport);
   dom.clearTerrainBtn.addEventListener("click", clearTerrain);
   dom.fetchWeatherBtn.addEventListener("click", fetchWeather);
-  dom.saveProfileBtn.addEventListener("click", saveProfile);
-  dom.deleteProfileBtn.addEventListener("click", deleteProfile);
-  dom.applyProfileBtn.addEventListener("click", applySelectedProfile);
-  dom.profileSelect.addEventListener("change", onProfileSelectionChange);
   dom.assetForce.addEventListener("change", () => {
     dom.assetColor.value = FORCE_COLORS[dom.assetForce.value];
   });
@@ -7596,6 +8447,14 @@ function wireEvents() {
   dom.drawPlanningRegionBtn?.addEventListener("click", drawPlanningRegion);
   dom.runPlanningBtn?.addEventListener("click", runPlanning);
   dom.runSiteStudyBtn?.addEventListener("click", runSiteStudy);
+  dom.siteStudyOpenAnalysisBtn?.addEventListener("click", () => openSiteStudyAnalysisModal());
+  dom.siteStudyAnalysisCloseBtn?.addEventListener("click", closeSiteStudyAnalysisModal);
+  dom.siteStudyAnalysisFocusBtn?.addEventListener("click", () => {
+    if (state.siteStudy.activeResultIndex >= 0) {
+      focusSiteStudyResult(state.siteStudy.activeResultIndex);
+    }
+  });
+  addModalBackdropClose(dom.siteStudyAnalysisModal, closeSiteStudyAnalysisModal);
   [
     dom.siteStudyTypeSelect,
     dom.siteStudyPrimaryAsset,
@@ -7786,7 +8645,6 @@ function serializeCurrentMapState(options = {}) {
     mapView,
     assets: state.assets,
     plan: serializeToPlanState(),
-    profiles: state.profiles,
     weather: state.weather,
     settings: state.settings,
     importedItems: serializedImported,
@@ -7800,12 +8658,12 @@ function serializeCurrentMapState(options = {}) {
   };
 }
 
-// Leaner version of serializeCurrentMapState for server saves — omits profiles,
-// settings, and KMZ-imported geometry (stored localStorage-only) to keep payload
+// Leaner version of serializeCurrentMapState for server saves — omits settings
+// and KMZ-imported geometry (stored localStorage-only) to keep payload
 // small. Only user-drawn shapes (item.drawn === true) go to the server.
 function serializeMapStateForServer() {
   const full = serializeCurrentMapState();
-  const { profiles, settings, ...serverState } = full;
+  const { settings, ...serverState } = full;
   serverState.importedItems = (serverState.importedItems ?? []).filter((item) =>
     (item.drawn || item.tak) && item?.tak?.source !== "tak-live-pli"
   );
@@ -7905,9 +8763,6 @@ function applySavedMapState(rawSaved) {
   }
   if (Array.isArray(saved.hiddenContentIds)) {
     state.hiddenContentIds = new Set(saved.hiddenContentIds);
-  }
-  if (Array.isArray(saved.profiles)) {
-    state.profiles = saved.profiles;
   }
   if (saved.weather) {
     state.weather = { ...state.weather, ...saved.weather };
@@ -19201,6 +20056,9 @@ function renderAssetPopup(asset) {
   const groundElevationLine = Number.isFinite(asset.groundElevationM)
     ? `Ground ${formatElevation(asset.groundElevationM)}<br>`
     : "";
+  const profileLine = asset.profileId
+    ? `Profile ${escapeHtml(asset.profileName || asset.profileId)}${asset.profileVersion ? ` v${escapeHtml(String(asset.profileVersion))}` : ""}<br>`
+    : "";
   const radioName = asset.emitterLabel || asset.name || "Radio";
   const toUnit = asset.toUnitId ? (_toState?.units || []).find(u => u.id === asset.toUnitId) : null;
   const unitLabel = toUnit?.label || toUnit?.designator || asset.unit;
@@ -19208,6 +20066,7 @@ function renderAssetPopup(asset) {
   return `
     <strong>${escapeHtml(displayName)}</strong><br>
     ${escapeHtml(asset.unit)}<br>
+    ${profileLine}
     ${escapeHtml(asset.type)} | ${asset.frequencyMHz} MHz | ${asset.powerW} W<br>
     Gain ${asset.antennaGainDbi} dBi | Height ${asset.antennaHeightM} m<br>
     ${groundElevationLine}
@@ -19633,6 +20492,315 @@ function renderSiteStudyResults() {
       <div class="site-study-badges">${formatSiteStudyBadges(result)}</div>
     `;
     row.addEventListener("click", () => focusSiteStudyResult(index));
+    dom.siteStudyList.appendChild(row);
+  });
+
+  dom.siteStudySummary.textContent = state.siteStudy.lastRunSummary || `${state.siteStudy.results.length} study result(s) available.`;
+  renderSiteStudyDetail();
+}
+
+function buildSiteStudyVisualRows(result, metrics) {
+  const rows = [
+    {
+      label: "Overall Score",
+      value: formatSiteStudyValue(result.score),
+      percent: clamp(Number(result.score) || 0, 0, 100),
+    },
+  ];
+  if (Number.isFinite(metrics.worstFadeMarginDb)) {
+    rows.push({
+      label: "Fade Margin",
+      value: formatSiteStudyValue(metrics.worstFadeMarginDb, 1, " dB"),
+      percent: clamp(((Number(metrics.worstFadeMarginDb) + 5) / 25) * 100, 0, 100),
+    });
+  }
+  if (Number.isFinite(metrics.worstClearanceM)) {
+    rows.push({
+      label: "Clearance",
+      value: formatSiteStudyValue(metrics.worstClearanceM, 1, " m"),
+      percent: clamp(((Number(metrics.worstClearanceM) + 3) / 18) * 100, 0, 100),
+    });
+  }
+  if (Number.isFinite(metrics.visibilityPercent)) {
+    rows.push({
+      label: "Visibility",
+      value: formatSiteStudyValue(metrics.visibilityPercent, 0, "%"),
+      percent: clamp(Number(metrics.visibilityPercent), 0, 100),
+    });
+  } else if (Number.isFinite(metrics.maskingPercent)) {
+    rows.push({
+      label: "Threat Mask",
+      value: formatSiteStudyValue(metrics.maskingPercent, 0, "%"),
+      percent: clamp(Number(metrics.maskingPercent), 0, 100),
+    });
+  }
+  rows.push({
+    label: "Mast Load",
+    value: formatSiteStudyValue(result.requiredMastHeightM, 1, " m"),
+    percent: clamp((1 - (Number(result.requiredMastHeightM || 0) / Math.max(1, Number(state.siteStudy.maxMastHeightM) || 1))) * 100, 0, 100),
+  });
+  return rows;
+}
+
+function renderSiteStudyAnalysisModal() {
+  const result = getSiteStudyResult();
+  if (!result) {
+    return;
+  }
+  const { metrics, strengths, watchouts, decision } = getSiteStudyAssessment(result);
+  const modeLabel = result.modeLabel || state.siteStudy.type;
+  const summaryCards = [
+    ["Overall Score", formatSiteStudyValue(result.score)],
+    ["Required Mast", formatSiteStudyValue(result.requiredMastHeightM, 1, " m")],
+    ["Longest Leg", formatSiteStudyValue(metrics.longestLegKm, 2, " km")],
+    ["Candidate Pool", Number.isFinite(metrics.candidateCount) ? String(metrics.candidateCount) : "N/A"],
+  ];
+  if (Number.isFinite(metrics.objectiveSampleCount)) {
+    summaryCards.push(["Objective Samples", String(metrics.objectiveSampleCount)]);
+  }
+  if (Number.isFinite(metrics.threatSampleCount)) {
+    summaryCards.push(["Threat Samples", String(metrics.threatSampleCount)]);
+  }
+
+  if (dom.siteStudyAnalysisTitle) {
+    dom.siteStudyAnalysisTitle.textContent = `${result.name || "Candidate"} Analysis`;
+  }
+  if (dom.siteStudyAnalysisSubtitle) {
+    const engineLabel = state.siteStudy.lastRunEngine ? ` | ${state.siteStudy.lastRunEngine}` : "";
+    const elapsedLabel = state.siteStudy.lastRunElapsedMs ? ` | ${state.siteStudy.lastRunElapsedMs} ms` : "";
+    dom.siteStudyAnalysisSubtitle.textContent = `${modeLabel} | ${formatCoordinate(result.lat, result.lon, state.settings.coordinateSystem)}${engineLabel}${elapsedLabel}`;
+  }
+  if (dom.siteStudyAnalysisSummary) {
+    const analysisItems = strengths.slice(0, 3).concat(watchouts.slice(0, 3));
+    dom.siteStudyAnalysisSummary.innerHTML = `
+      <div class="site-study-selected-header">
+        <div class="site-study-selected-title">
+          <strong>${escapeHtml(result.summary || decision)}</strong>
+          <div class="site-study-selected-subtitle">Worst point: ${escapeHtml(result.worstPointLabel || "Not available")}</div>
+        </div>
+        <div class="site-study-score-chip ${getSiteStudyScoreTone(Number(result.score) || 0)}">
+          <strong>${escapeHtml(formatSiteStudyValue(result.score))}</strong>
+          <span>Score</span>
+        </div>
+      </div>
+      <div class="site-study-analysis-metrics">
+        ${renderSiteStudyMetricCards(summaryCards)}
+      </div>
+      <div class="site-study-analysis-copy">
+        <strong>Assessment</strong><br>
+        ${escapeHtml(decision)}
+        ${analysisItems.length ? `
+        <ul class="site-study-analysis-list">
+          ${analysisItems.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
+        </ul>` : ""}
+      </div>
+    `;
+  }
+  if (dom.siteStudyAnalysisMetrics) {
+    const metricRows = [
+      ["Worst Fade Margin", formatSiteStudyValue(metrics.worstFadeMarginDb, 1, " dB")],
+      ["Worst Clearance", formatSiteStudyValue(metrics.worstClearanceM, 1, " m")],
+      ["Worst Fresnel", formatSiteStudyValue(metrics.worstFresnelClearanceM, 1, " m")],
+      ["Strongest RSSI", formatSiteStudyValue(metrics.strongestRssiDbm, 1, " dBm")],
+    ];
+    if (Number.isFinite(metrics.visibilityPercent)) {
+      metricRows[0] = ["Visibility", formatSiteStudyValue(metrics.visibilityPercent, 0, "%")];
+    } else if (Number.isFinite(metrics.maskingPercent)) {
+      metricRows[0] = ["Threat Mask", formatSiteStudyValue(metrics.maskingPercent, 0, "%")];
+    }
+    dom.siteStudyAnalysisMetrics.innerHTML = renderSiteStudyMetricCards(metricRows);
+  }
+  if (dom.siteStudyAnalysisVisual) {
+    dom.siteStudyAnalysisVisual.innerHTML = buildSiteStudyVisualRows(result, metrics).map((row) => {
+      const tone = row.percent >= 75 ? "is-good" : row.percent >= 45 ? "is-mid" : "is-risk";
+      return `
+        <div class="site-study-visual-row">
+          <span class="site-study-visual-label">${escapeHtml(row.label)}</span>
+          <div class="site-study-visual-track">
+            <div class="site-study-visual-fill ${tone}" style="width:${clamp(row.percent, 0, 100)}%"></div>
+          </div>
+          <span class="site-study-visual-value">${escapeHtml(row.value)}</span>
+        </div>
+      `;
+    }).join("");
+  }
+  if (dom.siteStudyAnalysisLegs) {
+    const legs = Array.isArray(result.legs) ? result.legs : [];
+    dom.siteStudyAnalysisLegs.innerHTML = legs.length ? legs.map((leg, index) => `
+      <article class="site-study-leg-card">
+        <div class="site-study-leg-header">
+          <div class="site-study-leg-title">${escapeHtml(leg.label || `Leg ${index + 1}`)}</div>
+          <div class="site-study-leg-status ${(leg.passesPolicy === false || leg.geometricLosClear === false) ? "is-risk" : "is-clear"}">
+            ${(leg.passesPolicy === false || leg.geometricLosClear === false) ? "Constrained" : "Clear"}
+          </div>
+        </div>
+        <div class="site-study-leg-grid">
+          ${renderSiteStudyMetricCards([
+            ["Distance", formatSiteStudyValue(leg.distanceKm, 2, " km")],
+            ["Fade Margin", formatSiteStudyValue(leg.fadeMarginDb, 1, " dB")],
+            ["Clearance", formatSiteStudyValue(leg.minClearanceM, 1, " m")],
+            ["Path Loss", formatSiteStudyValue(leg.pathLossDb, 1, " dB")],
+          ])}
+        </div>
+        <div class="site-study-leg-summary">
+          RSSI ${escapeHtml(formatSiteStudyValue(leg.rssiDbm, 1, " dBm"))} | Fresnel ${escapeHtml(formatSiteStudyValue(leg.minFresnelClearanceM, 1, " m"))} | Extra mast ${escapeHtml(formatSiteStudyValue(leg.requiredExtraTxHeightM, 1, " m"))}
+        </div>
+      </article>
+    `).join("") : '<div class="site-study-empty">No leg-level analysis available for this study result.</div>';
+  }
+}
+
+function updateSiteStudyMarkerStyles() {
+  state.siteStudy.markerRefs.forEach((marker, index) => {
+    const result = state.siteStudy.results[index];
+    if (!marker || !result) {
+      return;
+    }
+    const active = index === state.siteStudy.activeResultIndex;
+    const score = Number(result.score) || 0;
+    const color = score >= 85 ? "#22c55e" : score >= 65 ? "#f59e0b" : "#ef4444";
+    marker.setStyle({
+      radius: active ? 9 : 7,
+      color,
+      fillColor: color,
+      fillOpacity: active ? 1 : 0.92,
+      weight: active ? 3 : 2,
+    });
+    if (active && marker.bringToFront) {
+      marker.bringToFront();
+    }
+  });
+}
+
+function openSiteStudyAnalysisModal(index = state.siteStudy.activeResultIndex) {
+  if (Number.isFinite(index) && state.siteStudy.results[index]) {
+    state.siteStudy.activeResultIndex = index;
+  }
+  const result = getSiteStudyResult();
+  if (!result) {
+    return;
+  }
+  renderSiteStudyResults();
+  renderSiteStudyDetail();
+  renderSiteStudyAnalysisModal();
+  dom.siteStudyAnalysisModal?.classList.remove("hidden");
+}
+
+function closeSiteStudyAnalysisModal() {
+  dom.siteStudyAnalysisModal?.classList.add("hidden");
+}
+
+function renderSiteStudyDetail() {
+  if (!dom.siteStudyDetail) {
+    return;
+  }
+  const result = getSiteStudyResult();
+  if (!result) {
+    dom.siteStudyDetail.textContent = "Select a study result to inspect terrain, clearance, and link details.";
+    if (dom.siteStudyOpenAnalysisBtn) {
+      dom.siteStudyOpenAnalysisBtn.disabled = true;
+    }
+    return;
+  }
+  const { metrics, decision } = getSiteStudyAssessment(result);
+  const metricCards = [
+    ["Score", formatSiteStudyValue(result.score)],
+    ["Fade Margin", formatSiteStudyValue(metrics.worstFadeMarginDb, 1, " dB")],
+    ["Clearance", formatSiteStudyValue(metrics.worstClearanceM, 1, " m")],
+    ["Mast Height", formatSiteStudyValue(result.requiredMastHeightM, 1, " m")],
+  ];
+  if (Number.isFinite(metrics.visibilityPercent)) {
+    metricCards[1] = ["Visibility", formatSiteStudyValue(metrics.visibilityPercent, 0, "%")];
+  } else if (Number.isFinite(metrics.maskingPercent)) {
+    metricCards[1] = ["Threat Mask", formatSiteStudyValue(metrics.maskingPercent, 0, "%")];
+  }
+  dom.siteStudyDetail.innerHTML = `
+    <div class="site-study-selected-header">
+      <div class="site-study-selected-title">
+        <strong>${escapeHtml(result.name || `Candidate ${state.siteStudy.activeResultIndex + 1}`)}</strong>
+        <div class="site-study-selected-subtitle">${escapeHtml(formatCoordinate(result.lat, result.lon, state.settings.coordinateSystem))}</div>
+      </div>
+      <div class="site-study-score-chip ${getSiteStudyScoreTone(Number(result.score) || 0)}">
+        <strong>${escapeHtml(formatSiteStudyValue(result.score))}</strong>
+        <span>Score</span>
+      </div>
+    </div>
+    <div class="site-study-detail-metrics">
+      ${renderSiteStudyMetricCards(metricCards)}
+    </div>
+    <div class="site-study-detail-text site-study-analysis-copy">
+      ${escapeHtml(result.summary || decision)}<br>
+      Worst point: ${escapeHtml(result.worstPointLabel || "Not available")}
+    </div>
+    <div class="site-study-badges">${formatSiteStudyBadges(result)}</div>
+  `;
+  if (dom.siteStudyOpenAnalysisBtn) {
+    dom.siteStudyOpenAnalysisBtn.disabled = false;
+  }
+}
+
+function focusSiteStudyResult(index) {
+  const result = state.siteStudy.results[index];
+  if (!result) {
+    return;
+  }
+  state.siteStudy.activeResultIndex = index;
+  renderSiteStudyResults();
+  renderSiteStudyDetail();
+  if (dom.siteStudyAnalysisModal && !dom.siteStudyAnalysisModal.classList.contains("hidden")) {
+    renderSiteStudyAnalysisModal();
+  }
+  updateSiteStudyMarkerStyles();
+  state.map.setView([result.lat, result.lon], Math.max(state.map.getZoom(), 14));
+  state.siteStudy.markerRefs[index]?.openPopup?.();
+}
+
+function renderSiteStudyResults() {
+  if (!dom.siteStudyList || !dom.siteStudySummary) {
+    return;
+  }
+  dom.siteStudyList.innerHTML = "";
+  if (!state.siteStudy.results.length) {
+    dom.siteStudyList.innerHTML = `<div class="asset-item">No study results yet.</div>`;
+    dom.siteStudySummary.textContent = state.siteStudy.lastRunSummary || "Run deterministic relay, sensor, command-post, or direct-link studies using placed assets and map geometry.";
+    closeSiteStudyAnalysisModal();
+    renderSiteStudyDetail();
+    return;
+  }
+
+  state.siteStudy.results.forEach((result, index) => {
+    const metrics = getSiteStudyAggregateMetrics(result);
+    const row = document.createElement("article");
+    row.className = `asset-item site-study-result-row${index === state.siteStudy.activeResultIndex ? " is-active" : ""}`;
+    row.innerHTML = `
+      <header>
+        <strong>${escapeHtml(result.name || `Candidate ${index + 1}`)}</strong>
+        <span>Score ${Number(result.score).toFixed(1)}</span>
+      </header>
+      <div class="site-study-score-strip">
+        <div class="site-study-score-strip-fill" style="width:${clamp(Number(result.score) || 0, 0, 100)}%"></div>
+      </div>
+      <div class="terrain-bounds">
+        <span>${escapeHtml(formatCoordinate(result.lat, result.lon, state.settings.coordinateSystem))}</span>
+        <span>Mast ${Number(result.requiredMastHeightM || 0).toFixed(1)} m</span>
+        <span>${result.summary ? escapeHtml(result.summary) : `${Number(result.distanceKm || 0).toFixed(1)} km`}</span>
+      </div>
+      <div class="site-study-inline-metrics">
+        ${renderSiteStudyMetricCards([
+          [Number.isFinite(metrics.visibilityPercent) ? "Visibility" : Number.isFinite(metrics.maskingPercent) ? "Threat Mask" : "Fade Margin", Number.isFinite(metrics.visibilityPercent) ? formatSiteStudyValue(metrics.visibilityPercent, 0, "%") : Number.isFinite(metrics.maskingPercent) ? formatSiteStudyValue(metrics.maskingPercent, 0, "%") : formatSiteStudyValue(metrics.worstFadeMarginDb, 1, " dB")],
+          ["Clearance", formatSiteStudyValue(metrics.worstClearanceM, 1, " m")],
+        ])}
+      </div>
+      <div class="site-study-badges">${formatSiteStudyBadges(result)}</div>
+      <div class="site-study-row-actions">
+        <button class="ghost-button small site-study-inline-analysis-btn" type="button">Analysis</button>
+      </div>
+    `;
+    row.addEventListener("click", () => focusSiteStudyResult(index));
+    row.querySelector(".site-study-inline-analysis-btn")?.addEventListener("click", (event) => {
+      event.stopPropagation();
+      openSiteStudyAnalysisModal(index);
+    });
     dom.siteStudyList.appendChild(row);
   });
 
@@ -21046,6 +22214,7 @@ function consumePlanningResult(payload) {
 
 async function runSiteStudy() {
   syncSiteStudyDraftFromDom();
+  closeSiteStudyAnalysisModal();
   const preset = SITE_STUDY_LINK_PRESETS[state.siteStudy.linkPreset] ?? SITE_STUDY_LINK_PRESETS["rocket-m5-omni"];
   const primaryAsset = state.assets.find((asset) => asset.id === state.siteStudy.primaryAssetId) ?? null;
   const secondaryAsset = state.assets.find((asset) => asset.id === state.siteStudy.secondaryAssetId) ?? null;
@@ -21100,8 +22269,13 @@ function consumeSiteStudyResult(payload) {
   state.siteStudy.terrainId = payload.terrainId ?? null;
   state.siteStudy.results = Array.isArray(payload.results) ? payload.results : [];
   state.siteStudy.activeResultIndex = state.siteStudy.results.length ? 0 : -1;
-  state.siteStudy.lastRunSummary = payload.summary || `${state.siteStudy.results.length} study result(s) generated.`;
+  state.siteStudy.lastRunElapsedMs = Number(payload.elapsedMs) || 0;
+  state.siteStudy.lastRunEngine = payload.engine || "";
+  state.siteStudy.lastRunSummary = [payload.summary || `${state.siteStudy.results.length} study result(s) generated.`, state.siteStudy.lastRunElapsedMs ? `${state.siteStudy.lastRunElapsedMs} ms` : "", state.siteStudy.lastRunEngine || ""]
+    .filter(Boolean)
+    .join(" | ");
   state.siteStudy.markersLayer.clearLayers();
+  state.siteStudy.markerRefs = [];
 
   state.siteStudy.results.forEach((result, index) => {
     const color = result.score >= 85 ? "#22c55e" : result.score >= 65 ? "#f59e0b" : "#ef4444";
@@ -21114,6 +22288,7 @@ function consumeSiteStudyResult(payload) {
       weight: 2,
     }).bindPopup(`${escapeHtml(result.name || `Candidate ${index + 1}`)}<br>${escapeHtml(formatCoordinate(result.lat, result.lon, state.settings.coordinateSystem))}<br>Score ${Number(result.score).toFixed(1)}`);
     marker.on("click", () => focusSiteStudyResult(index));
+    state.siteStudy.markerRefs.push(marker);
     state.siteStudy.markersLayer.addLayer(marker);
 
     if (Array.isArray(result.legs)) {
@@ -21135,6 +22310,10 @@ function consumeSiteStudyResult(payload) {
   });
 
   renderSiteStudyResults();
+  updateSiteStudyMarkerStyles();
+  if (dom.siteStudyAnalysisModal && !dom.siteStudyAnalysisModal.classList.contains("hidden")) {
+    renderSiteStudyAnalysisModal();
+  }
   renderMapContents();
   syncCesiumEntities();
   setStatus("Site study complete.");
@@ -32476,15 +33655,52 @@ function cloneRadioConfig(source, target) {
   // Copy all RF fields from source
   Object.assign(target, {
     frequencyMHz: source.frequencyMHz,
+    bandwidthKHz: source.bandwidthKHz,
+    waveform: source.waveform,
+    modulation: source.modulation,
+    duplex: source.duplex,
+    channelSpacingKHz: source.channelSpacingKHz,
     powerW: source.powerW,
+    dutyCycle: source.dutyCycle,
+    papr: source.papr,
+    spectralEfficiency: source.spectralEfficiency,
     antennaHeightM: source.antennaHeightM,
     antennaGainDbi: source.antennaGainDbi,
+    antennaType: source.antennaType,
+    radPattern: source.radPattern,
+    polarization: source.polarization,
+    cableLossDb: source.cableLossDb,
     receiverSensitivityDbm: source.receiverSensitivityDbm,
+    noiseFigDb: source.noiseFigDb,
+    requiredSnrDb: source.requiredSnrDb,
+    acrDb: source.acrDb,
+    bdrDb: source.bdrDb,
     systemLossDb: source.systemLossDb,
+    propModel: source.propModel,
+    clutterType: source.clutterType,
+    terrainEnabled: source.terrainEnabled,
+    diffractionEnabled: source.diffractionEnabled,
+    nvisEnabled: source.nvisEnabled,
+    ionoModel: source.ionoModel,
+    timeDayEffects: source.timeDayEffects,
+    solarIndex: source.solarIndex,
+    isManet: source.isManet,
+    relayCapable: source.relayCapable,
+    maxHops: source.maxHops,
+    latencyMs: source.latencyMs,
+    adaptiveDataRate: source.adaptiveDataRate,
+    satcomEnabled: source.satcomEnabled,
+    satType: source.satType,
+    satUplinkMHz: source.satUplinkMHz,
+    satDownlinkMHz: source.satDownlinkMHz,
+    satGainDbi: source.satGainDbi,
     emitterLabel: source.emitterLabel,
     type: source.type,
     icon: source.icon,
     color: source.color,
+    profileId: source.profileId || "",
+    profileName: source.profileName || "",
+    profileVersion: source.profileVersion || null,
     ext: source.ext ? JSON.parse(JSON.stringify(source.ext)) : {},
   });
 

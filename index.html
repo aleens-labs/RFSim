@@ -482,6 +482,9 @@
             <div id="siteStudyDetail" class="terrain-summary">
               Select a study result to inspect terrain, clearance, and link details.
             </div>
+            <div class="button-row site-study-detail-actions">
+              <button id="siteStudyOpenAnalysisBtn" class="ghost-button small" type="button" disabled>Open Analysis</button>
+            </div>
           </div>
             </div>
           </section>
@@ -1441,6 +1444,36 @@
 
           <div class="emitter-lib-summary" id="emitterLibSummary">
             <p>Select a radio type and program to auto-fill parameters, or configure manually below.</p>
+          </div>
+
+          <div class="emitter-saved-profiles">
+            <div class="emitter-library-header emitter-library-header-tight">
+              <span class="emitter-section-label">Saved Profiles</span>
+              <button id="emitterProfileNewBtn" class="ghost-button small" type="button">New Draft</button>
+            </div>
+            <label class="emitter-lib-label">
+              <span>Search</span>
+              <input id="emitterSavedProfileSearch" type="search" placeholder="Find saved emitter profiles">
+            </label>
+            <label class="emitter-lib-label">
+              <span>Library</span>
+              <select id="emitterSavedProfileSelect" size="7">
+                <option value="">No saved profiles</option>
+              </select>
+            </label>
+            <label class="emitter-lib-label">
+              <span>Profile Name</span>
+              <input id="emitterProfileNameInput" type="text" maxlength="120" placeholder="Assault Net PRC-163">
+            </label>
+            <div class="emitter-profile-actions">
+              <button id="emitterProfileApplyBtn" class="ghost-button small" type="button" disabled>Apply</button>
+              <button id="emitterProfileSaveBtn" class="primary-button small" type="button">Save</button>
+              <button id="emitterProfileSaveCopyBtn" class="ghost-button small" type="button">Save Copy</button>
+              <button id="emitterProfileDeleteBtn" class="ghost-button small" type="button" disabled>Delete</button>
+            </div>
+            <div id="emitterProfileSummary" class="emitter-profile-summary">
+              Save this emitter configuration to reuse it across scenarios.
+            </div>
           </div>
 
           <!-- Identity fields -->
@@ -2971,6 +3004,41 @@
           <div class="analytics-overview-title">Recent Activity</div>
           <div id="analyticsUserDetailEvents" class="analytics-user-detail-list"></div>
         </section>
+      </div>
+    </div>
+  </div>
+
+  <div id="siteStudyAnalysisModal" class="emitter-modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="siteStudyAnalysisTitle">
+    <div class="emitter-modal site-study-analysis-modal">
+      <div class="emitter-modal-header">
+        <div class="emitter-modal-title-group">
+          <h2 id="siteStudyAnalysisTitle">Study Analysis</h2>
+          <p id="siteStudyAnalysisSubtitle">Select a study result to inspect it in detail.</p>
+        </div>
+        <button id="siteStudyAnalysisCloseBtn" class="ghost-button small icon-button" type="button" aria-label="Close">&#10005;</button>
+      </div>
+      <div class="site-study-analysis-body">
+        <div class="site-study-analysis-overview">
+          <div id="siteStudyAnalysisSummary" class="site-study-analysis-summary"></div>
+          <div id="siteStudyAnalysisMetrics" class="site-study-analysis-metrics"></div>
+          <div class="button-row site-study-analysis-actions">
+            <button id="siteStudyAnalysisFocusBtn" class="ghost-button small" type="button">Focus On Map</button>
+          </div>
+        </div>
+        <div class="site-study-analysis-right">
+          <section class="site-study-analysis-card">
+            <div class="list-header">
+              <span>Visual Analysis</span>
+            </div>
+            <div id="siteStudyAnalysisVisual" class="site-study-analysis-visual"></div>
+          </section>
+          <section class="site-study-analysis-card">
+            <div class="list-header">
+              <span>Link Legs</span>
+            </div>
+            <div id="siteStudyAnalysisLegs" class="site-study-analysis-legs"></div>
+          </section>
+        </div>
       </div>
     </div>
   </div>

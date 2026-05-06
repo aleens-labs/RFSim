@@ -25,6 +25,13 @@ const {
   registerSchema,
   snapshotSchema,
 } = require("./schemas");
+const {
+  emitterProfileCreateSchema,
+  emitterProfileUpdateSchema,
+  emitterProfileOrderSchema,
+  summarizeEmitterProfilePayload,
+  formatEmitterProfileRow,
+} = require("./emitterProfiles");
 const { parsePkcs12, parseTruststore } = require("./tak/certUtils");
 
 const app = express();
@@ -1303,6 +1310,201 @@ app.put("/api/user/ai-configs", authRequired, async (request, response) => {
       return;
     }
     sendInternalError(response, "save AI configs", error);
+  } finally {
+    client.release();
+  }
+});
+
+app.get("/api/user/emitter-profiles", authRequired, async (request, response) => {
+  try {
+    const result = await query(
+      `select *
+       from user_emitter_profile
+       where owner_user_id = $1
+       order by sort_position asc, updated_at desc`,
+      [request.user.sub]
+    );
+    response.json({ profiles: result.rows.map(formatEmitterProfileRow) });
+  } catch (error) {
+    if (error.code === "42P01") {
+      response.json({ profiles: [] });
+      return;
+    }
+    sendInternalError(response, "load emitter profiles", error);
+  }
+});
+
+app.post("/api/user/emitter-profiles", authRequired, async (request, response) => {
+  const parsed = emitterProfileCreateSchema.safeParse(request.body);
+  if (!parsed.success) {
+    response.status(400).json({ error: parsed.error.flatten() });
+    return;
+  }
+
+  try {
+    const profileId = `emprof-${crypto.randomUUID()}`;
+    const summary = summarizeEmitterProfilePayload(parsed.data.profile);
+    const insertResult = await query(
+      `insert into user_emitter_profile (
+         id, owner_user_id, name, version, sort_position,
+         asset_type, emitter_label, force, icon, color,
+         frequency_mhz, power_w, waveform, profile_json
+       )
+       values (
+         $1, $2, $3, 1,
+         coalesce((select max(sort_position) + 1 from user_emitter_profile where owner_user_id = $2), 0),
+         $4, $5, $6, $7, $8,
+         $9, $10, $11, $12::jsonb
+       )
+       returning *`,
+      [
+        profileId,
+        request.user.sub,
+        parsed.data.name.trim(),
+        summary.assetType,
+        summary.emitterLabel,
+        summary.force,
+        summary.icon,
+        summary.color,
+        summary.frequencyMHz,
+        summary.powerW,
+        summary.waveform,
+        JSON.stringify(parsed.data.profile),
+      ]
+    );
+    response.status(201).json({ profile: formatEmitterProfileRow(insertResult.rows[0]) });
+  } catch (error) {
+    if (error.code === "42P01") {
+      response.status(503).json({ error: "Emitter profile storage not available — run the latest database migration." });
+      return;
+    }
+    sendInternalError(response, "create emitter profile", error);
+  }
+});
+
+app.put("/api/user/emitter-profiles/:profileId", authRequired, async (request, response) => {
+  const parsed = emitterProfileUpdateSchema.safeParse(request.body);
+  if (!parsed.success) {
+    response.status(400).json({ error: parsed.error.flatten() });
+    return;
+  }
+
+  try {
+    const existing = await query(
+      "select * from user_emitter_profile where id = $1 and owner_user_id = $2",
+      [request.params.profileId, request.user.sub]
+    );
+    if (existing.rowCount === 0) {
+      response.status(404).json({ error: "Emitter profile not found." });
+      return;
+    }
+    const summary = summarizeEmitterProfilePayload(parsed.data.profile);
+    const updateResult = await query(
+      `update user_emitter_profile
+          set name = $3,
+              version = version + 1,
+              asset_type = $4,
+              emitter_label = $5,
+              force = $6,
+              icon = $7,
+              color = $8,
+              frequency_mhz = $9,
+              power_w = $10,
+              waveform = $11,
+              profile_json = $12::jsonb,
+              updated_at = now()
+        where id = $1 and owner_user_id = $2
+      returning *`,
+      [
+        request.params.profileId,
+        request.user.sub,
+        parsed.data.name.trim(),
+        summary.assetType,
+        summary.emitterLabel,
+        summary.force,
+        summary.icon,
+        summary.color,
+        summary.frequencyMHz,
+        summary.powerW,
+        summary.waveform,
+        JSON.stringify(parsed.data.profile),
+      ]
+    );
+    response.json({ profile: formatEmitterProfileRow(updateResult.rows[0]) });
+  } catch (error) {
+    if (error.code === "42P01") {
+      response.status(503).json({ error: "Emitter profile storage not available — run the latest database migration." });
+      return;
+    }
+    sendInternalError(response, "update emitter profile", error);
+  }
+});
+
+app.delete("/api/user/emitter-profiles/:profileId", authRequired, async (request, response) => {
+  try {
+    const result = await query(
+      "delete from user_emitter_profile where id = $1 and owner_user_id = $2",
+      [request.params.profileId, request.user.sub]
+    );
+    if (result.rowCount === 0) {
+      response.status(404).json({ error: "Emitter profile not found." });
+      return;
+    }
+    response.status(204).end();
+  } catch (error) {
+    if (error.code === "42P01") {
+      response.status(503).json({ error: "Emitter profile storage not available — run the latest database migration." });
+      return;
+    }
+    sendInternalError(response, "delete emitter profile", error);
+  }
+});
+
+app.put("/api/user/emitter-profiles/order", authRequired, async (request, response) => {
+  const parsed = emitterProfileOrderSchema.safeParse(request.body);
+  if (!parsed.success) {
+    response.status(400).json({ error: parsed.error.flatten() });
+    return;
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    const existing = await client.query(
+      "select id from user_emitter_profile where owner_user_id = $1 order by sort_position asc, updated_at desc",
+      [request.user.sub]
+    );
+    const existingIds = existing.rows.map((row) => row.id);
+    const requestedIds = parsed.data.profileIds;
+    if (existingIds.length !== requestedIds.length) {
+      throw new Error("Emitter profile order payload must include every saved profile.");
+    }
+    const requestedSet = new Set(requestedIds);
+    if (requestedSet.size !== requestedIds.length || existingIds.some((id) => !requestedSet.has(id))) {
+      throw new Error("Emitter profile order payload contains missing or unknown profile ids.");
+    }
+    for (const [index, profileId] of requestedIds.entries()) {
+      await client.query(
+        "update user_emitter_profile set sort_position = $3, updated_at = now() where id = $1 and owner_user_id = $2",
+        [profileId, request.user.sub, index]
+      );
+    }
+    const result = await client.query(
+      `select *
+         from user_emitter_profile
+        where owner_user_id = $1
+        order by sort_position asc, updated_at desc`,
+      [request.user.sub]
+    );
+    await client.query("commit");
+    response.json({ profiles: result.rows.map(formatEmitterProfileRow) });
+  } catch (error) {
+    await client.query("rollback");
+    if (error.code === "42P01") {
+      response.status(503).json({ error: "Emitter profile storage not available — run the latest database migration." });
+      return;
+    }
+    response.status(400).json({ error: error.message || "Emitter profile order update failed." });
   } finally {
     client.release();
   }
