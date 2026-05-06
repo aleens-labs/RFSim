@@ -4975,6 +4975,28 @@ button:focus {
   flex: 1 1 auto;
 }
 
+.embedded-settings-panel {
+  position: static;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  display: flex;
+  z-index: auto;
+  pointer-events: auto;
+  overflow: visible;
+  padding: 14px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  box-shadow: none;
+}
+
+.embedded-settings-panel.imagery-menu,
+.embedded-settings-panel.terrain-menu,
+.embedded-settings-panel.weather-menu {
+  width: 100%;
+  min-width: 0;
+}
+
 .settings-modal-section + .settings-modal-section {
   background: var(--bg-card-alt);
 }
@@ -7757,6 +7779,7 @@ body.emitter-modal-open {
 }
 .topo-toolbar-quality {
   flex-wrap: wrap;
+  margin-left: 16px;
 }
 .topo-quality-legend-item {
   display: inline-flex;

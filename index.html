@@ -174,154 +174,6 @@
           </div>
         </div>
 
-        <div class="imagery-menu-shell">
-          <button id="imageryMenuBtn" class="ghost-button imagery-menu-button" type="button" aria-label="Open imagery settings" aria-expanded="false">
-            <span class="imagery-menu-caption">Imagery</span>
-            <span class="imagery-menu-value-row"><strong id="imageryMenuValue">Satellite Imagery</strong><span class="imagery-menu-chevron">&#9662;</span></span>
-          </button>
-          <div id="imageryMenu" class="settings-menu imagery-menu hidden">
-            <div class="menu-title-row">
-              <strong>Imagery</strong>
-            </div>
-            <div class="menu-grid two-column compact-grid">
-              <label>
-                Basemap
-                <select id="basemapSelect">
-                  <option value="esri">Satellite Imagery</option>
-                  <option value="google-satellite">Google Satellite</option>
-                  <option value="google-hybrid">Google Hybrid</option>
-                  <option value="carto-dark">Dark Streets</option>
-                  <option value="osm">OpenStreetMap</option>
-                  <option value="custom">Custom XYZ</option>
-                </select>
-              </label>
-              <label class="span-2">
-                Custom Tile URL
-                <input id="customTileUrl" type="text" placeholder="https://{s}.example.com/tiles/{z}/{x}/{y}.png">
-              </label>
-              <label>
-                3D Terrain Source
-                <select id="terrainSourceSelect">
-                  <option value="ellipsoid">Ellipsoid Only</option>
-                  <option value="cesium-world">Cesium World Terrain</option>
-                  <option value="custom">Custom Cesium Terrain URL</option>
-                </select>
-              </label>
-              <label>
-                3D Imagery
-                <select id="imagerySourceSelect">
-                  <option value="selected-basemap">Use Selected Basemap</option>
-                  <option value="google-satellite">Google Satellite</option>
-                  <option value="google-hybrid">Google Hybrid</option>
-                  <option value="osm">OpenStreetMap</option>
-                  <option value="esri">Esri World Imagery</option>
-                </select>
-              </label>
-              <label class="span-2">
-                Custom Terrain URL
-                <input id="customTerrainUrl" type="text" placeholder="https://example.com/terrain/">
-              </label>
-              <label class="span-2">
-                <span class="field-label-row">
-                  <span>Cesium Ion Token</span>
-                  <a class="inline-link" href="https://ion.cesium.com/signup/" target="_blank" rel="noreferrer noopener">Create token</a>
-                </span>
-                <input id="cesiumIonToken" type="password" placeholder="Paste Cesium Ion access token">
-              </label>
-              <label>
-                3D City Mesh
-                <select id="cesiumPhotorealisticTilesToggle">
-                  <option value="off">Off</option>
-                  <option value="on">Google Photorealistic 3D Tiles</option>
-                </select>
-              </label>
-              <label>
-                RF Building Model
-                <select id="cesiumOsmBuildingsToggle">
-                  <option value="off">Off</option>
-                  <option value="on">OSM Buildings</option>
-                </select>
-              </label>
-              <label>
-                Building Material Model
-                <select id="buildingMaterialPreset">
-                  <option value="light-frame">Light Frame</option>
-                  <option value="brick">Brick / Masonry</option>
-                  <option value="reinforced-concrete">Reinforced Concrete</option>
-                  <option value="steel-glass">Steel / Glass High-Rise</option>
-                </select>
-              </label>
-              <label>
-                Building Propagation Quality
-                <select id="buildingPropagationMode">
-                  <option value="fast">Fast</option>
-                  <option value="balanced">Balanced</option>
-                  <option value="precise">Precise</option>
-                </select>
-              </label>
-            </div>
-          </div>
-        </div>
-        <div class="terrain-menu-shell">
-          <button id="terrainMenuBtn" class="ghost-button imagery-menu-button" type="button" aria-label="Open terrain settings" aria-expanded="false">
-            <span class="imagery-menu-caption">Terrain</span>
-            <span class="imagery-menu-value-row"><strong id="terrainMenuValue">No DTED</strong><span class="imagery-menu-chevron">&#9662;</span></span>
-          </button>
-          <div id="terrainMenu" class="settings-menu terrain-menu hidden">
-            <div class="menu-title-row">
-              <strong>Terrain</strong>
-              <button id="clearTerrainBtn" class="ghost-button small" type="button">Clear Terrain</button>
-            </div>
-            <label>
-              Terrain Files
-              <input id="dtedInput" type="file" accept=".dt,.dt0,.dt1,.dt2,.dted,.tif,.tiff" multiple>
-            </label>
-            <label>
-              Terrain Folder
-              <input id="dtedFolderInput" type="file" accept=".dt,.dt0,.dt1,.dt2,.dted,.tif,.tiff" webkitdirectory directory multiple>
-            </label>
-            <div class="terrain-summary" id="terrainSummary">
-              No local DTED loaded. Terrain-aware propagation uses Cesium terrain when configured, otherwise it falls back to free-space path loss.
-            </div>
-            <div class="list-shell compact-shell">
-              <div class="list-header">
-                <span>Loaded Terrain</span>
-              </div>
-              <div id="terrainList" class="asset-list compact-list"></div>
-            </div>
-          </div>
-        </div>
-        <div class="weather-menu-shell">
-          <button id="weatherMenuBtn" class="ghost-button imagery-menu-button" type="button" aria-label="Open weather settings" aria-expanded="false">
-            <span class="imagery-menu-caption">Weather</span>
-            <span class="imagery-menu-value-row"><strong id="weatherMenuValue">Manual</strong><span class="imagery-menu-chevron">&#9662;</span></span>
-          </button>
-          <div id="weatherMenu" class="settings-menu weather-menu hidden">
-            <div class="menu-title-row">
-              <strong>Weather</strong>
-              <button id="fetchWeatherBtn" class="primary-button small" type="button">Fetch Local Weather</button>
-            </div>
-            <div class="menu-grid two-column compact-grid">
-              <label>
-                <span id="tempLabel">Temperature F</span>
-                <input id="tempC" type="number" step="0.1" value="68">
-              </label>
-              <label>
-                Humidity %
-                <input id="humidity" type="number" min="0" max="100" step="1" value="50">
-              </label>
-              <label>
-                <span id="pressureLabel">Pressure inHg</span>
-                <input id="pressure" type="number" min="23" max="33" step="0.01" value="29.92">
-              </label>
-              <label>
-                <span id="windLabel">Wind mph</span>
-                <input id="windSpeed" type="number" min="0" step="0.1" value="6.7">
-              </label>
-            </div>
-            <div class="weather-summary" id="weatherSummary">Manual weather profile active.</div>
-          </div>
-        </div>
         <div class="gps-menu-shell">
           <button id="gpsMenuBtn" class="status-chip status-chip-button gps-status-button" type="button" aria-label="Open GPS settings" aria-expanded="false">
             <span>GPS Status</span>
@@ -1140,10 +992,6 @@
               <span class="topo-quality-legend-item"><span class="topo-quality-swatch topo-quality-swatch-poor"></span>Poor</span>
               <span class="topo-quality-legend-item"><span class="topo-quality-swatch topo-quality-swatch-moderate"></span>Moderate</span>
               <span class="topo-quality-legend-item"><span class="topo-quality-swatch topo-quality-swatch-excellent"></span>Excellent</span>
-            </div>
-            <div class="topo-toolbar-section">
-              <span class="to-toolbar-label">Terrain</span>
-              <span id="topoTerrainStatus" class="topo-terrain-status">OFF</span>
             </div>
             <div class="to-toolbar-section to-toolbar-section-right">
               <button id="topoAutoLayoutBtn" class="ghost-button small" type="button">Auto Layout</button>
@@ -2009,6 +1857,9 @@
       <div class="settings-modal-body">
         <div class="settings-tab-bar" role="tablist" aria-label="RF Sim Settings Sections">
           <button class="settings-tab-button is-active" type="button" role="tab" aria-selected="true" data-settings-tab="general">General</button>
+          <button class="settings-tab-button" type="button" role="tab" aria-selected="false" data-settings-tab="imagery">Imagery</button>
+          <button class="settings-tab-button" type="button" role="tab" aria-selected="false" data-settings-tab="terrain">Terrain</button>
+          <button class="settings-tab-button" type="button" role="tab" aria-selected="false" data-settings-tab="weather">Weather</button>
           <button class="settings-tab-button" type="button" role="tab" aria-selected="false" data-settings-tab="ai">AI Integration</button>
           <button class="settings-tab-button" type="button" role="tab" aria-selected="false" data-settings-tab="tak">TAK</button>
           <button class="settings-tab-button" type="button" role="tab" aria-selected="false" data-settings-tab="documentation">Documentation</button>
@@ -2070,6 +1921,142 @@
               </div>
             </label>
           </div>
+        </section>
+        </section>
+        <section class="settings-tab-panel" data-settings-panel="imagery" role="tabpanel" hidden>
+        <section id="imageryMenu" class="settings-modal-section embedded-settings-panel imagery-settings-panel" data-embedded-settings="imagery">
+          <div class="menu-title-row">
+            <strong>Imagery</strong>
+          </div>
+          <div class="menu-grid two-column compact-grid">
+            <label>
+              Basemap
+              <select id="basemapSelect">
+                <option value="esri">Satellite Imagery</option>
+                <option value="google-satellite">Google Satellite</option>
+                <option value="google-hybrid">Google Hybrid</option>
+                <option value="carto-dark">Dark Streets</option>
+                <option value="osm">OpenStreetMap</option>
+                <option value="custom">Custom XYZ</option>
+              </select>
+            </label>
+            <label class="span-2">
+              Custom Tile URL
+              <input id="customTileUrl" type="text" placeholder="https://{s}.example.com/tiles/{z}/{x}/{y}.png">
+            </label>
+            <label>
+              3D Terrain Source
+              <select id="terrainSourceSelect">
+                <option value="ellipsoid">Ellipsoid Only</option>
+                <option value="cesium-world">Cesium World Terrain</option>
+                <option value="custom">Custom Cesium Terrain URL</option>
+              </select>
+            </label>
+            <label>
+              3D Imagery
+              <select id="imagerySourceSelect">
+                <option value="selected-basemap">Use Selected Basemap</option>
+                <option value="google-satellite">Google Satellite</option>
+                <option value="google-hybrid">Google Hybrid</option>
+                <option value="osm">OpenStreetMap</option>
+                <option value="esri">Esri World Imagery</option>
+              </select>
+            </label>
+            <label class="span-2">
+              Custom Terrain URL
+              <input id="customTerrainUrl" type="text" placeholder="https://example.com/terrain/">
+            </label>
+            <label class="settings-span-2">
+              <span class="field-label-row">
+                <span>Cesium Ion Token</span>
+                <a class="inline-link" href="https://ion.cesium.com/signup/" target="_blank" rel="noreferrer noopener">Create token</a>
+              </span>
+              <input id="cesiumIonToken" type="password" placeholder="Paste Cesium Ion access token">
+            </label>
+            <label>
+              3D City Mesh
+              <select id="cesiumPhotorealisticTilesToggle">
+                <option value="off">Off</option>
+                <option value="on">Google Photorealistic 3D Tiles</option>
+              </select>
+            </label>
+            <label>
+              RF Building Model
+              <select id="cesiumOsmBuildingsToggle">
+                <option value="off">Off</option>
+                <option value="on">OSM Buildings</option>
+              </select>
+            </label>
+            <label>
+              Building Material Model
+              <select id="buildingMaterialPreset">
+                <option value="light-frame">Light Frame</option>
+                <option value="brick">Brick / Masonry</option>
+                <option value="reinforced-concrete">Reinforced Concrete</option>
+                <option value="steel-glass">Steel / Glass High-Rise</option>
+              </select>
+            </label>
+            <label>
+              Building Propagation Quality
+              <select id="buildingPropagationMode">
+                <option value="fast">Fast</option>
+                <option value="balanced">Balanced</option>
+                <option value="precise">Precise</option>
+              </select>
+            </label>
+          </div>
+        </section>
+        </section>
+        <section class="settings-tab-panel" data-settings-panel="terrain" role="tabpanel" hidden>
+        <section id="terrainMenu" class="settings-modal-section embedded-settings-panel terrain-settings-panel" data-embedded-settings="terrain">
+          <div class="menu-title-row">
+            <strong>Terrain</strong>
+            <button id="clearTerrainBtn" class="ghost-button small" type="button">Clear Terrain</button>
+          </div>
+          <label>
+            Terrain Files
+            <input id="dtedInput" type="file" accept=".dt,.dt0,.dt1,.dt2,.dted,.tif,.tiff" multiple>
+          </label>
+          <label>
+            Terrain Folder
+            <input id="dtedFolderInput" type="file" accept=".dt,.dt0,.dt1,.dt2,.dted,.tif,.tiff" webkitdirectory directory multiple>
+          </label>
+          <div class="terrain-summary" id="terrainSummary">
+            No local DTED loaded. Terrain-aware propagation uses Cesium terrain when configured, otherwise it falls back to free-space path loss.
+          </div>
+          <div class="list-shell compact-shell">
+            <div class="list-header">
+              <span>Loaded Terrain</span>
+            </div>
+            <div id="terrainList" class="asset-list compact-list"></div>
+          </div>
+        </section>
+        </section>
+        <section class="settings-tab-panel" data-settings-panel="weather" role="tabpanel" hidden>
+        <section id="weatherMenu" class="settings-modal-section embedded-settings-panel weather-settings-panel" data-embedded-settings="weather">
+          <div class="menu-title-row">
+            <strong>Weather</strong>
+            <button id="fetchWeatherBtn" class="primary-button small" type="button">Fetch Local Weather</button>
+          </div>
+          <div class="menu-grid two-column compact-grid">
+            <label>
+              <span id="tempLabel">Temperature F</span>
+              <input id="tempC" type="number" step="0.1" value="68">
+            </label>
+            <label>
+              Humidity %
+              <input id="humidity" type="number" min="0" max="100" step="1" value="50">
+            </label>
+            <label>
+              <span id="pressureLabel">Pressure inHg</span>
+              <input id="pressure" type="number" min="23" max="33" step="0.01" value="29.92">
+            </label>
+            <label>
+              <span id="windLabel">Wind mph</span>
+              <input id="windSpeed" type="number" min="0" step="0.1" value="6.7">
+            </label>
+          </div>
+          <div class="weather-summary" id="weatherSummary">Manual weather profile active.</div>
         </section>
         </section>
         <section class="settings-tab-panel" data-settings-panel="ai" role="tabpanel" hidden>

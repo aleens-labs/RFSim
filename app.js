@@ -6974,17 +6974,17 @@ function wireEvents() {
   window.addEventListener("mouseup", endPanelResize);
   window.addEventListener("mouseup", endControlPanelSectionResize);
   window.addEventListener("mouseup", endAiPanelResize);
-  dom.imageryMenuBtn.addEventListener("click", toggleImageryMenu);
-  dom.imageryMenu.addEventListener("click", (event) => event.stopPropagation());
-  dom.terrainMenuBtn.addEventListener("click", toggleTerrainMenu);
-  dom.terrainMenu.addEventListener("click", (event) => event.stopPropagation());
-  dom.weatherMenuBtn.addEventListener("click", toggleWeatherMenu);
-  dom.weatherMenu.addEventListener("click", (event) => event.stopPropagation());
+  dom.imageryMenuBtn?.addEventListener("click", toggleImageryMenu);
+  dom.imageryMenu?.addEventListener("click", (event) => event.stopPropagation());
+  dom.terrainMenuBtn?.addEventListener("click", toggleTerrainMenu);
+  dom.terrainMenu?.addEventListener("click", (event) => event.stopPropagation());
+  dom.weatherMenuBtn?.addEventListener("click", toggleWeatherMenu);
+  dom.weatherMenu?.addEventListener("click", (event) => event.stopPropagation());
   dom.workspaceMenuBtn?.addEventListener("click", toggleWorkspaceMenu);
   dom.workspaceMenu?.addEventListener("click", (event) => event.stopPropagation());
   dom.aiChatToggleBtn.addEventListener("click", toggleAiPanelCollapse);
-  dom.gpsMenuBtn.addEventListener("click", toggleGpsMenu);
-  dom.gpsMenu.addEventListener("click", (event) => event.stopPropagation());
+  dom.gpsMenuBtn?.addEventListener("click", toggleGpsMenu);
+  dom.gpsMenu?.addEventListener("click", (event) => event.stopPropagation());
   dom.settingsMenuBtn.addEventListener("click", toggleSettingsMenu);
   dom.settingsMenu.addEventListener("click", (event) => {
     if (event.target === dom.settingsMenu) {
@@ -8071,6 +8071,9 @@ function toggleWorkspaceMenu(event) {
 }
 
 function toggleImageryMenu(event) {
+  if (!dom.imageryMenuBtn || !dom.imageryMenu) {
+    return;
+  }
   event.stopPropagation();
   closeWorkspaceMenu();
   closeSettingsMenu();
@@ -8087,6 +8090,9 @@ function toggleImageryMenu(event) {
 }
 
 function toggleTerrainMenu(event) {
+  if (!dom.terrainMenuBtn || !dom.terrainMenu) {
+    return;
+  }
   event.stopPropagation();
   closeWorkspaceMenu();
   closeImageryMenu();
@@ -8103,6 +8109,9 @@ function toggleTerrainMenu(event) {
 }
 
 function toggleWeatherMenu(event) {
+  if (!dom.weatherMenuBtn || !dom.weatherMenu) {
+    return;
+  }
   event.stopPropagation();
   closeWorkspaceMenu();
   closeImageryMenu();
@@ -8121,6 +8130,9 @@ function toggleWeatherMenu(event) {
 function toggleAiMenu() { /* AI menu removed — settings now in gear dropdown */ }
 
 function toggleGpsMenu(event) {
+  if (!dom.gpsMenuBtn || !dom.gpsMenu) {
+    return;
+  }
   event.stopPropagation();
   closeWorkspaceMenu();
   closeImageryMenu();
@@ -8156,7 +8168,7 @@ function closeWorkspaceMenu() {
 }
 
 function closeImageryMenu() {
-  if (!state.imageryMenuOpen) {
+  if (!state.imageryMenuOpen || !dom.imageryMenuBtn || !dom.imageryMenu) {
     return;
   }
   state.imageryMenuOpen = false;
@@ -8165,7 +8177,7 @@ function closeImageryMenu() {
 }
 
 function closeTerrainMenu() {
-  if (!state.terrainMenuOpen) {
+  if (!state.terrainMenuOpen || !dom.terrainMenuBtn || !dom.terrainMenu) {
     return;
   }
   state.terrainMenuOpen = false;
@@ -8174,7 +8186,7 @@ function closeTerrainMenu() {
 }
 
 function closeWeatherMenu() {
-  if (!state.weatherMenuOpen) {
+  if (!state.weatherMenuOpen || !dom.weatherMenuBtn || !dom.weatherMenu) {
     return;
   }
   state.weatherMenuOpen = false;
@@ -8185,7 +8197,7 @@ function closeWeatherMenu() {
 function closeAiMenu() { /* no-op: AI menu removed */ }
 
 function closeGpsMenu() {
-  if (!state.gpsMenuOpen) {
+  if (!state.gpsMenuOpen || !dom.gpsMenuBtn || !dom.gpsMenu) {
     return;
   }
   state.gpsMenuOpen = false;
@@ -8993,6 +9005,7 @@ function togglePanelCollapse() {
 
 let _layoutSettleRafId = null;
 let _layoutSettleTimeoutIds = [];
+let _lastMapViewportLayoutKey = "";
 
 function clearPendingMapLayoutSettles() {
   if (_layoutSettleRafId) {
@@ -9003,13 +9016,29 @@ function clearPendingMapLayoutSettles() {
   _layoutSettleTimeoutIds = [];
 }
 
-function refreshMapViewportForLayoutChange() {
-  if (state.ui?.currentView !== "map" || !state.map) {
+function buildMapViewportLayoutKey() {
+  const target = state.view3dEnabled && dom.cesiumContainer && !dom.cesiumContainer.classList.contains("hidden")
+    ? dom.cesiumContainer
+    : dom.map;
+  if (!target) {
+    return "";
+  }
+  const width = Math.round(target.clientWidth || 0);
+  const height = Math.round(target.clientHeight || 0);
+  return `${width}x${height}:${document.body.classList.contains("panel-collapsed") ? 1 : 0}:${state.ai.panelOpen ? 1 : 0}`;
+}
+
+function refreshMapViewportForLayoutChange({ force = false } = {}) {
+  if (state.ui?.currentView !== "map" || !state.map || !dom.map) {
     return;
   }
-  state.map.invalidateSize({ pan: false, animate: false });
-  state.baseLayer?.redraw?.();
-  if (state.cesiumViewer) {
+  const nextLayoutKey = buildMapViewportLayoutKey();
+  if (!force && nextLayoutKey && nextLayoutKey === _lastMapViewportLayoutKey) {
+    return;
+  }
+  _lastMapViewportLayoutKey = nextLayoutKey;
+  state.map.invalidateSize({ pan: false, animate: false, debounceMoveend: true });
+  if (state.cesiumViewer && state.view3dEnabled) {
     state.cesiumViewer.resize();
   }
 }
@@ -9019,10 +9048,10 @@ function settleMapViewportAfterLayoutChange() {
     return;
   }
   clearPendingMapLayoutSettles();
-  const passes = [0, 48, 120, 220, 320];
+  const passes = [0, 180];
   _layoutSettleRafId = requestAnimationFrame(() => {
     _layoutSettleRafId = null;
-    refreshMapViewportForLayoutChange();
+    refreshMapViewportForLayoutChange({ force: true });
   });
   passes.forEach((delay) => {
     const timeoutId = setTimeout(() => {
@@ -11017,7 +11046,7 @@ function renderSettingsDocumentation() {
 }
 
 function setSettingsModalTab(tab = "general") {
-  state.settingsModalTab = ["general", "ai", "tak", "documentation"].includes(tab) ? tab : "general";
+  state.settingsModalTab = ["general", "imagery", "terrain", "weather", "ai", "tak", "documentation"].includes(tab) ? tab : "general";
   dom.settingsTabButtons?.forEach((button) => {
     const active = button.dataset.settingsTab === state.settingsModalTab;
     button.classList.toggle("is-active", active);
