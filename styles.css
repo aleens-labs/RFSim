@@ -1448,37 +1448,20 @@ body:not(.ai-panel-open) .ai-panel {
   gap: 0;
 }
 
-.ai-panel-title-group {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
-  min-width: 0;
-  flex: 1;
-}
-
-.ai-panel-title-copy {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-  padding-top: 2px;
-}
-
-.ai-panel-title-copy strong {
-  font-size: 1rem;
-  white-space: nowrap;
-}
-
-.ai-panel-title-copy .eyebrow {
-  white-space: nowrap;
-}
-
 .ai-panel-meta-stack {
   display: grid;
   gap: 4px;
   width: min(150px, 100%);
   min-width: 0;
   flex: 0 0 auto;
+}
+
+.ai-panel-meta-stack--row {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+  width: 100%;
+  align-items: flex-start;
 }
 
 .ai-agent-purpose {
@@ -1495,11 +1478,10 @@ body:not(.ai-panel-open) .ai-panel {
 .ai-model-toggle {
   display: grid;
   gap: 1px;
-  width: 100%;
-  max-width: none;
+  min-width: 0;
   align-self: start;
   margin-top: 0;
-  flex: 0 0 auto;
+  flex: 1 1 0;
 }
 
 .ai-model-toggle > .eyebrow,
@@ -1510,11 +1492,10 @@ body:not(.ai-panel-open) .ai-panel {
 .ai-agent-mode-shell {
   display: grid;
   gap: 1px;
-  width: 100%;
-  max-width: none;
+  min-width: 0;
   align-self: start;
   margin-top: 0;
-  flex: 0 0 auto;
+  flex: 1 1 0;
 }
 
 .ai-agent-mode-indicator {

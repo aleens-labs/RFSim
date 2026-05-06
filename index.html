@@ -1151,26 +1151,20 @@
 
     <aside id="aiPanel" class="ai-panel" aria-label="AI planning assistant panel">
       <div class="ai-panel-header">
-        <div class="ai-panel-title-group">
-          <div class="ai-panel-title-copy">
-            <strong>AI Agent</strong>
-            <span class="eyebrow" id="aiPanelStatus">Offline</span>
-          </div>
-          <div class="ai-panel-meta-stack">
-            <div class="ai-agent-mode-shell" id="aiAgentModeShell" title="Active agent mode">
-              <span class="eyebrow">Mode</span>
-              <div id="aiAgentModeIndicator" class="ai-agent-mode-indicator" aria-label="Active agent mode">
-                <span class="ai-agent-mode-dot" aria-hidden="true"></span>
-                <select id="aiAgentModeSelect" class="ai-agent-mode-select" aria-label="AI agent mode"></select>
-              </div>
+        <div class="ai-panel-meta-stack ai-panel-meta-stack--row">
+          <div class="ai-agent-mode-shell" id="aiAgentModeShell" title="Active agent profile">
+            <span class="eyebrow">Profile</span>
+            <div id="aiAgentModeIndicator" class="ai-agent-mode-indicator" aria-label="Active agent profile">
+              <span class="ai-agent-mode-dot" aria-hidden="true"></span>
+              <select id="aiAgentModeSelect" class="ai-agent-mode-select" aria-label="AI agent profile"></select>
             </div>
-            <label class="ai-model-toggle">
-              <span class="eyebrow">Model</span>
-              <select id="aiChatModelSelect" class="ai-chat-model-select" disabled>
-                <option value="">No model available</option>
-              </select>
-            </label>
           </div>
+          <label class="ai-model-toggle">
+            <span class="eyebrow">Model</span>
+            <select id="aiChatModelSelect" class="ai-chat-model-select" disabled>
+              <option value="">No model available</option>
+            </select>
+          </label>
         </div>
       </div>
       <div id="aiChatMessages" class="ai-chat-messages">

@@ -11213,7 +11213,7 @@ function syncAiUi() {
   if (dom.aiAgentModeIndicator && dom.aiAgentModeSelect) {
     const activeProfile = getAiAgentProfile();
     syncAiAgentModeSelect();
-    dom.aiAgentModeShell?.classList.toggle("hidden", (state.ai.agentProfileId || "general") === "general");
+    dom.aiAgentModeShell?.classList.remove("hidden");
     dom.aiAgentModeIndicator.dataset.mode = state.ai.agentProfileId || "general";
     dom.aiAgentModeIndicator.title = `${activeProfile.label} · ${Math.round((state.ai.agentProfileConfidence || 0) * 100)}% confidence\n${state.ai.agentProfileReason || activeProfile.summary}`;
   }
