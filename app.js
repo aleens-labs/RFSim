@@ -32499,6 +32499,18 @@ function confirmToPickerSelection() {
   closeToPicker();
 }
 
+function getPickerUnitAnchors(unit, world) {
+  // .to-unit is positioned with left=unit.x, top=unit.y and CSS transform:translate(-50%,-50%)
+  // so unit.x/unit.y is already the visual center of the element.
+  const el = world.querySelector(`.to-unit[data-id="${unit.id}"]`);
+  const halfH = el ? el.offsetHeight / 2 : 72;
+  return {
+    centerX: unit.x,
+    topY: unit.y - halfH,
+    bottomY: unit.y + halfH,
+  };
+}
+
 function renderPickerEdges(units, links, svg) {
   svg.innerHTML = "";
   const world = document.getElementById("toPickerWorld");
@@ -32507,9 +32519,8 @@ function renderPickerEdges(units, links, svg) {
     const p = units.find(u => u.id === lnk.parentId);
     const c = units.find(u => u.id === lnk.childId);
     if (!p || !c) continue;
-    const parentAnchor = getToUnitConnectorAnchors(p, world);
-    const childAnchor = getToUnitConnectorAnchors(c, world);
-    if (!parentAnchor || !childAnchor) continue;
+    const parentAnchor = getPickerUnitAnchors(p, world);
+    const childAnchor = getPickerUnitAnchors(c, world);
     const x1 = parentAnchor.centerX;
     const y1 = parentAnchor.bottomY;
     const x2 = childAnchor.centerX;

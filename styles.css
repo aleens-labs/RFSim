@@ -7654,6 +7654,7 @@ body.emitter-modal-open {
   height: 100%;
   pointer-events: none;
   overflow: visible;
+  transform-origin: 0 0;
   z-index: 1;
 }
 /* Unit card */
