@@ -8324,6 +8324,9 @@ function syncWeatherInputsFromState() {
 }
 
 function updateWeatherMenuValue() {
+  if (!dom.weatherMenuValue) {
+    return;
+  }
   dom.weatherMenuValue.textContent = state.weather.source === "open-meteo" ? "Live" : "Manual";
 }
 
@@ -18638,6 +18641,9 @@ function applyBasemap(key) {
 }
 
 function updateImageryMenuValue(labelOverride = null) {
+  if (!dom.imageryMenuValue) {
+    return;
+  }
   if (labelOverride) {
     dom.imageryMenuValue.textContent = labelOverride;
     return;
@@ -19176,6 +19182,9 @@ function renderTerrains() {
 }
 
 function updateTerrainMenuValue() {
+  if (!dom.terrainMenuValue) {
+    return;
+  }
   if (!state.terrains.length) {
     const hasCesiumToken = dom.cesiumIonToken.value.trim().length > 0;
     if (hasCesiumToken && usesCesiumPhotorealisticTiles() && usesCesiumOsmBuildings()) {
