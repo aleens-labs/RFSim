@@ -3468,7 +3468,7 @@ function applyTacticalLabel(object, layer) {
     permanent: true,
     direction: isTacticalPointGeometry(object.geometryType) ? "top" : "center",
     className: `tactical-map-label${isTacticalPointGeometry(object.geometryType) ? " tactical-map-label--point" : ""}`,
-    offset: isTacticalPointGeometry(object.geometryType) ? [0, -10] : [0, 0],
+    offset: isTacticalPointGeometry(object.geometryType) ? [0, -38] : [0, 0],
     interactive: false,
   });
 }

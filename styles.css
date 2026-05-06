@@ -8222,7 +8222,7 @@ body.emitter-modal-open {
   display: block;
 }
 .tactical-map-icon--labelled {
-  transform: translateY(-4px);
+  transform: none;
 }
 .tactical-map-label {
   background: rgba(5, 10, 20, 0.82);
@@ -8239,7 +8239,6 @@ body.emitter-modal-open {
 }
 .tactical-map-label.tactical-map-label--point {
   margin-left: 0;
-  transform: translateY(-2px);
 }
 .tactical-readonly-badge {
   color: #38bdf8;
