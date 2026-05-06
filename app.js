@@ -1811,6 +1811,7 @@ const dom = {
   settingsTabPanels: document.querySelectorAll(".settings-tab-panel"),
   settingsDocumentationNav: document.querySelector("#settingsDocumentationNav"),
   settingsDocumentationContent: document.querySelector("#settingsDocumentationContent"),
+  autoFetchWeatherOnSimToggle: document.querySelector("#autoFetchWeatherOnSimToggle"),
   measurementUnitsSelect: document.querySelector("#measurementUnitsSelect"),
   themeSelect: document.querySelector("#themeSelect"),
   coordinateSystemSelect: document.querySelector("#coordinateSystemSelect"),
@@ -2253,6 +2254,7 @@ const state = {
     labelDefaultPolygon: false,
     labelDefaultLine: false,
     defaultTakStreamEnabled: true,
+    autoFetchWeatherOnSim: false,
   },
   weather: {
     temperatureC: 20,
@@ -8408,6 +8410,7 @@ function wireEvents() {
   dom.takClientCertPasswordInput?.addEventListener("change", onTakDraftFieldChanged);
   dom.takCaCertPasswordInput?.addEventListener("change", onTakDraftFieldChanged);
   dom.takDefaultStreamToggle?.addEventListener("change", onSettingsChanged);
+  dom.autoFetchWeatherOnSimToggle?.addEventListener("change", onSettingsChanged);
   dom.takClientCertInput?.addEventListener("change", () => onTakCertificateSelected("clientCert", dom.takClientCertInput).catch((error) => setStatus(error.message, true)));
   dom.takCaCertInput?.addEventListener("change", () => onTakCertificateSelected("caCert", dom.takCaCertInput).catch((error) => setStatus(error.message, true)));
   dom.takDeleteClientCertBtn?.addEventListener("click", () => deleteTakDraftCertificate("clientCert"));
@@ -8670,6 +8673,7 @@ function loadSettings() {
     if (typeof parsed.labelDefaultPolygon === "boolean") state.settings.labelDefaultPolygon = parsed.labelDefaultPolygon;
     if (typeof parsed.labelDefaultLine === "boolean") state.settings.labelDefaultLine = parsed.labelDefaultLine;
     if (typeof parsed.defaultTakStreamEnabled === "boolean") state.settings.defaultTakStreamEnabled = parsed.defaultTakStreamEnabled;
+    if (typeof parsed.autoFetchWeatherOnSim === "boolean") state.settings.autoFetchWeatherOnSim = parsed.autoFetchWeatherOnSim;
   } catch {
     window.localStorage.removeItem(SETTINGS_STORAGE_KEY);
   }
@@ -9325,6 +9329,7 @@ function onSettingsChanged() {
   if (dom.labelDefaultPolygonToggle) state.settings.labelDefaultPolygon = dom.labelDefaultPolygonToggle.checked;
   if (dom.labelDefaultLineToggle) state.settings.labelDefaultLine = dom.labelDefaultLineToggle.checked;
   if (dom.takDefaultStreamToggle) state.settings.defaultTakStreamEnabled = dom.takDefaultStreamToggle.checked;
+  if (dom.autoFetchWeatherOnSimToggle) state.settings.autoFetchWeatherOnSim = dom.autoFetchWeatherOnSimToggle.checked;
   persistSettings();
   applySettings();
 }
@@ -9340,6 +9345,11 @@ function applySettings() {
   if (dom.labelDefaultPolygonToggle) dom.labelDefaultPolygonToggle.checked = state.settings.labelDefaultPolygon ?? false;
   if (dom.labelDefaultLineToggle) dom.labelDefaultLineToggle.checked = state.settings.labelDefaultLine ?? false;
   if (dom.takDefaultStreamToggle) dom.takDefaultStreamToggle.checked = state.settings.defaultTakStreamEnabled !== false;
+  if (dom.autoFetchWeatherOnSimToggle) {
+    dom.autoFetchWeatherOnSimToggle.checked = Boolean(state.settings.autoFetchWeatherOnSim);
+    const box = dom.autoFetchWeatherOnSimToggle.closest(".settings-check-row")?.querySelector(".settings-xbox");
+    if (box) box.textContent = state.settings.autoFetchWeatherOnSim ? "✕" : "";
+  }
   dom.cesiumPhotorealisticTilesToggle.value = state.settings.cesiumPhotorealisticTilesEnabled ? "on" : "off";
   dom.cesiumOsmBuildingsToggle.value = state.settings.cesiumOsmBuildingsEnabled ? "on" : "off";
   dom.buildingMaterialPreset.value = state.settings.buildingMaterialPreset;
@@ -21784,6 +21794,9 @@ function clearTerrain() {
 }
 
 async function runSimulation() {
+  if (state.settings.autoFetchWeatherOnSim) {
+    try { await fetchWeather(); } catch { /* non-fatal */ }
+  }
   const assetId = dom.assetSelect.value;
   const selected = state.assets.find((asset) => asset.id === assetId);
   if (!selected) {

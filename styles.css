@@ -5628,6 +5628,29 @@ button:focus {
   accent-color: var(--accent);
 }
 
+.settings-modal-grid .settings-xbox-row input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.settings-xbox {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 13px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.06);
+  color: var(--accent, #7dd3fc);
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
 .settings-modal-grid .settings-check-row span {
   color: var(--text);
   font-size: 0.82rem;
