@@ -32337,7 +32337,7 @@ const MILSTD_MAIN_ASSETS = {
   headquarters: { path: "images/milstd/Appendices/Land/10110000.svg" },
   civil_affairs: { path: "images/milstd/Appendices/Land/10110200.svg" },
   psyop: { path: "images/milstd/Appendices/Land/10110600.svg" },
-  signal: { base: "images/milstd/Appendices/Land/10120501", fullFrame: true },
+  signal: { path: "images/milstd/Appendices/Land/10120500.svg" },
   armor: { base: "images/milstd/Appendices/Land/10121100", fullFrame: true },
   recon: { base: "images/milstd/Appendices/Land/10121101", fullFrame: true },
   mechanized_infantry: { base: "images/milstd/Appendices/Land/10121102", fullFrame: true },
@@ -32472,10 +32472,11 @@ function serializeToPlanState() {
 
 function renderToCustomSymbolShapes(type, stroke = "#000000", milstd = false) {
   const normalizedType = normalizeToUnitType(type);
-  if (!["infantry", "light_infantry", "mechanized_infantry", "airborne_infantry", "armor"].includes(normalizedType)) {
+  if (!["infantry", "light_infantry", "mechanized_infantry", "airborne_infantry", "armor", "recon"].includes(normalizedType)) {
     return "";
   }
   if (milstd) {
+    const reconLine = `<line x1="126.5" y1="516" x2="485.5" y2="276" stroke="${stroke}" stroke-width="5" stroke-linecap="round"/>`;
     const xLines = `
       <line x1="126.5" y1="276" x2="485.5" y2="516" stroke="${stroke}" stroke-width="5" stroke-linecap="round"/>
       <line x1="126.5" y1="516" x2="485.5" y2="276" stroke="${stroke}" stroke-width="5" stroke-linecap="round"/>
@@ -32488,6 +32489,8 @@ function renderToCustomSymbolShapes(type, stroke = "#000000", milstd = false) {
     `;
     const canopy = `<path d="M228 322c0-32 78-32 78 0c0-32 78-32 78 0" fill="none" stroke="${stroke}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>`;
     switch (normalizedType) {
+      case "recon":
+        return reconLine;
       case "infantry":
       case "light_infantry":
         return xLines;
@@ -32502,6 +32505,7 @@ function renderToCustomSymbolShapes(type, stroke = "#000000", milstd = false) {
     }
   }
 
+  const reconLine = `<line x1="12" y1="40" x2="44" y2="16" stroke="${stroke}" stroke-width="1.8" stroke-linecap="round"/>`;
   const xLines = `
     <line x1="12" y1="16" x2="44" y2="40" stroke="${stroke}" stroke-width="1.8" stroke-linecap="round"/>
     <line x1="44" y1="16" x2="12" y2="40" stroke="${stroke}" stroke-width="1.8" stroke-linecap="round"/>
@@ -32514,6 +32518,8 @@ function renderToCustomSymbolShapes(type, stroke = "#000000", milstd = false) {
   `;
   const canopy = `<path d="M18 18c0-3.8 10-3.8 10 0c0-3.8 10-3.8 10 0" fill="none" stroke="${stroke}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>`;
   switch (normalizedType) {
+    case "recon":
+      return reconLine;
     case "infantry":
     case "light_infantry":
       return xLines;
@@ -32760,19 +32766,13 @@ function initPlanViewIfNeeded() {
   document.getElementById("toCtxLinkParent")?.addEventListener("click", () => {
     if (!_toState.selectedUnit) return;
     _toState.linkMode = { type: "parent", fromId: _toState.selectedUnit };
-    const banner = document.getElementById("toLinkBanner");
-    const msg    = document.getElementById("toLinkBannerMsg");
-    if (msg) msg.textContent = "Click another unit to set it as PARENT of the selected unit";
-    if (banner) banner.classList.remove("hidden");
+    updateToLinkBannerMessage("Click another unit to link or unlink it as the parent of the selected unit.");
     hideToContextMenu();
   });
   document.getElementById("toCtxLinkChild")?.addEventListener("click", () => {
     if (!_toState.selectedUnit) return;
     _toState.linkMode = { type: "child", fromId: _toState.selectedUnit };
-    const banner = document.getElementById("toLinkBanner");
-    const msg    = document.getElementById("toLinkBannerMsg");
-    if (msg) msg.textContent = "Click another unit to set it as CHILD of the selected unit";
-    if (banner) banner.classList.remove("hidden");
+    updateToLinkBannerMessage("Click another unit to link or unlink it as a child of the selected unit.");
     hideToContextMenu();
   });
   document.getElementById("toCtxEdit")?.addEventListener("click", () => {
@@ -32780,14 +32780,8 @@ function initPlanViewIfNeeded() {
     openToEditModal();
   });
   document.getElementById("toCtxDuplicate")?.addEventListener("click", () => {
-    const source = _toState.units.find(u => u.id === _toState.selectedUnit);
-    if (!source) return;
-    const newUnit = { ...source, id: _toState.nextId++, x: source.x + 40, y: source.y + 40 };
-    _toState.units.push(newUnit);
-    _toState.selectedUnit = newUnit.id;
     hideToContextMenu();
-    renderToView();
-    saveMapState();
+    duplicateToUnit();
   });
   document.getElementById("toCtxDelete")?.addEventListener("click", () => {
     if (!_toState.selectedUnit) return;
@@ -32913,14 +32907,21 @@ function renderToUnit(unit) {
     if (_toState.linkMode) {
       const { type, fromId } = _toState.linkMode;
       if (unit.id === fromId) { cancelToLink(); return; }
-      const parentId = type === "parent" ? unit.id : fromId;
-      const childId  = type === "child"  ? unit.id : fromId;
-      const exists = _toState.links.some(l => l.parentId === parentId && l.childId === childId);
-      if (!exists) _toState.links.push({ parentId, childId });
+      const result = toggleToLink(type, fromId, unit.id);
       cancelToLink();
+      if (!result.changed) {
+        if (result.blocked) {
+          setStatus("That link would create a loop in the unit hierarchy.", true);
+        }
+        return;
+      }
       renderToEdges();
-      toAutoLayout();
       saveMapState();
+      setStatus(
+        result.linked
+          ? `Linked ${unit.label || unit.designator || "unit"} as ${type === "parent" ? "parent" : "child"}.`
+          : `Unlinked ${unit.label || unit.designator || "unit"} from the selected ${type === "parent" ? "parent" : "child"} relationship.`,
+      );
       return;
     }
     _toState.selectedUnit = unit.id;
@@ -32949,6 +32950,77 @@ function showToContextMenu(x, y) {
 function hideToContextMenu() {
   document.getElementById("toContextMenu")?.classList.add("hidden");
 }
+
+function updateToLinkBannerMessage(message) {
+  const msg = document.getElementById("toLinkBannerMsg");
+  const banner = document.getElementById("toLinkBanner");
+  if (msg) msg.textContent = message;
+  if (banner) banner.classList.remove("hidden");
+}
+
+function hasToLink(parentId, childId) {
+  return _toState.links.some((link) => link.parentId === parentId && link.childId === childId);
+}
+
+function getToDescendantIds(unitId) {
+  const descendants = new Set();
+  const queue = [unitId];
+  while (queue.length) {
+    const currentId = queue.shift();
+    _toState.links.forEach((link) => {
+      if (link.parentId === currentId && !descendants.has(link.childId)) {
+        descendants.add(link.childId);
+        queue.push(link.childId);
+      }
+    });
+  }
+  return descendants;
+}
+
+function canCreateToLink(parentId, childId) {
+  if (!Number.isFinite(parentId) || !Number.isFinite(childId) || parentId === childId) {
+    return false;
+  }
+  return !getToDescendantIds(childId).has(parentId);
+}
+
+function toggleToLink(type, fromId, targetId) {
+  if (!Number.isFinite(fromId) || !Number.isFinite(targetId) || fromId === targetId) {
+    return { changed: false, linked: false };
+  }
+  const parentId = type === "parent" ? targetId : fromId;
+  const childId = type === "child" ? targetId : fromId;
+  const exists = hasToLink(parentId, childId);
+  if (exists) {
+    _toState.links = _toState.links.filter((link) => !(link.parentId === parentId && link.childId === childId));
+    return { changed: true, linked: false, parentId, childId };
+  }
+  if (!canCreateToLink(parentId, childId)) {
+    return { changed: false, linked: false, blocked: true, parentId, childId };
+  }
+  _toState.links = _toState.links.filter((link) => link.childId !== childId);
+  _toState.links.push({ parentId, childId });
+  return { changed: true, linked: true, parentId, childId };
+}
+
+function duplicateToUnit(unitId = _toState.selectedUnit) {
+  const source = _toState.units.find((unit) => unit.id === unitId);
+  if (!source) {
+    return null;
+  }
+  const duplicate = {
+    ...source,
+    id: _toState.nextId++,
+    x: source.x + 48,
+    y: source.y + 36,
+  };
+  _toState.units.push(duplicate);
+  _toState.selectedUnit = duplicate.id;
+  renderToView();
+  saveMapState();
+  return duplicate;
+}
+
 function cancelToLink() {
   _toState.linkMode = null;
   document.getElementById("toLinkBanner")?.classList.add("hidden");
