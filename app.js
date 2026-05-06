@@ -6580,7 +6580,7 @@ async function onWorkspaceProjectCreate() {
 
   const payload = await apiFetch("/projects", {
     method: "POST",
-    body: JSON.stringify({ name, description: "", state: serializeCurrentMapState() }),
+    body: JSON.stringify({ name, description: "", state: serializeMapStateForServer() }),
   });
   state.session.activeProjectId = payload.project.id;
   setActiveProjectRevision(payload.project.revision);
@@ -6807,7 +6807,7 @@ async function onWorkspaceProjectSnapshot() {
   }
   await apiFetch(`/projects/${state.session.activeProjectId}/snapshots`, {
     method: "POST",
-    body: JSON.stringify({ label, state: serializeCurrentMapState() }),
+    body: JSON.stringify({ label, state: serializeMapStateForServer() }),
   });
   setStatus(`Created snapshot ${label}.`);
 }
