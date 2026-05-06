@@ -68,6 +68,9 @@
           <span id="collapsePanelIcon">&#9664;</span>
         </button>
         <div class="title-block">
+          <div class="title-block-spectrum" aria-hidden="true">
+            <canvas id="titleWaterfall"></canvas>
+          </div>
           <strong>RF SIM</strong>
         </div>
       </div>
@@ -1542,7 +1545,6 @@
             <button class="emitter-tab" role="tab" data-tab="tx" type="button">Transmitter</button>
             <button class="emitter-tab" role="tab" data-tab="rx" type="button">Receiver</button>
             <button class="emitter-tab" role="tab" data-tab="antenna" type="button">Antenna</button>
-            <button class="emitter-tab" role="tab" data-tab="prop" type="button">Propagation</button>
             <button class="emitter-tab" role="tab" data-tab="link" type="button">Link Budget</button>
             <button class="emitter-tab" role="tab" data-tab="net" type="button">Network</button>
             <button class="emitter-tab" role="tab" data-tab="loc" type="button">Location</button>
@@ -3169,8 +3171,12 @@
   <script type="module" src="./app.js?v=20260430-87"></script>
   <script>
   (function () {
-    const canvas = document.getElementById('authWaterfall');
-    const ctx = canvas.getContext('2d', { alpha: false });
+    const authCanvas = document.getElementById('authWaterfall');
+    const titleCanvas = document.getElementById('titleWaterfall');
+    if (!authCanvas && !titleCanvas) return;
+
+    const authCtx = authCanvas ? authCanvas.getContext('2d', { alpha: false }) : null;
+    const titleCtx = titleCanvas ? titleCanvas.getContext('2d', { alpha: false }) : null;
     const SCROLL_SPEED = 0.35;
     const NOISE_LEVEL = 0.13;
     let emitters = [];
@@ -3178,22 +3184,39 @@
     let time = 0;
     let rafId = null;
     let running = false;
+    let started = false;
+
+    function getPrimaryWidth() {
+      return Math.max(authCanvas?.width || 0, titleCanvas?.width || 0, window.innerWidth);
+    }
+
+    function resizeCanvas(targetCanvas, width, height) {
+      if (!targetCanvas) return;
+      targetCanvas.width = Math.max(1, Math.floor(width));
+      targetCanvas.height = Math.max(1, Math.floor(height));
+      targetCanvas.style.width = `${Math.max(1, Math.floor(width))}px`;
+      targetCanvas.style.height = `${Math.max(1, Math.floor(height))}px`;
+    }
 
     function resize() {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-      canvas.style.width = window.innerWidth + 'px';
-      canvas.style.height = window.innerHeight + 'px';
+      if (authCanvas) {
+        resizeCanvas(authCanvas, window.innerWidth, window.innerHeight);
+      }
+      if (titleCanvas) {
+        const titleRect = titleCanvas.parentElement?.getBoundingClientRect();
+        resizeCanvas(titleCanvas, titleRect?.width || 1, titleRect?.height || 1);
+      }
       initEmitters();
       prefillCanvas();
     }
 
     function initEmitters() {
       emitters = [];
-      const count = Math.floor(canvas.width / 180);
+      const width = getPrimaryWidth();
+      const count = Math.max(4, Math.floor(width / 180));
       for (let i = 0; i < count; i++) {
         emitters.push({
-          x: Math.random() * canvas.width,
+          x: Math.random() * width,
           width: 8 + Math.random() * 40,
           power: 0.4 + Math.random() * 0.6,
           drift: (Math.random() - 0.5) * 0.1,
@@ -3223,34 +3246,34 @@
       ) / 3;
     }
 
-    function generateRow(t) {
-      const row = new Float32Array(canvas.width);
+    function generateRow(width, t) {
+      const row = new Float32Array(width);
       for (let x = 0; x < row.length; x++) {
         const grain = Math.random() * NOISE_LEVEL;
         const smooth = (smoothNoise(x, t) * 0.5 + 0.5) * 0.06;
         row[x] = grain + smooth;
       }
-      emitters.forEach(e => {
-        e.x += e.drift;
-        if (e.x < 0) e.x = canvas.width;
-        if (e.x > canvas.width) e.x = 0;
-        e.variationPhase += e.variationSpeed;
-        const powerMod = Math.sin(e.variationPhase) * 0.5 + 0.5;
-        const center = Math.floor(e.x);
-        const half = Math.floor(e.width / 2);
+      emitters.forEach((emitter) => {
+        emitter.x += emitter.drift;
+        if (emitter.x < 0) emitter.x = width;
+        if (emitter.x > width) emitter.x = 0;
+        emitter.variationPhase += emitter.variationSpeed;
+        const powerMod = Math.sin(emitter.variationPhase) * 0.5 + 0.5;
+        const center = Math.floor(emitter.x);
+        const half = Math.floor(emitter.width / 2);
         for (let i = -half; i <= half; i++) {
           const idx = center + i;
           if (idx >= 0 && idx < row.length) {
             const shape = Math.exp(-(i * i) / (2 * (half * 0.6) ** 2));
             const texture = smoothNoise(idx, t) * 0.15;
-            row[idx] += e.power * (0.6 + 0.4 * powerMod) * shape + texture;
+            row[idx] += emitter.power * (0.6 + 0.4 * powerMod) * shape + texture;
           }
         }
       });
       if (Math.random() < 0.01) {
-        const start = Math.floor(Math.random() * canvas.width);
-        const w = 40 + Math.random() * 120;
-        for (let i = 0; i < w; i++) {
+        const start = Math.floor(Math.random() * width);
+        const bandWidth = 40 + Math.random() * 120;
+        for (let i = 0; i < bandWidth; i++) {
           const idx = start + i;
           if (idx < row.length) row[idx] += 0.3 + Math.random() * 0.4;
         }
@@ -3258,21 +3281,37 @@
       return row;
     }
 
-    function putRow(row, y) {
-      const img = ctx.createImageData(canvas.width, 1);
-      for (let x = 0; x < canvas.width; x++) {
+    function putRow(targetCtx, width, row, y) {
+      if (!targetCtx || !width) return;
+      const img = targetCtx.createImageData(width, 1);
+      for (let x = 0; x < width; x++) {
         const [r, g, b] = getColor(row[x]);
         const i = x * 4;
-        img.data[i] = r; img.data[i + 1] = g; img.data[i + 2] = b; img.data[i + 3] = 255;
+        img.data[i] = r;
+        img.data[i + 1] = g;
+        img.data[i + 2] = b;
+        img.data[i + 3] = 255;
       }
-      ctx.putImageData(img, 0, y);
+      targetCtx.putImageData(img, 0, y);
+    }
+
+    function prefillTarget(targetCanvas, targetCtx, timeOffset) {
+      if (!targetCanvas || !targetCtx) return;
+      for (let y = targetCanvas.height - 1; y >= 0; y--) {
+        time += 0.02;
+        putRow(targetCtx, targetCanvas.width, generateRow(targetCanvas.width, time + timeOffset), y);
+      }
     }
 
     function prefillCanvas() {
-      for (let y = canvas.height - 1; y >= 0; y--) {
-        time += 0.02;
-        putRow(generateRow(time), y);
-      }
+      prefillTarget(authCanvas, authCtx, 0);
+      prefillTarget(titleCanvas, titleCtx, 0.35);
+    }
+
+    function drawTarget(targetCanvas, targetCtx, timeOffset) {
+      if (!targetCanvas || !targetCtx) return;
+      targetCtx.drawImage(targetCanvas, 0, 0, targetCanvas.width, targetCanvas.height, 0, 1, targetCanvas.width, targetCanvas.height);
+      putRow(targetCtx, targetCanvas.width, generateRow(targetCanvas.width, time + timeOffset), 0);
     }
 
     function draw() {
@@ -3282,8 +3321,8 @@
         const steps = Math.floor(scrollAccumulator);
         scrollAccumulator -= steps;
         for (let s = 0; s < steps; s++) {
-          ctx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 1, canvas.width, canvas.height);
-          putRow(generateRow(time), 0);
+          drawTarget(authCanvas, authCtx, 0);
+          drawTarget(titleCanvas, titleCtx, 0.35);
         }
       }
       if (running) {
@@ -3292,7 +3331,9 @@
     }
 
     const authScreen = document.getElementById('authScreen');
-    let started = false;
+    const shouldAnimateAuth = () => authScreen && !authScreen.classList.contains('hidden') && !document.hidden;
+    const shouldAnimateTitle = () => titleCanvas && !document.hidden && !document.body.classList.contains('auth-screen-active');
+    const shouldRun = () => shouldAnimateAuth() || shouldAnimateTitle();
 
     function start() {
       if (running) return;
@@ -3310,15 +3351,16 @@
       }
     }
 
-    // Start when auth screen becomes visible
     const observer = new MutationObserver(() => {
-      if (!authScreen.classList.contains('hidden') && !document.hidden) {
+      if (shouldRun()) {
         start();
       } else {
         stop();
       }
     });
-    observer.observe(authScreen, { attributes: true, attributeFilter: ['class'] });
+    if (authScreen) {
+      observer.observe(authScreen, { attributes: true, attributeFilter: ['class'] });
+    }
 
     window.addEventListener('resize', () => {
       if (started && running) {
@@ -3326,16 +3368,22 @@
         resize();
         running = true;
         draw();
+      } else if (titleCanvas && shouldAnimateTitle()) {
+        resize();
       }
     });
 
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) {
         stop();
-      } else if (!authScreen.classList.contains('hidden')) {
+      } else if (shouldRun()) {
         start();
       }
     });
+
+    if (shouldRun()) {
+      start();
+    }
   })();
   </script>
 
