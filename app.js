@@ -28190,6 +28190,7 @@ async function parseKmzFeatures(buffer, fileName) {
 }
 
 let _syncCesiumRafId = null;
+const _cesiumBillboardCache = new Map();
 function syncCesiumEntities() {
   if (!state.cesiumViewer) return;
   if (_syncCesiumRafId) return; // already queued — collapse into one call
@@ -28822,47 +28823,98 @@ function _syncCesiumEntitiesImmediate() {
     });
   }
 
+  const compositeIconToDataUrl = (framePath, mainPath, echelonPath, size = 128) => {
+    const key = `${framePath}|${mainPath}|${echelonPath}`;
+    if (_cesiumBillboardCache.has(key)) return Promise.resolve(_cesiumBillboardCache.get(key));
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    const loadImg = (src) => new Promise((resolve) => {
+      if (!src) { resolve(null); return; }
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => resolve(null);
+      img.src = src;
+    });
+    return Promise.all([loadImg(framePath), loadImg(mainPath), loadImg(echelonPath)])
+      .then(([frame, main, echelon]) => {
+        if (frame) ctx.drawImage(frame, 0, 0, size, size);
+        if (main)  ctx.drawImage(main,  0, 0, size, size);
+        if (echelon) ctx.drawImage(echelon, 0, 0, size, size);
+        const url = canvas.toDataURL("image/png");
+        _cesiumBillboardCache.set(key, url);
+        return url;
+      });
+  };
+
   const buildTacticalBillboardUrl = (object) => {
     const aff = normalizeTacticalAffiliation(object.affiliation);
     const type = normalizeToUnitType(object.unitType || deriveTacticalUnitTypeFromCotType(object.cotType, object.domain));
     const size = object.size || "battalion";
     const unit = normalizeToUnit({ id: 0, label: "", affiliation: aff, type, size, frameOnly: isGenericCotTrackType(object.cotType) });
-    const svgStr = ms2525Svg(unit);
-    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgStr)}`;
+    const framePath = resolveMilstdFramePath(unit);
+    const mainPath = unit.frameOnly ? null : resolveMilstdMainPath(unit);
+    const echelonPath = unit.frameOnly ? null : (MILSTD_ECHELON_PATHS[size] || null);
+    return compositeIconToDataUrl(framePath, mainPath, echelonPath, 128);
   };
 
   const addCesiumTacticalObject = (object, idPrefix, zIndexBase = 18) => {
     if (object.geometryType === "Point" && Array.isArray(object.coordinates) && object.coordinates.length >= 2) {
-      const iconUrl = buildTacticalBillboardUrl(object);
-      const iconSize = object.readOnly ? 36 : 44;
-      const markerPixelSize = iconSize;
-      safeAddEntity({
-        id: `${idPrefix}:${object.uid || object.id}`,
-        position: C.Cartesian3.fromDegrees(Number(object.coordinates[1]), Number(object.coordinates[0]), 0),
-        billboard: {
-          image: iconUrl,
-          width: iconSize,
-          height: iconSize,
-          heightReference: C.HeightReference.CLAMP_TO_GROUND,
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
-          verticalOrigin: C.VerticalOrigin.BOTTOM,
-          horizontalOrigin: C.HorizontalOrigin.CENTER,
-          scaleByDistance: new C.NearFarScalar(800, 1.0, 30000, 0.6),
-          translucencyByDistance: new C.NearFarScalar(1200, 1, 85000, 0.2),
-          distanceDisplayCondition: new C.DistanceDisplayCondition(0, 200000),
-          pixelOffset: new C.Cartesian2(0, 0),
-        },
-        label: {
-          ...buildCesiumLabelOptions({
-            lat: Number(object.coordinates[0]),
-            lon: Number(object.coordinates[1]),
-            text: object.name || object.designator || object.uid || "Track",
-            font: "bold 13px Bahnschrift",
+      const lat = Number(object.coordinates[0]);
+      const lon = Number(object.coordinates[1]);
+      const iconSize = object.readOnly ? 40 : 48;
+      const entityId = `${idPrefix}:${object.uid || object.id}`;
+      const labelOpts = buildCesiumLabelOptions({
+        lat, lon,
+        text: object.name || object.designator || object.uid || "Track",
+        font: "bold 13px Bahnschrift",
+        fillColor: C.Color.WHITE,
+        outlineColor: C.Color.BLACK,
+        outlineWidth: 5,
+        heightReference: C.HeightReference.CLAMP_TO_GROUND,
+        anchorMode: "right",
+        markerPixelSize: iconSize,
+      });
+      buildTacticalBillboardUrl(object).then((iconUrl) => {
+        if (!state.cesiumViewer) return;
+        const existing = state.cesiumViewer.entities.getById(entityId);
+        if (existing) state.cesiumViewer.entities.removeById(entityId);
+        state.cesiumViewer.entities.add({
+          id: entityId,
+          position: C.Cartesian3.fromDegrees(lon, lat, 0),
+          billboard: {
+            image: iconUrl,
+            width: iconSize,
+            height: iconSize,
             heightReference: C.HeightReference.CLAMP_TO_GROUND,
-            anchorMode: "right",
-            markerPixelSize,
-          }),
-        },
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+            verticalOrigin: C.VerticalOrigin.BOTTOM,
+            horizontalOrigin: C.HorizontalOrigin.CENTER,
+            scaleByDistance: new C.NearFarScalar(500, 1.0, 50000, 0.5),
+            distanceDisplayCondition: new C.DistanceDisplayCondition(0, 200000),
+          },
+          label: { ...labelOpts },
+        });
+      }).catch(() => {
+        // Fallback: plain colored point if image load fails
+        if (!state.cesiumViewer) return;
+        const existing = state.cesiumViewer.entities.getById(entityId);
+        if (existing) state.cesiumViewer.entities.removeById(entityId);
+        const color = C.Color.fromCssColorString(getTacticalAffiliationColor(object.affiliation));
+        state.cesiumViewer.entities.add({
+          id: entityId,
+          position: C.Cartesian3.fromDegrees(lon, lat, 0),
+          point: {
+            pixelSize: iconSize / 3,
+            color,
+            outlineColor: C.Color.WHITE,
+            outlineWidth: 2,
+            heightReference: C.HeightReference.CLAMP_TO_GROUND,
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          },
+          label: { ...labelOpts },
+        });
       });
       return;
     }
