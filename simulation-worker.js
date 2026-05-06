@@ -233,6 +233,12 @@ function runSimulation(payload, reportProgress = () => {}) {
   const lonStep = metersToLongitudeDegrees(gridMeters, asset.lat);
   const totalRows = Math.max(1, Math.floor((radiusMeters * 2) / gridMeters) + 1);
   const totalCols = totalRows;
+  const northStartMeters = -(((totalRows - 1) * gridMeters) / 2);
+  const eastStartMeters = -(((totalCols - 1) * gridMeters) / 2);
+  const southCenterMeters = northStartMeters;
+  const northCenterMeters = northStartMeters + ((totalRows - 1) * gridMeters);
+  const westCenterMeters = eastStartMeters;
+  const eastCenterMeters = eastStartMeters + ((totalCols - 1) * gridMeters);
   const totalCells = totalRows * totalCols;
   const rssi = new Float32Array(totalCells);
   const lineOfSight = new Uint8Array(totalCells);
@@ -246,13 +252,13 @@ function runSimulation(payload, reportProgress = () => {}) {
     stage: "Tracing RF paths...",
     detail: "0%",
   });
-  for (let rowIndex = 0, northMeters = -radiusMeters; rowIndex < totalRows; rowIndex += 1, northMeters += gridMeters) {
+  for (let rowIndex = 0, northMeters = northStartMeters; rowIndex < totalRows; rowIndex += 1, northMeters += gridMeters) {
     if (canceledSimulationRequestIds.has(requestId)) {
       canceledSimulationRequestIds.delete(requestId);
       throw new Error("SIMULATION_CANCELED");
     }
     const lat = asset.lat + metersToLatitudeDegrees(northMeters);
-    for (let colIndex = 0, eastMeters = -radiusMeters; colIndex < totalCols; colIndex += 1, eastMeters += gridMeters) {
+    for (let colIndex = 0, eastMeters = eastStartMeters; colIndex < totalCols; colIndex += 1, eastMeters += gridMeters) {
       if (canceledSimulationRequestIds.has(requestId)) {
         canceledSimulationRequestIds.delete(requestId);
         throw new Error("SIMULATION_CANCELED");
@@ -310,12 +316,12 @@ function runSimulation(payload, reportProgress = () => {}) {
     gridLonStepDeg: lonStep,
     sampleBounds: {
       sw: {
-        lat: asset.lat + metersToLatitudeDegrees(-radiusMeters) - (latStep / 2),
-        lon: asset.lon + metersToLongitudeDegrees(-radiusMeters, asset.lat) - (lonStep / 2),
+        lat: asset.lat + metersToLatitudeDegrees(southCenterMeters - (gridMeters / 2)),
+        lon: asset.lon + metersToLongitudeDegrees(westCenterMeters - (gridMeters / 2), asset.lat),
       },
       ne: {
-        lat: asset.lat + metersToLatitudeDegrees(radiusMeters) + (latStep / 2),
-        lon: asset.lon + metersToLongitudeDegrees(radiusMeters, asset.lat) + (lonStep / 2),
+        lat: asset.lat + metersToLatitudeDegrees(northCenterMeters + (gridMeters / 2)),
+        lon: asset.lon + metersToLongitudeDegrees(eastCenterMeters + (gridMeters / 2), asset.lat),
       },
     },
     rssi,

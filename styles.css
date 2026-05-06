@@ -7636,7 +7636,7 @@ body.emitter-modal-open {
   width: 143px;
   height: 143px;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
   border-radius: 2px;
   pointer-events: none;
@@ -7657,7 +7657,7 @@ body.emitter-modal-open {
 }
 .to-unit-icon > .milstd-stack,
 .to-unit-icon > .ms2525-icon {
-  transform: translateX(12px);
+  transform: none;
 }
 .milstd-layer {
   position: absolute;

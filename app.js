@@ -21541,7 +21541,7 @@ function consumeSimulationResult(payload) {
     rssi,
     lineOfSight,
     validMask,
-    bounds: leafletBoundsFromData(payload.asset, payload.radiusMeters),
+    bounds: leafletBoundsFromSampleBounds(payload.sampleBounds) ?? leafletBoundsFromData(payload.asset, payload.radiusMeters),
   };
 
   if (existingViewshed) {
@@ -23172,6 +23172,16 @@ function leafletBoundsFromData(asset, radiusMeters) {
   return L.latLngBounds(
     [bounds.sw.lat, bounds.sw.lon],
     [bounds.ne.lat, bounds.ne.lon],
+  );
+}
+
+function leafletBoundsFromSampleBounds(sampleBounds) {
+  if (!sampleBounds?.sw || !sampleBounds?.ne) {
+    return null;
+  }
+  return L.latLngBounds(
+    [sampleBounds.sw.lat, sampleBounds.sw.lon],
+    [sampleBounds.ne.lat, sampleBounds.ne.lon],
   );
 }
 
@@ -28159,9 +28169,9 @@ function _syncCesiumEntitiesImmediate() {
           transparent: true,
           color: C.Color.WHITE.withAlpha(opacity),
         }),
-        classificationType: overlayClassificationType,
+        classificationType: C.ClassificationType.BOTH,
         zIndex: 9,
-        height: 0,
+        heightReference: C.HeightReference.CLAMP_TO_GROUND,
       },
     });
   });
@@ -29760,7 +29770,7 @@ const CoordinateGridLayer = L.Layer.extend({
 const CanvasViewshedLayer = L.Layer.extend({
   initialize(options) {
     this.options = options;
-    this._canvas = null;
+    this._overlay = null;
     this._frame = null;
     this._colorCache = null;
     this._rasterCanvas = null;
@@ -29771,32 +29781,26 @@ const CanvasViewshedLayer = L.Layer.extend({
 
   onAdd(map) {
     this._map = map;
-    this._canvas = L.DomUtil.create("canvas", "leaflet-viewshed-canvas");
-    const pane = map.getPane(this.options.pane || "overlayPane");
-    pane.appendChild(this._canvas);
-    this._ensureColorCache();
-    this._canvas.style.opacity = String(this.options.opacity ?? 0.7);
-    this._canvas.style.mixBlendMode = "screen";
-    map.on("moveend zoomend resize", this._scheduleRedraw, this);
     this._scheduleRedraw();
   },
 
   onRemove(map) {
-    map.off("moveend zoomend resize", this._scheduleRedraw, this);
     if (this._frame !== null) {
       window.cancelAnimationFrame(this._frame);
       this._frame = null;
     }
-    if (this._canvas?.parentNode) {
-      this._canvas.parentNode.removeChild(this._canvas);
+    if (this._overlay) {
+      map.removeLayer(this._overlay);
     }
-    this._canvas = null;
+    this._overlay = null;
+    this._map = null;
   },
 
   setOpacity(opacity) {
     this.options.opacity = opacity;
-    if (this._canvas) {
-      this._canvas.style.opacity = String(opacity);
+    if (this._overlay) {
+      this._overlay.setOpacity(opacity);
+      this._styleOverlayElement();
     }
   },
 
@@ -29854,89 +29858,53 @@ const CanvasViewshedLayer = L.Layer.extend({
 
     this._frame = window.requestAnimationFrame(() => {
       this._frame = null;
-      this._redraw();
+      this._refreshOverlay();
     });
   },
 
-  _redraw() {
-    if (!this._map || !this._canvas) {
+  _styleOverlayElement() {
+    const element = this._overlay?.getElement?.();
+    if (!element) {
       return;
     }
+    element.style.mixBlendMode = "screen";
+    element.style.filter = "blur(0.35px)";
+    element.style.pointerEvents = "none";
+    element.style.opacity = String(this.options.opacity ?? 0.7);
+    element.style.transformOrigin = "center center";
+    element.style.imageRendering = "auto";
+  },
 
+  _refreshOverlay() {
+    if (!this._map) {
+      return;
+    }
     this._ensureRasterCache();
-
-    const size = this._map.getSize();
-    const topLeft = this._map.containerPointToLayerPoint([0, 0]);
-    this._canvas.width = size.x;
-    this._canvas.height = size.y;
-    this._canvas.style.width = `${size.x}px`;
-    this._canvas.style.height = `${size.y}px`;
-    this._canvas.style.position = "absolute";
-    this._canvas.style.pointerEvents = "none";
-    L.DomUtil.setPosition(this._canvas, topLeft);
-
-    const context = this._canvas.getContext("2d");
-    context.clearRect(0, 0, size.x, size.y);
-    context.imageSmoothingEnabled = true;
-    context.imageSmoothingQuality = "high";
-
-    const sampleBounds = this.options.sampleBounds;
     const rasterCanvas = this._rasterCanvas;
-    const rows = Number(this.options.rows) || 0;
-    const cols = Number(this.options.cols) || 0;
-
-    if (rows > 1
-        && cols > 1
-        && sampleBounds?.sw
-        && sampleBounds?.ne
-        && rasterCanvas) {
-      const pxNW = this._map.latLngToLayerPoint([sampleBounds.ne.lat, sampleBounds.sw.lon]).subtract(topLeft);
-      const pxSE = this._map.latLngToLayerPoint([sampleBounds.sw.lat, sampleBounds.ne.lon]).subtract(topLeft);
-      const x0 = Math.max(0, Math.floor(pxNW.x));
-      const y0 = Math.max(0, Math.floor(pxNW.y));
-      const x1 = Math.min(size.x, Math.ceil(pxSE.x));
-      const y1 = Math.min(size.y, Math.ceil(pxSE.y));
-      if (x1 <= x0 || y1 <= y0) {
-        return;
+    const bounds = leafletBoundsFromSampleBounds(this.options.sampleBounds);
+    if (!rasterCanvas || !bounds) {
+      if (this._overlay) {
+        this._map.removeLayer(this._overlay);
+        this._overlay = null;
       }
-
-      context.save();
-      context.filter = "blur(0.35px)";
-      context.drawImage(rasterCanvas, x0, y0, x1 - x0, y1 - y0);
-      context.restore();
       return;
     }
 
-    const latitudes = this.options.latitudes ?? [];
-    const longitudes = this.options.longitudes ?? [];
-    const colors = this._colorCache ?? [];
-    const bounds = this._map.getBounds();
-    const latHalf = this.options.gridLatStepDeg / 2;
-    const lonHalf = this.options.gridLonStepDeg / 2;
-    const south = bounds.getSouth();
-    const north = bounds.getNorth();
-    const west = bounds.getWest();
-    const east = bounds.getEast();
-    const wrapsDateLine = west > east;
-
-    for (let index = 0; index < latitudes.length; index += 1) {
-      const lat = latitudes[index];
-      const lon = longitudes[index];
-      const inLongitude = wrapsDateLine
-        ? lon >= west || lon <= east
-        : lon >= west && lon <= east;
-      if (lat < south || lat > north || !inLongitude || !colors[index]) {
-        continue;
-      }
-
-      const northWest = this._map.latLngToLayerPoint([lat + latHalf, lon - lonHalf]).subtract(topLeft);
-      const southEast = this._map.latLngToLayerPoint([lat - latHalf, lon + lonHalf]).subtract(topLeft);
-      const width = Math.max(1, southEast.x - northWest.x);
-      const height = Math.max(1, southEast.y - northWest.y);
-      const color = colors[index];
-      context.fillStyle = `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${color[3].toFixed(3)})`;
-      context.fillRect(northWest.x, northWest.y, width, height);
+    const dataUrl = rasterCanvas.toDataURL("image/png");
+    if (!this._overlay) {
+      this._overlay = L.imageOverlay(dataUrl, bounds, {
+        pane: this.options.pane || "overlayPane",
+        opacity: this.options.opacity ?? 0.7,
+        interactive: false,
+        className: "leaflet-viewshed-image",
+      });
+      this._overlay.addTo(this._map);
+    } else {
+      this._overlay.setBounds(bounds);
+      this._overlay.setUrl(dataUrl);
+      this._overlay.setOpacity(this.options.opacity ?? 0.7);
     }
+    this._styleOverlayElement();
   },
 });
 
