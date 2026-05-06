@@ -2111,6 +2111,7 @@ const dom = {
   aiAttachmentMenu: document.querySelector("#aiAttachmentMenu"),
   aiAddCurrentMapViewOption: document.querySelector("#aiAddCurrentMapViewOption"),
   aiAddMapContextOption: document.querySelector("#aiAddMapContextOption"),
+  aiAddToContextOption: document.querySelector("#aiAddToContextOption"),
   aiAddFilesOption: document.querySelector("#aiAddFilesOption"),
   aiContextPicker: document.querySelector("#aiContextPicker"),
   aiContextPickerSearch: document.querySelector("#aiContextPickerSearch"),
@@ -4310,6 +4311,123 @@ function getDefaultPlanSpawnPosition() {
   return {
     x: Math.max(80, (canvas.clientWidth / 2) - (_toState.panX / Math.max(_toState.zoom, 0.01))),
     y: Math.max(80, (canvas.clientHeight / 2) - (_toState.panY / Math.max(_toState.zoom, 0.01))),
+  };
+}
+
+function buildPlanUnitContentId(unitId) {
+  return `plan-unit:${unitId}`;
+}
+
+function getPlanUnitById(unitId) {
+  return _toState.units.find((unit) => Number(unit.id) === Number(unitId)) ?? null;
+}
+
+function findPlanUnitByReference(reference) {
+  const normalized = String(reference ?? "").trim();
+  if (!normalized) {
+    return null;
+  }
+  const idMatch = normalized.startsWith("plan-unit:")
+    ? Number(normalized.slice("plan-unit:".length))
+    : Number(normalized);
+  if (Number.isFinite(idMatch)) {
+    const byId = getPlanUnitById(idMatch);
+    if (byId) {
+      return byId;
+    }
+  }
+  const lowered = normalized.toLowerCase();
+  const direct = _toState.units.find((unit) =>
+    String(unit.label || "").trim().toLowerCase() === lowered
+    || String(unit.designator || "").trim().toLowerCase() === lowered,
+  );
+  if (direct) {
+    return direct;
+  }
+  return _toState.units.find((unit) => {
+    const haystack = [
+      unit.label,
+      unit.designator,
+      buildDefaultToUnitLabel(unit.size, unit.type),
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return haystack.includes(lowered);
+  }) ?? null;
+}
+
+function getPlanUnitParentLink(unitId) {
+  return _toState.links.find((link) => Number(link.childId) === Number(unitId)) ?? null;
+}
+
+function getPlanUnitChildLinks(unitId) {
+  return _toState.links.filter((link) => Number(link.parentId) === Number(unitId));
+}
+
+function serializePlanUnitForAi(unit) {
+  const normalized = normalizeToUnit(unit);
+  const linkedTactical = getTacticalObjectByPlanUnitId(normalized.id);
+  const linkedAssets = state.assets
+    .filter((asset) => Number(asset.toUnitId) === Number(normalized.id))
+    .map((asset) => ({
+      id: asset.id,
+      contentId: `asset:${asset.id}`,
+      name: asset.name,
+      force: asset.force,
+      emitterType: asset.type,
+      frequencyMHz: roundAiNumber(asset.frequencyMHz, 3),
+      lat: roundAiNumber(asset.lat),
+      lon: roundAiNumber(asset.lon),
+    }));
+  const domain = normalizeTacticalDomain(linkedTactical?.domain || resolveMilstdDomain(normalized));
+  const affiliation = normalizeTacticalAffiliation(linkedTactical?.affiliation || normalized.affiliation);
+  const cotType = linkedTactical?.cotType || buildDefaultCotTypeForTacticalObject("unit", affiliation, domain);
+  const parentLink = getPlanUnitParentLink(normalized.id);
+  const children = getPlanUnitChildLinks(normalized.id)
+    .map((link) => getPlanUnitById(link.childId))
+    .filter(Boolean);
+  return {
+    contentId: buildPlanUnitContentId(normalized.id),
+    kind: "plan-unit",
+    id: normalized.id,
+    name: normalized.label || normalized.designator || buildDefaultToUnitLabel(normalized.size, normalized.type),
+    label: normalized.label,
+    designator: normalized.designator,
+    affiliation,
+    type: normalized.type,
+    size: normalized.size,
+    domain,
+    objectClass: "unit",
+    cotType,
+    sidc: linkedTactical?.sidc || "",
+    takSchema: {
+      objectClass: "unit",
+      domain,
+      affiliation,
+      unitType: normalized.type,
+      size: normalized.size,
+      cotType,
+      sidc: linkedTactical?.sidc || "",
+    },
+    hierarchy: {
+      parentId: parentLink?.parentId ?? null,
+      parentName: parentLink ? (getPlanUnitById(parentLink.parentId)?.label || getPlanUnitById(parentLink.parentId)?.designator || null) : null,
+      childIds: children.map((child) => child.id),
+      childNames: children.map((child) => child.label || child.designator || `Unit ${child.id}`),
+    },
+    linkedAssets,
+    linkedTactical: linkedTactical ? {
+      id: linkedTactical.id,
+      contentId: buildTacticalContentId(linkedTactical.id),
+      name: linkedTactical.name,
+      coordinates: Array.isArray(linkedTactical.coordinates) && linkedTactical.coordinates.length >= 2
+        ? {
+            lat: roundAiNumber(linkedTactical.coordinates[0]),
+            lon: roundAiNumber(linkedTactical.coordinates[1]),
+          }
+        : null,
+    } : null,
   };
 }
 
@@ -8359,6 +8477,16 @@ function wireEvents() {
     e.stopPropagation();
     dom.aiAttachmentMenu.classList.add("hidden");
     void addCurrentMapViewAttachment();
+  });
+  dom.aiAddToContextOption?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    dom.aiAttachmentMenu.classList.add("hidden");
+    openToPicker({
+      mode: "ai-context",
+      selectedUnitIds: state.ai.contextItemIds
+        .filter((contentId) => contentId.startsWith("plan-unit:"))
+        .map((contentId) => contentId.slice("plan-unit:".length)),
+    });
   });
   dom.aiAddMapContextOption.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -14734,8 +14862,41 @@ function buildUnifiedLookupRecords() {
     .filter((entry) => entry.id && !entry.id.startsWith("folder:"))
     .map((entry) => buildCompactMapContentRecord(entry.id, entry))
     .filter(Boolean);
+  const planUnitRecords = _toState.units
+    .map((unit) => {
+      const serialized = serializePlanUnitForAi(unit);
+      if (!serialized) {
+        return null;
+      }
+      return finalizeLookupRecord({
+        id: serialized.contentId,
+        contentId: serialized.contentId,
+        name: serialized.label || serialized.designator || serialized.name,
+        subtitle: [serialized.affiliation, serialized.type, serialized.size].filter(Boolean).join(" | "),
+        kind: "plan-unit",
+        path: "Plan View / TO",
+        aliases: [
+          serialized.label,
+          serialized.designator,
+          serialized.name,
+          serialized.type,
+          serialized.cotType,
+        ].filter(Boolean),
+        lat: serialized.linkedTactical?.coordinates?.lat,
+        lon: serialized.linkedTactical?.coordinates?.lon,
+        source: "plan-view",
+      });
+    })
+    .filter(Boolean);
   const seen = new Set(mapRecords.map((record) => record.id));
   const merged = [...mapRecords];
+  planUnitRecords.forEach((record) => {
+    if (seen.has(record.id)) {
+      return;
+    }
+    seen.add(record.id);
+    merged.push(record);
+  });
   getRecentPlaceLookupRecords().forEach((record) => {
     if (seen.has(record.id)) {
       return;
@@ -14773,6 +14934,7 @@ function buildCompactAiScenarioSummary(contextIds = []) {
       importedItems: state.importedItems.length,
       viewsheds: state.viewsheds.length,
       terrains: state.terrains.length,
+      planUnits: _toState.units.length,
     },
     assets: state.assets.slice(0, 40).map((asset) => {
       const toUnit = asset.toUnitId ? _toState.units.find(u => u.id === asset.toUnitId) : null;
@@ -14842,6 +15004,7 @@ function buildCompactAiScenarioSummary(contextIds = []) {
       propagationModel: viewshed.propagationModel,
       radiusMeters: roundAiNumber(viewshed.radiusMeters, 1),
     })),
+    planUnits: _toState.units.slice(0, 80).map((unit) => serializePlanUnitForAi(unit)),
     terrain: terrain ? {
       id: terrain.id,
       name: terrain.name,
@@ -15713,6 +15876,10 @@ function serializeMapContentForAi(contentId) {
     return serializeImportedItemForAi(state.importedItems.find((item) => `imported:${item.id}` === contentId));
   }
 
+  if (contentId.startsWith("plan-unit:")) {
+    return serializePlanUnitForAi(getPlanUnitById(contentId.slice("plan-unit:".length)));
+  }
+
   if (contentId.startsWith("tactical:")) {
     return serializeTacticalObjectForAi(getTacticalObjectById(contentId.slice("tactical:".length)));
   }
@@ -15751,6 +15918,10 @@ function getMapContentName(contentId) {
   }
   if (contentId.startsWith("imported:")) {
     return state.importedItems.find((i) => `imported:${i.id}` === contentId)?.name ?? null;
+  }
+  if (contentId.startsWith("plan-unit:")) {
+    const unit = getPlanUnitById(contentId.slice("plan-unit:".length));
+    return unit?.label || unit?.designator || (unit ? buildDefaultToUnitLabel(unit.size, unit.type) : null);
   }
   if (contentId.startsWith("tactical:")) {
     return getTacticalObjectById(contentId.slice("tactical:".length))?.name ?? null;
@@ -16613,6 +16784,7 @@ async function callAiPlanningAssistant(prompt, images = [], files = [], contextI
     `The inferred specialist agent mode is ${activeAgentProfile.label}.`,
     activeAgentProfile.systemGuidance,
     "Each asset in the scenario may have a 'toUnit' field linking it to a unit in the Table of Organization (TO). When answering questions about why specific units can or cannot communicate, cross-reference their linked emitter's frequencyMHz, waveform, power, elevation, and distance. The TO also contains parent-child hierarchy via toLinks. Use this to answer questions like 'why can't Kilo 1st Platoon talk to Kilo 3rd Platoon' by finding their linked emitters and diagnosing the RF path.",
+    "The scenario summary also includes planUnits from the PLAN/TO view. Each planUnit carries its name, designator, affiliation, unit type, size, hierarchy, and TAK/CoT schema. When the user asks to place or plot units from the PLAN view onto the map, use those planUnits as your source of truth.",
     "For map-item location questions ('where is X', 'what grid is X', 'find X'), always answer in a complete sentence: '<name> is located at <coordinate>.' — never return just a raw coordinate with no context.",
     "Keep responses terse by default. Do not preface answers with setup text like 'Map lookup results' or 'Based on the scenario'.",
     "For a single location answer, one sentence is enough. For ambiguous lookups, list at most 3 short candidates each on its own line with name and coordinate.",
@@ -16635,6 +16807,7 @@ async function callAiPlanningAssistant(prompt, images = [], files = [], contextI
     "  add-asset             → lat, lon OR contentId/contentRef/inside/nameRef + placementMode + distanceMeters, emitterType, name, force?, unit?, frequencyMHz, powerW, antennaHeightM, antennaGainDbi, receiverSensitivityDbm, systemLossDb, notes?",
     "  update-asset          → assetId (exact id), lat?, lon?, emitterType?, name?, force?, unit?, frequencyMHz?, powerW?, antennaHeightM?, antennaGainDbi?, receiverSensitivityDbm?, systemLossDb?",
     "  remove-asset          → assetId (exact id)",
+    "  place-plan-unit       → planUnitId or unitId/name/designator + lat, lon OR contentId/contentRef/inside/nameRef + placementMode + distanceMeters, optional name/designator/remarks. Use this when plotting units that already exist in the PLAN view so the tactical marker inherits the correct icon, affiliation, type, and size.",
     "  place-marker          → lat, lon, name?, color? (#hex), size? (pt, default 24, range 8–64), outlineColor? (#hex), outlineWidth? (px) — drops a styled point marker on the map. USE THIS (not draw-shape) whenever the user asks to mark a city, location, landmark, or place a point/pin/marker.",
     "  draw-shape            → shapeType (circle|rectangle|polyline|polygon), name?, color?, coordinates [{lat,lon}], radiusM? (circle only), fillOpacity?, weight?",
     "  update-shape          → shapeId or name (use exact item name or id), newName?, color?, fillOpacity?, weight?, lineStyle?, radiusM? (resize circle by regenerating from its center), coordinates?, lat?, lon?, size?, icon?, outlineColor?, outlineWidth? — also updates point markers",
@@ -17752,6 +17925,7 @@ function buildAiScenarioSummary() {
     rx: recommendation.rx?.name ?? recommendation.rx?.id,
     score: roundAiNumber(recommendation.score, 4),
   }));
+  const planUnits = _toState.units.map((unit) => serializePlanUnitForAi(unit));
   const importedItems = state.importedItems.map((item) => serializeImportedItemForAi(item));
   const activeAiContext = serializeMapContentForAi(state.ai.activeContextId);
 
@@ -17811,6 +17985,7 @@ function buildAiScenarioSummary() {
       resultCount: state.siteStudy.results.length,
     },
     assets,
+    planUnits,
     viewsheds,
     importedItems,
     planning,
@@ -18009,6 +18184,84 @@ async function executeAiActions(actions) {
   }
 
   return { results, placedAssets, terrainSampleResults };
+}
+
+function resolveAiPlacementCoordinates(action) {
+  let lat = Number(action.lat ?? action.coordinates?.lat);
+  let lon = Number(action.lon ?? action.lng ?? action.coordinates?.lon);
+  let placementSource = "";
+  let placementRelation = "";
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+    const placementReference = action.contentId
+      ?? action.contentRef
+      ?? action.relativeTo
+      ?? action.reference
+      ?? action.anchorRef
+      ?? action.inside
+      ?? action.within
+      ?? action.nameRef
+      ?? action.targetArea;
+    const placementMode = action.placementMode
+      ?? action.relativePosition
+      ?? action.relation
+      ?? (typeof action.withinMeters !== "undefined" ? "near" : "inside");
+    const placement = resolveMapPlacementPoint(placementReference, placementMode, action);
+    if (!placement) {
+      return null;
+    }
+    lat = placement.lat;
+    lon = placement.lon;
+    placementSource = placement.source;
+    placementRelation = placement.relation;
+  }
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+    return null;
+  }
+  return { lat, lon, placementSource, placementRelation };
+}
+
+function upsertTacticalObjectFromPlanUnit(unit, action, coordinates) {
+  const existing = getTacticalObjectByPlanUnitId(unit.id);
+  const domain = normalizeTacticalDomain(existing?.domain || resolveMilstdDomain(unit));
+  const affiliation = normalizeTacticalAffiliation(unit.affiliation);
+  const name = String(action.name ?? action.label ?? unit.label ?? unit.designator ?? buildDefaultToUnitLabel(unit.size, unit.type)).trim();
+  const designator = String(action.designator ?? unit.designator ?? "").trim();
+  const nextObject = normalizeTacticalObject({
+    ...(existing || {}),
+    source: existing?.source || "manual",
+    objectClass: "unit",
+    geometryType: "Point",
+    coordinates: [coordinates.lat, coordinates.lon],
+    domain,
+    affiliation,
+    unitType: normalizeToUnitType(unit.type),
+    size: unit.size || existing?.size || "battalion",
+    name,
+    designator,
+    cotType: existing?.cotType || buildDefaultCotTypeForTacticalObject("unit", affiliation, domain),
+    remarks: typeof action.remarks === "string" ? action.remarks.trim() : (existing?.remarks || ""),
+    linkedPlanUnitId: unit.id,
+    linkedAssetIds: existing?.linkedAssetIds || [],
+    lastModified: nowIso(),
+  });
+  const existingIndex = state.tacticalObjects.findIndex((entry) => entry.id === nextObject.id);
+  if (existingIndex >= 0) {
+    state.tacticalObjects.splice(existingIndex, 1, nextObject);
+  } else {
+    state.tacticalObjects.push(nextObject);
+    const contentId = buildTacticalContentId(nextObject.id);
+    if (!state.mapContentOrder.includes(contentId)) {
+      state.mapContentOrder.push(contentId);
+    }
+  }
+  renderTacticalObjectLayer(nextObject);
+  renderMapContents();
+  syncCesiumEntities();
+  saveMapState();
+  if (nextObject.streamToTak !== false) {
+    void publishTakTacticalObject(nextObject);
+  }
+  return nextObject;
 }
 
 async function executeAiAction(action, { placedAssetIds = [], touchedObjects = [] } = {}) {
@@ -18483,6 +18736,23 @@ async function executeAiAction(action, { placedAssetIds = [], touchedObjects = [
     });
     rememberAiActionObject(touchedObjects, buildAiRecentActionObject("marker", item));
     return `Placed marker "${pointName}" at ${lat.toFixed(5)}, ${lon.toFixed(5)}.`;
+  }
+
+  if (action.type === "place-plan-unit") {
+    const unitReference = action.planUnitId ?? action.unitId ?? action.name ?? action.label ?? action.designator;
+    const unit = resolveToUnitReference(unitReference);
+    if (!unit) {
+      return `I couldn't place the plan unit${unitReference ? ` "${unitReference}"` : ""} because it was not found in the Plan view.`;
+    }
+    const placement = resolveAiPlacementCoordinates(action);
+    if (!placement) {
+      return `I couldn't place ${unit.label || unit.designator || "that unit"} because no valid map position or placement reference was provided.`;
+    }
+    const tactical = upsertTacticalObjectFromPlanUnit(unit, action, placement);
+    const placementLabel = placement.placementSource
+      ? ` ${String(placement.placementRelation || "near").replace(/-/g, " ")} ${placement.placementSource}`
+      : "";
+    return `Placed [**${tactical.name}**](${buildTacticalContentId(tactical.id)}) from Plan unit "${unit.label || unit.designator || unit.id}"${placementLabel} at ${placement.lat.toFixed(5)}, ${placement.lon.toFixed(5)}.`;
   }
 
   if (action.type === "draw-shape") {
@@ -19094,6 +19364,12 @@ function getDrawnImportedItemByReference(reference) {
 function resolveToUnitReference(reference) {
   const ref = String(reference ?? "").trim();
   if (ref) {
+    if (ref.startsWith("plan-unit:")) {
+      const directPlanUnit = getPlanUnitById(ref.slice("plan-unit:".length));
+      if (directPlanUnit) {
+        return directPlanUnit;
+      }
+    }
     const refLow = ref.toLowerCase();
     const direct = _toState.units.find((unit) =>
       String(unit.id) === ref
@@ -19143,6 +19419,12 @@ function resolveMapContentId(reference) {
   const normalizedReference = normalizeContentReference(reference);
   if (!normalizedReference) {
     return null;
+  }
+  if (normalizedReference.startsWith("plan-unit:")) {
+    const planUnit = findPlanUnitByReference(normalizedReference);
+    if (planUnit) {
+      return buildPlanUnitContentId(planUnit.id);
+    }
   }
   renderSiteStudyContentOptions();
   markMapLookupRecordsDirty();
@@ -31202,6 +31484,26 @@ function decorateAnalyticsUsernameCell(cell, userRecord) {
   if (!cell) {
     return;
   }
+
+  if (contentId.startsWith("plan-unit:")) {
+    const unit = getPlanUnitById(contentId.slice("plan-unit:".length));
+    if (!unit) {
+      return;
+    }
+    const focusUnit = () => {
+      initPlanViewIfNeeded();
+      _toState.selectedUnit = unit.id;
+      renderToView();
+      centerPlanUnitInView(unit.id);
+    };
+    if (state.ui?.currentView !== "plan") {
+      switchView("plan", true);
+      requestAnimationFrame(focusUnit);
+    } else {
+      focusUnit();
+    }
+    return;
+  }
   const label = String(cell.textContent || "").trim();
   if (!label) {
     return;
@@ -31941,16 +32243,22 @@ function esc(s) {
 
 // The emitter currently being edited (set when modal opens)
 let _currentEmitterEditId = null;
+const _toPickerState = {
+  mode: "emitter-link",
+  selectedUnitIds: new Set(),
+};
 
 function initToPickerModal() {
   const linkBtn   = document.getElementById("emLinkToToBtn");
   const closeBtn  = document.getElementById("toPickerCloseBtn");
   const cancelBtn = document.getElementById("toPickerCancelBtn");
+  const confirmBtn = document.getElementById("toPickerConfirmBtn");
   const unlinkBtn = document.getElementById("emToUnlinkBtn");
 
   linkBtn?.addEventListener("click", openToPicker);
   closeBtn?.addEventListener("click", closeToPicker);
   cancelBtn?.addEventListener("click", closeToPicker);
+  confirmBtn?.addEventListener("click", confirmToPickerSelection);
   unlinkBtn?.addEventListener("click", () => {
     unlinkEmitterFromTo();
     updateEmitterToLinkBadge(null);
@@ -31962,14 +32270,37 @@ function initToPickerModal() {
   });
 }
 
-function openToPicker() {
+function configureToPickerModal(mode = "emitter-link") {
+  const title = document.getElementById("toPickerTitle");
+  const instructions = document.querySelector(".to-picker-instructions");
+  const confirmBtn = document.getElementById("toPickerConfirmBtn");
+  if (mode === "ai-context") {
+    if (title) title.textContent = "Add TO Units to AI Context";
+    if (instructions) instructions.textContent = "Click one or more units below to add them to the AI prompt context. Click again to deselect, then confirm.";
+    confirmBtn?.classList.remove("hidden");
+  } else {
+    if (title) title.textContent = "Link to Table of Organization";
+    if (instructions) instructions.textContent = "Click a unit below to link this emitter to it. The emitter will inherit the unit's name, callsign, and affiliation.";
+    confirmBtn?.classList.add("hidden");
+  }
+}
+
+function openToPicker(options = {}) {
   const modal = document.getElementById("toPickerModal");
   if (!modal) return;
+  _toPickerState.mode = options.mode === "ai-context" ? "ai-context" : "emitter-link";
+  _toPickerState.selectedUnitIds = new Set(
+    (options.selectedUnitIds ?? []).map((value) => Number(value)).filter((value) => Number.isFinite(value)),
+  );
+  configureToPickerModal(_toPickerState.mode);
   modal.classList.remove("hidden");
   renderToPickerCanvas();
 }
 
 function closeToPicker() {
+  _toPickerState.mode = "emitter-link";
+  _toPickerState.selectedUnitIds.clear();
+  configureToPickerModal("emitter-link");
   document.getElementById("toPickerModal")?.classList.add("hidden");
 }
 
@@ -32030,7 +32361,10 @@ function renderToPickerCanvas() {
     el.dataset.id = unit.id;
     el.style.left = unit.x + "px";
     el.style.top  = unit.y + "px";
-    if (unit.id === currentToId) el.classList.add("to-picker-selected");
+    if ((_toPickerState.mode === "emitter-link" && unit.id === currentToId)
+      || (_toPickerState.mode === "ai-context" && _toPickerState.selectedUnitIds.has(unit.id))) {
+      el.classList.add("to-picker-selected");
+    }
 
     // Show linked-emitter indicator for units already claimed by another emitter
     const otherLink = getEmitterLinkedToUnit(unit.id);
@@ -32042,7 +32376,7 @@ function renderToPickerCanvas() {
         <span class="to-unit-label">${esc(unit.label)}</span>
       </div>
     `;
-    el.addEventListener("click", () => selectToUnitForEmitter(unit, el));
+    el.addEventListener("click", () => handleToPickerUnitClick(unit, el));
     world.appendChild(el);
   }
 
@@ -32051,6 +32385,36 @@ function renderToPickerCanvas() {
     fitPickerView(tempUnits);
     renderPickerEdges(tempUnits, linkSnap, edgeSvg);
   });
+}
+
+function handleToPickerUnitClick(unit, el) {
+  if (_toPickerState.mode === "ai-context") {
+    if (_toPickerState.selectedUnitIds.has(unit.id)) {
+      _toPickerState.selectedUnitIds.delete(unit.id);
+      el.classList.remove("to-picker-selected");
+    } else {
+      _toPickerState.selectedUnitIds.add(unit.id);
+      el.classList.add("to-picker-selected");
+    }
+    return;
+  }
+  selectToUnitForEmitter(unit, el);
+}
+
+function confirmToPickerSelection() {
+  if (_toPickerState.mode !== "ai-context") {
+    closeToPicker();
+    return;
+  }
+  const preservedContextIds = state.ai.contextItemIds.filter((contentId) => !contentId.startsWith("plan-unit:"));
+  state.ai.contextItemIds = [
+    ...preservedContextIds,
+    ...[..._toPickerState.selectedUnitIds].map((unitId) => buildPlanUnitContentId(unitId)),
+  ];
+  syncAiContextChips();
+  syncAttachmentBar();
+  renderAiContextPicker();
+  closeToPicker();
 }
 
 function renderPickerEdges(units, links, svg) {
@@ -32470,36 +32834,72 @@ function serializeToPlanState() {
   };
 }
 
-function renderToCustomSymbolShapes(type, stroke = "#000000", milstd = false) {
+function buildMilstdCustomLayout(unit = null) {
+  const isMilstdDiamond = Boolean(unit)
+    && resolveMilstdDomain(unit) === "ground"
+    && unit.affiliation !== "friendly";
+  if (!isMilstdDiamond) {
+    return {
+      clipPath: "",
+      reconLine: `<line x1="126.5" y1="516" x2="485.5" y2="276" stroke-width="5" stroke-linecap="round"/>`,
+      xLines: `
+        <line x1="126.5" y1="276" x2="485.5" y2="516" stroke-width="5" stroke-linecap="round"/>
+        <line x1="126.5" y1="516" x2="485.5" y2="276" stroke-width="5" stroke-linecap="round"/>
+      `,
+      oval: `
+        <path d="M250.552 441c-22.895 0-41.457-19.98-41.457-44.626 0-24.646 18.562-44.624 41.457-44.624" fill="none" stroke-width="5" stroke-linecap="round"/>
+        <path d="M361.448 351.75c22.896 0 41.457 19.979 41.457 44.624 0 24.645-18.562 44.626-41.457 44.626" fill="none" stroke-width="5" stroke-linecap="round"/>
+        <line x1="250.552" y1="351.75" x2="361.448" y2="351.75" stroke-width="5" stroke-linecap="round"/>
+        <line x1="250.552" y1="441" x2="361.448" y2="441" stroke-width="5" stroke-linecap="round"/>
+      `,
+      canopy: `<path d="M228 322c0-32 78-32 78 0c0-32 78-32 78 0" fill="none" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>`,
+    };
+  }
+
+  return {
+    clipPath: `<clipPath id="milstd-custom-clip"><polygon points="306,294 408,396 306,498 204,396"/></clipPath>`,
+    reconLine: `<line x1="220" y1="482" x2="392" y2="310" stroke-width="5" stroke-linecap="round"/>`,
+    xLines: `
+      <line x1="220" y1="310" x2="392" y2="482" stroke-width="5" stroke-linecap="round"/>
+      <line x1="220" y1="482" x2="392" y2="310" stroke-width="5" stroke-linecap="round"/>
+    `,
+    oval: `
+      <path d="M266 435c-19.5 0-35.5-17.5-35.5-39s16-39 35.5-39" fill="none" stroke-width="5" stroke-linecap="round"/>
+      <path d="M346 357c19.5 0 35.5 17.5 35.5 39s-16 39-35.5 39" fill="none" stroke-width="5" stroke-linecap="round"/>
+      <line x1="266" y1="357" x2="346" y2="357" stroke-width="5" stroke-linecap="round"/>
+      <line x1="266" y1="435" x2="346" y2="435" stroke-width="5" stroke-linecap="round"/>
+    `,
+    canopy: `<path d="M244 336c0-23 62-23 62 0c0-23 62-23 62 0" fill="none" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>`,
+  };
+}
+
+function renderToCustomSymbolShapes(type, stroke = "#000000", milstd = false, unit = null) {
   const normalizedType = normalizeToUnitType(type);
   if (!["infantry", "light_infantry", "mechanized_infantry", "airborne_infantry", "armor", "recon"].includes(normalizedType)) {
     return "";
   }
   if (milstd) {
-    const reconLine = `<line x1="126.5" y1="516" x2="485.5" y2="276" stroke="${stroke}" stroke-width="5" stroke-linecap="round"/>`;
-    const xLines = `
-      <line x1="126.5" y1="276" x2="485.5" y2="516" stroke="${stroke}" stroke-width="5" stroke-linecap="round"/>
-      <line x1="126.5" y1="516" x2="485.5" y2="276" stroke="${stroke}" stroke-width="5" stroke-linecap="round"/>
-    `;
-    const oval = `
-      <path d="M250.552 441c-22.895 0-41.457-19.98-41.457-44.626 0-24.646 18.562-44.624 41.457-44.624" fill="none" stroke="${stroke}" stroke-width="5" stroke-linecap="round"/>
-      <path d="M361.448 351.75c22.896 0 41.457 19.979 41.457 44.624 0 24.645-18.562 44.626-41.457 44.626" fill="none" stroke="${stroke}" stroke-width="5" stroke-linecap="round"/>
-      <line x1="250.552" y1="351.75" x2="361.448" y2="351.75" stroke="${stroke}" stroke-width="5" stroke-linecap="round"/>
-      <line x1="250.552" y1="441" x2="361.448" y2="441" stroke="${stroke}" stroke-width="5" stroke-linecap="round"/>
-    `;
-    const canopy = `<path d="M228 322c0-32 78-32 78 0c0-32 78-32 78 0" fill="none" stroke="${stroke}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>`;
+    const layout = buildMilstdCustomLayout(unit);
+    const applyStroke = (markup) => markup.replaceAll('stroke-width="5"', `stroke="${stroke}" stroke-width="5"`);
+    const reconLine = applyStroke(layout.reconLine);
+    const xLines = applyStroke(layout.xLines);
+    const oval = applyStroke(layout.oval);
+    const canopy = applyStroke(layout.canopy);
+    const wrap = (markup) => layout.clipPath
+      ? `<defs>${layout.clipPath}</defs><g clip-path="url(#milstd-custom-clip)">${markup}</g>`
+      : markup;
     switch (normalizedType) {
       case "recon":
-        return reconLine;
+        return wrap(reconLine);
       case "infantry":
       case "light_infantry":
-        return xLines;
+        return wrap(xLines);
       case "mechanized_infantry":
-        return `${xLines}${oval}`;
+        return wrap(`${xLines}${oval}`);
       case "airborne_infantry":
-        return `${xLines}${canopy}`;
+        return wrap(`${xLines}${canopy}`);
       case "armor":
-        return oval;
+        return wrap(oval);
       default:
         return "";
     }
@@ -32535,7 +32935,7 @@ function renderToCustomSymbolShapes(type, stroke = "#000000", milstd = false) {
 }
 
 function renderMilstdCustomLayer(unit) {
-  const symbolShapes = renderToCustomSymbolShapes(unit?.type, "#000000", true);
+  const symbolShapes = renderToCustomSymbolShapes(unit?.type, "#000000", true, unit);
   if (!symbolShapes) return "";
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 612 792" class="milstd-layer" aria-hidden="true">${symbolShapes}</svg>`;
 }
@@ -33090,6 +33490,17 @@ function applyToTransform() {
   renderToEdges();
 }
 
+function centerPlanUnitInView(unitId) {
+  const unit = getPlanUnitById(unitId);
+  const canvas = document.getElementById("toCanvas");
+  if (!unit || !canvas) {
+    return;
+  }
+  _toState.panX = (canvas.clientWidth / 2) - (Number(unit.x) * _toState.zoom);
+  _toState.panY = (canvas.clientHeight / 2) - (Number(unit.y) * _toState.zoom);
+  applyToTransform();
+}
+
 function setToZoom(z) {
   _toState.zoom = Math.max(0.2, Math.min(4, z));
   applyToTransform();
@@ -33166,10 +33577,13 @@ function toFitView() {
 function buildPlanAiContext() {
   return JSON.stringify({
     view: "plan",
-    units: _toState.units.map(u => ({
-      id: u.id, label: u.label, affiliation: u.affiliation, type: u.type, size: u.size,
+    units: _toState.units.map((unit) => serializePlanUnitForAi(unit)),
+    links: _toState.links.map((link) => ({
+      parentId: link.parentId,
+      childId: link.childId,
+      parentName: getPlanUnitById(link.parentId)?.label || getPlanUnitById(link.parentId)?.designator || "",
+      childName: getPlanUnitById(link.childId)?.label || getPlanUnitById(link.childId)?.designator || "",
     })),
-    links: _toState.links,
   });
 }
 
