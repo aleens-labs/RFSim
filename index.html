@@ -3308,10 +3308,10 @@
       prefillTarget(titleCanvas, titleCtx, 0.35);
     }
 
-    function drawTarget(targetCanvas, targetCtx, timeOffset) {
+    function drawTarget(targetCanvas, targetCtx, timeOffset, speedMultiplier = 1) {
       if (!targetCanvas || !targetCtx) return;
       targetCtx.drawImage(targetCanvas, 0, 0, targetCanvas.width, targetCanvas.height, 0, 1, targetCanvas.width, targetCanvas.height);
-      putRow(targetCtx, targetCanvas.width, generateRow(targetCanvas.width, time + timeOffset), 0);
+      putRow(targetCtx, targetCanvas.width, generateRow(targetCanvas.width, (time * speedMultiplier) + timeOffset), 0);
     }
 
     function draw() {
@@ -3322,7 +3322,7 @@
         scrollAccumulator -= steps;
         for (let s = 0; s < steps; s++) {
           drawTarget(authCanvas, authCtx, 0);
-          drawTarget(titleCanvas, titleCtx, 0.35);
+          drawTarget(titleCanvas, titleCtx, 0.35, 0.5);
         }
       }
       if (running) {

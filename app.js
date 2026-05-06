@@ -20499,6 +20499,100 @@ function renderSiteStudyResults() {
   renderSiteStudyDetail();
 }
 
+function getSiteStudyResult(index = state.siteStudy.activeResultIndex) {
+  return state.siteStudy.results[index] ?? null;
+}
+
+function getSiteStudyScoreTone(score) {
+  if (score >= 85) return "is-good";
+  if (score >= 65) return "is-mid";
+  return "is-risk";
+}
+
+function formatSiteStudyValue(value, digits = 1, suffix = "", fallback = "N/A") {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return fallback;
+  }
+  return `${numericValue.toFixed(digits)}${suffix}`;
+}
+
+function getSiteStudyAggregateMetrics(result) {
+  const legs = Array.isArray(result?.legs) ? result.legs : [];
+  const analysis = result?.analysis ?? {};
+  const toNumbers = (values) => values.filter((value) => Number.isFinite(Number(value))).map((value) => Number(value));
+  const minValue = (values, fallback = null) => {
+    const items = toNumbers(values);
+    return items.length ? Math.min(...items) : fallback;
+  };
+  const maxValue = (values, fallback = null) => {
+    const items = toNumbers(values);
+    return items.length ? Math.max(...items) : fallback;
+  };
+  return {
+    legCount: legs.length,
+    blockedLegCount: legs.filter((leg) => leg.passesPolicy === false || leg.geometricLosClear === false).length,
+    worstFadeMarginDb: minValue(legs.map((leg) => leg.fadeMarginDb), analysis.fadeMarginDb ?? analysis.backhaulFadeMarginDb ?? null),
+    worstClearanceM: minValue(legs.map((leg) => leg.minClearanceM), analysis.minClearanceM ?? null),
+    worstFresnelClearanceM: minValue(legs.map((leg) => leg.minFresnelClearanceM), analysis.minFresnelClearanceM ?? null),
+    strongestRssiDbm: maxValue(legs.map((leg) => leg.rssiDbm), analysis.rssiDbm ?? analysis.backhaulRssiDbm ?? null),
+    longestLegKm: maxValue(legs.map((leg) => leg.distanceKm), result?.distanceKm ?? null),
+    visibilityPercent: Number.isFinite(Number(analysis.visibilityPercent)) ? Number(analysis.visibilityPercent) : null,
+    maskingPercent: Number.isFinite(Number(analysis.maskingPercent)) ? Number(analysis.maskingPercent) : null,
+    candidateCount: Number.isFinite(Number(analysis.candidateCount)) ? Number(analysis.candidateCount) : null,
+    objectiveSampleCount: Number.isFinite(Number(analysis.objectiveSampleCount)) ? Number(analysis.objectiveSampleCount) : null,
+    threatSampleCount: Number.isFinite(Number(analysis.threatSampleCount)) ? Number(analysis.threatSampleCount) : null,
+  };
+}
+
+function getSiteStudyAssessment(result) {
+  const metrics = getSiteStudyAggregateMetrics(result);
+  const strengths = [];
+  const watchouts = [];
+  const score = Number(result?.score) || 0;
+  const mode = result?.modeLabel || "";
+
+  if (score >= 85) strengths.push("Ranks as a strong overall fit against the current study constraints.");
+  else if (score >= 65) strengths.push("Usable candidate, but it should still be compared against the higher-ranked options.");
+  else watchouts.push("Overall score is weak, so this should be treated as a fallback or constraint-driven option.");
+
+  if (Number.isFinite(metrics.worstFadeMarginDb)) {
+    if (metrics.worstFadeMarginDb >= 15) strengths.push("Link margin is healthy enough for a more resilient connection.");
+    else if (metrics.worstFadeMarginDb < 6) watchouts.push("Low fade margin leaves limited resilience against clutter, weather, or antenna error.");
+  }
+  if (Number.isFinite(metrics.worstClearanceM)) {
+    if (metrics.worstClearanceM >= 5) strengths.push("Line-of-sight clearance is comfortably positive.");
+    else if (metrics.worstClearanceM < 0) watchouts.push("At least one evaluated leg is blocked under the current clearance policy.");
+  }
+  if (Number(result?.requiredMastHeightM) > Number(state.siteStudy.maxMastHeightM)) {
+    watchouts.push("Required mast height exceeds the configured maximum mast setting.");
+  } else if (Number(result?.requiredMastHeightM) >= Math.max(0, Number(state.siteStudy.maxMastHeightM) * 0.8)) {
+    watchouts.push("This candidate runs close to the configured mast ceiling, so installation flexibility is limited.");
+  } else {
+    strengths.push("Required mast height stays inside the configured deployment envelope.");
+  }
+  if (mode === "Sensor" && Number.isFinite(metrics.visibilityPercent)) {
+    if (metrics.visibilityPercent >= 70) strengths.push("Objective visibility is broad enough to support useful sensing coverage.");
+    else watchouts.push("Objective visibility is partial; validate blind sectors before using this site.");
+  }
+  if (mode === "Command Post" && Number.isFinite(metrics.maskingPercent)) {
+    if (metrics.maskingPercent >= 60) strengths.push("Threat-side masking is strong relative to the sampled threat area.");
+    else watchouts.push("Threat masking is limited, so concealment benefits may not justify the site.");
+  }
+
+  const decision = strengths[0] || watchouts[0] || "Review the link legs and tradeoffs before promoting this candidate.";
+  return { metrics, strengths, watchouts, decision };
+}
+
+function renderSiteStudyMetricCards(items) {
+  return items.map(([label, value]) => `
+    <div class="site-study-metric-card">
+      <span class="site-study-metric-label">${escapeHtml(label)}</span>
+      <strong class="site-study-metric-value">${escapeHtml(value)}</strong>
+    </div>
+  `).join("");
+}
+
 function buildSiteStudyVisualRows(result, metrics) {
   const rows = [
     {
@@ -20690,7 +20784,7 @@ function closeSiteStudyAnalysisModal() {
   dom.siteStudyAnalysisModal?.classList.add("hidden");
 }
 
-function renderSiteStudyDetail() {
+function renderSiteStudyDetailLegacy() {
   if (!dom.siteStudyDetail) {
     return;
   }
@@ -20739,7 +20833,7 @@ function renderSiteStudyDetail() {
   }
 }
 
-function focusSiteStudyResult(index) {
+function focusSiteStudyResultLegacy(index) {
   const result = state.siteStudy.results[index];
   if (!result) {
     return;
@@ -20755,7 +20849,7 @@ function focusSiteStudyResult(index) {
   state.siteStudy.markerRefs[index]?.openPopup?.();
 }
 
-function renderSiteStudyResults() {
+function renderSiteStudyResultsLegacy() {
   if (!dom.siteStudyList || !dom.siteStudySummary) {
     return;
   }
