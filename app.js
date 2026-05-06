@@ -1812,6 +1812,8 @@ const dom = {
   settingsDocumentationNav: document.querySelector("#settingsDocumentationNav"),
   settingsDocumentationContent: document.querySelector("#settingsDocumentationContent"),
   autoFetchWeatherOnSimToggle: document.querySelector("#autoFetchWeatherOnSimToggle"),
+  tacticalMarkerSizeInput: document.querySelector("#tacticalMarkerSizeInput"),
+  tacticalMarkerSizeValue: document.querySelector("#tacticalMarkerSizeValue"),
   measurementUnitsSelect: document.querySelector("#measurementUnitsSelect"),
   themeSelect: document.querySelector("#themeSelect"),
   coordinateSystemSelect: document.querySelector("#coordinateSystemSelect"),
@@ -2255,6 +2257,7 @@ const state = {
     labelDefaultLine: false,
     defaultTakStreamEnabled: true,
     autoFetchWeatherOnSim: false,
+    tacticalMarkerSize: 60,
   },
   weather: {
     temperatureC: 20,
@@ -3431,14 +3434,21 @@ function getTacticalShapeStyle(object) {
   });
 }
 
+function getTacticalMarkerSize() {
+  return state.settings?.tacticalMarkerSize ?? 60;
+}
+
 function buildTacticalPointIcon(object) {
   const unit = getTacticalDisplayUnit(object);
-  const html = `<div class="tactical-map-icon tactical-map-icon--labelled">${renderToUnitIcon(unit)}</div>`;
+  const sz = getTacticalMarkerSize();
+  const half = sz / 2;
+  const tooltipOffset = -(half + 8);
+  const html = `<div class="tactical-map-icon tactical-map-icon--labelled" style="width:${sz}px;height:${sz}px;">${renderToUnitIcon(unit)}</div>`;
   return L.divIcon({
     className: "tactical-leaflet-icon",
     html,
-    iconSize: [60, 60],
-    iconAnchor: [30, 30],
+    iconSize: [sz, sz],
+    iconAnchor: [half, half],
     popupAnchor: [0, -20],
   });
 }
@@ -3468,7 +3478,7 @@ function applyTacticalLabel(object, layer) {
     permanent: true,
     direction: isTacticalPointGeometry(object.geometryType) ? "top" : "center",
     className: `tactical-map-label${isTacticalPointGeometry(object.geometryType) ? " tactical-map-label--point" : ""}`,
-    offset: isTacticalPointGeometry(object.geometryType) ? [0, -38] : [0, 0],
+    offset: isTacticalPointGeometry(object.geometryType) ? [0, -(getTacticalMarkerSize() / 2 + 8)] : [0, 0],
     interactive: false,
   });
 }
@@ -3536,6 +3546,11 @@ function renderTacticalObjectLayer(object) {
     layer.addTo(state.map);
   }
   return layer;
+}
+
+function refreshAllTacticalLayers() {
+  (state.tacticalObjects || []).forEach((obj) => renderTacticalObjectLayer(obj));
+  state.takRuntime?.objectsByUid?.forEach((obj) => renderTakLiveLayer(obj));
 }
 
 function removeTacticalObjectLayer(objectId) {
@@ -8411,6 +8426,10 @@ function wireEvents() {
   dom.takCaCertPasswordInput?.addEventListener("change", onTakDraftFieldChanged);
   dom.takDefaultStreamToggle?.addEventListener("change", onSettingsChanged);
   dom.autoFetchWeatherOnSimToggle?.addEventListener("change", onSettingsChanged);
+  dom.tacticalMarkerSizeInput?.addEventListener("input", () => {
+    if (dom.tacticalMarkerSizeValue) dom.tacticalMarkerSizeValue.textContent = dom.tacticalMarkerSizeInput.value + "px";
+    onSettingsChanged();
+  });
   dom.takClientCertInput?.addEventListener("change", () => onTakCertificateSelected("clientCert", dom.takClientCertInput).catch((error) => setStatus(error.message, true)));
   dom.takCaCertInput?.addEventListener("change", () => onTakCertificateSelected("caCert", dom.takCaCertInput).catch((error) => setStatus(error.message, true)));
   dom.takDeleteClientCertBtn?.addEventListener("click", () => deleteTakDraftCertificate("clientCert"));
@@ -8674,6 +8693,9 @@ function loadSettings() {
     if (typeof parsed.labelDefaultLine === "boolean") state.settings.labelDefaultLine = parsed.labelDefaultLine;
     if (typeof parsed.defaultTakStreamEnabled === "boolean") state.settings.defaultTakStreamEnabled = parsed.defaultTakStreamEnabled;
     if (typeof parsed.autoFetchWeatherOnSim === "boolean") state.settings.autoFetchWeatherOnSim = parsed.autoFetchWeatherOnSim;
+    if (typeof parsed.tacticalMarkerSize === "number" && parsed.tacticalMarkerSize >= 30 && parsed.tacticalMarkerSize <= 120) {
+      state.settings.tacticalMarkerSize = parsed.tacticalMarkerSize;
+    }
   } catch {
     window.localStorage.removeItem(SETTINGS_STORAGE_KEY);
   }
@@ -9330,8 +9352,12 @@ function onSettingsChanged() {
   if (dom.labelDefaultLineToggle) state.settings.labelDefaultLine = dom.labelDefaultLineToggle.checked;
   if (dom.takDefaultStreamToggle) state.settings.defaultTakStreamEnabled = dom.takDefaultStreamToggle.checked;
   if (dom.autoFetchWeatherOnSimToggle) state.settings.autoFetchWeatherOnSim = dom.autoFetchWeatherOnSimToggle.checked;
+  const prevMarkerSize = state.settings.tacticalMarkerSize;
+  if (dom.tacticalMarkerSizeInput) state.settings.tacticalMarkerSize = Number(dom.tacticalMarkerSizeInput.value);
   persistSettings();
+  const markerSizeChanged = state.settings.tacticalMarkerSize !== prevMarkerSize;
   applySettings();
+  if (markerSizeChanged) refreshAllTacticalLayers();
 }
 
 function applySettings() {
@@ -9349,6 +9375,11 @@ function applySettings() {
     dom.autoFetchWeatherOnSimToggle.checked = Boolean(state.settings.autoFetchWeatherOnSim);
     const box = dom.autoFetchWeatherOnSimToggle.closest(".settings-check-row")?.querySelector(".settings-xbox");
     if (box) box.textContent = state.settings.autoFetchWeatherOnSim ? "✕" : "";
+  }
+  if (dom.tacticalMarkerSizeInput) {
+    const sz = state.settings.tacticalMarkerSize ?? 60;
+    dom.tacticalMarkerSizeInput.value = sz;
+    if (dom.tacticalMarkerSizeValue) dom.tacticalMarkerSizeValue.textContent = sz + "px";
   }
   dom.cesiumPhotorealisticTilesToggle.value = state.settings.cesiumPhotorealisticTilesEnabled ? "on" : "off";
   dom.cesiumOsmBuildingsToggle.value = state.settings.cesiumOsmBuildingsEnabled ? "on" : "off";
