@@ -2814,6 +2814,10 @@ function buildEmitterProfilePayloadFromProgram(emitterType = "", programKey = ""
   });
 }
 
+function getDefaultEmitterProgramKey(emitterType = "") {
+  return Object.keys(EMITTER_LIBRARY[emitterType]?.programs || {})[0] || "";
+}
+
 function buildEmitterProfilePayloadFromAsset(asset) {
   const ext = asset?.ext && typeof asset.ext === "object" ? asset.ext : {};
   return normalizeEmitterProfilePayload({
@@ -7552,7 +7556,6 @@ const emitterModal = {
   saveSavedProfileBtn: null,
   saveProfileCopyBtn: null,
   deleteSavedProfileBtn: null,
-  savedProfileSummary: null,
   tabs: null,
   panels: null,
   fields: {},
@@ -7574,7 +7577,6 @@ const emitterModal = {
     this.saveSavedProfileBtn = document.querySelector("#emitterProfileSaveBtn");
     this.saveProfileCopyBtn = document.querySelector("#emitterProfileSaveCopyBtn");
     this.deleteSavedProfileBtn = document.querySelector("#emitterProfileDeleteBtn");
-    this.savedProfileSummary = document.querySelector("#emitterProfileSummary");
     this.tabs    = [...document.querySelectorAll(".emitter-tab")];
     this.panels  = [...document.querySelectorAll(".emitter-tab-panel")];
 
@@ -7609,7 +7611,7 @@ const emitterModal = {
     this.emitterTypeSelect.addEventListener("change", () => this.onEmitterTypeChange());
 
     // Program → load profile
-    this.programSelect.addEventListener("change", () => this.onProgramChange());
+    this.programSelect?.addEventListener("change", () => this.onProgramChange());
     this.savedProfileSearchInput?.addEventListener("input", () => {
       state.emitterProfiles.searchText = this.savedProfileSearchInput.value.trim().toLowerCase();
       this.renderSavedProfileLibrary();
@@ -7827,38 +7829,7 @@ const emitterModal = {
   },
 
   updateSavedProfileStatus() {
-    if (!this.savedProfileSummary) {
-      return;
-    }
-    const libraryMessage = state.emitterProfiles.loading
-      ? "Loading saved emitter profiles..."
-      : state.emitterProfiles.statusMessage;
-    const payload = this.readFields();
-    let message = libraryMessage || "Save this emitter configuration to reuse it across scenarios.";
-    if (this.currentSavedProfileLink?.id) {
-      const linked = findEmitterProfileById(this.currentSavedProfileLink.id);
-      if (linked) {
-        if (payloadsEqual(payload, linked.profile)) {
-          if ((Number(this.currentSavedProfileLink.version) || 0) < linked.version) {
-            message = `Emitter uses ${linked.name} v${this.currentSavedProfileLink.version}; saved profile v${linked.version} is available. Apply it to update this emitter.`;
-          } else {
-            message = `Linked to saved profile ${linked.name} v${linked.version}.`;
-          }
-        } else {
-          message = `Current form diverges from saved profile ${linked.name}. Saving these edits will detach the saved-profile link unless you reapply it.`;
-        }
-      } else if (this.originalAssetProfileLink?.id && this.originalAssetPayload && payloadsEqual(payload, this.originalAssetPayload)) {
-        message = `Linked profile ${this.originalAssetProfileLink.name || this.originalAssetProfileLink.id} is no longer in the library. This emitter keeps its resolved values.`;
-      } else {
-        message = `Linked profile ${this.currentSavedProfileLink.name || this.currentSavedProfileLink.id} is missing. Saving edited values will detach that saved-profile link.`;
-      }
-    } else {
-      const selected = findEmitterProfileById(this.savedProfileSelect?.value || state.emitterProfiles.activeProfileId || "");
-      if (selected) {
-        message = `Selected profile ${selected.name} v${selected.version}. ${formatEmitterProfileListMeta(selected)}`;
-      }
-    }
-    this.savedProfileSummary.textContent = message;
+    return;
   },
 
   async saveCurrentProfileToLibrary({ saveAsCopy = false } = {}) {
@@ -7964,27 +7935,35 @@ const emitterModal = {
     const key = this.emitterTypeSelect.value;
     const emitter = EMITTER_LIBRARY[key];
     const sel = this.programSelect;
-    sel.innerHTML = "";
+    if (sel) {
+      sel.innerHTML = "";
+    }
     if (!emitter) {
-      sel.disabled = true;
-      sel.innerHTML = '<option value="">— Manual —</option>';
+      if (sel) {
+        sel.disabled = true;
+        sel.innerHTML = '<option value="">� Manual �</option>';
+      }
       this.libSummary.innerHTML = "<p>Configure all parameters manually.</p>";
       this.onFormChanged();
       return;
     }
-    sel.disabled = false;
-    Object.entries(emitter.programs).forEach(([pKey, prog]) => {
-      const opt = document.createElement("option");
-      opt.value = pKey;
-      opt.textContent = prog.label;
-      sel.appendChild(opt);
-    });
-    this.onProgramChange();
+    const defaultProgramKey = getDefaultEmitterProgramKey(key);
+    if (sel) {
+      sel.disabled = false;
+      Object.entries(emitter.programs).forEach(([pKey, prog]) => {
+        const opt = document.createElement("option");
+        opt.value = pKey;
+        opt.textContent = prog.label;
+        sel.appendChild(opt);
+      });
+      sel.value = defaultProgramKey;
+    }
+    this.onProgramChange(defaultProgramKey);
   },
 
-  onProgramChange() {
+  onProgramChange(forcedProgramKey = "") {
     const emitterType = this.emitterTypeSelect.value;
-    const progKey  = this.programSelect.value;
+    const progKey  = forcedProgramKey || this.programSelect?.value || getDefaultEmitterProgramKey(emitterType);
     const emitter  = EMITTER_LIBRARY[emitterType];
     const prog     = emitter?.programs[progKey];
     if (!prog) return;
@@ -7993,11 +7972,10 @@ const emitterModal = {
     this.libSummary.innerHTML = `
       <strong>${emitter.label}</strong><br>
       <em>${prog.label}</em><br>
-      <span>${prog.rf.frequencyMHz} MHz · ${prog.tx.powerW} W · ${prog.antenna.gainDbi} dBi · ${prog.rf.waveform}</span>
+      <span>${prog.rf.frequencyMHz} MHz � ${prog.tx.powerW} W � ${prog.antenna.gainDbi} dBi � ${prog.rf.waveform}</span>
     `;
     this.updateSavedProfileStatus();
   },
-
   applyPayload(payload) {
     const profile = normalizeEmitterProfilePayload(payload);
     const f = this.fields;
@@ -8014,14 +7992,15 @@ const emitterModal = {
           opt.textContent = prog.label;
           this.programSelect.appendChild(opt);
         });
-        this.programSelect.value = profile.programKey || this.programSelect.value || "";
+        this.programSelect.value = profile.programKey || this.programSelect.value || getDefaultEmitterProgramKey(profile.emitterType);
       } else {
         this.programSelect.innerHTML = '<option value="">— Manual —</option>';
       }
     }
     if (profile.emitterType && EMITTER_LIBRARY[profile.emitterType]) {
       const emitter = EMITTER_LIBRARY[profile.emitterType];
-      const program = emitter.programs?.[profile.programKey];
+      const summaryProgramKey = profile.programKey || getDefaultEmitterProgramKey(profile.emitterType);
+      const program = emitter.programs?.[summaryProgramKey];
       this.libSummary.innerHTML = program
         ? `<strong>${emitter.label}</strong><br><em>${program.label}</em><br><span>${program.rf.frequencyMHz} MHz · ${program.tx.powerW} W · ${program.antenna.gainDbi} dBi · ${program.rf.waveform}</span>`
         : `<strong>${emitter.label}</strong><br><span>Saved custom configuration based on this emitter family.</span>`;
@@ -8099,8 +8078,10 @@ const emitterModal = {
 
   resetToDefaults() {
     this.libSummary.innerHTML = "<p>Select an emitter type and program to auto-fill parameters, or configure manually below.</p>";
-    this.programSelect.disabled = true;
-    this.programSelect.innerHTML = '<option value="">Select an emitter type first</option>';
+    if (this.programSelect) {
+      this.programSelect.disabled = true;
+      this.programSelect.innerHTML = '<option value="">Select an emitter type first</option>';
+    }
     this.applyPayload(createDefaultEmitterProfilePayload());
   },
 
@@ -8210,7 +8191,7 @@ const emitterModal = {
     const b = (id) => f[id]?.checked ?? false;
     const iconVal = v("emIcon") || "radio";
     const emitterType = this.emitterTypeSelect?.value || "";
-    const programKey = this.programSelect?.value || "";
+    const programKey = this.programSelect?.value || getDefaultEmitterProgramKey(emitterType);
     return normalizeEmitterProfilePayload({
       emitterType,
       programKey,
@@ -37640,4 +37621,9 @@ init().catch((error) => {
   console.error(error);
   setStatus(`Startup failed: ${error.message}`, true);
 });
+
+
+
+
+
 
