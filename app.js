@@ -11596,7 +11596,7 @@ function switchView(view, skipAnimation) {
 
   // Update toggle UI immediately
   if (dom.viewModeToggle) {
-    const viewIndex = { plan: 0, emitters: 1, map: 2, topology: 3, analyze: 4 };
+    const viewIndex = { plan: 0, emitters: 1, topology: 1, map: 2, analyze: 3 };
     dom.viewModeToggle.querySelectorAll(".view-mode-tab").forEach(tab => {
       tab.classList.toggle("active", tab.dataset.view === view);
       tab.setAttribute("aria-selected", String(tab.dataset.view === view));
@@ -11661,7 +11661,7 @@ function afterSwitchView(view) {
 
 function initViewModeToggle() {
   if (!dom.viewModeToggle) return;
-  const viewIndex = { plan: 0, emitters: 1, map: 2, topology: 3, analyze: 4 };
+  const viewIndex = { plan: 0, emitters: 1, topology: 1, map: 2, analyze: 3 };
   dom.viewModeToggle.addEventListener("click", (e) => {
     const tab = e.target.closest(".view-mode-tab");
     if (!tab) return;
