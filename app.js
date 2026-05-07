@@ -144,6 +144,148 @@ const EXTERNAL_RESOURCE_URLS = {
 const _externalScriptPromises = new Map();
 const _externalStylePromises = new Map();
 let _analyticsInitialized = false;
+let _uiTextRepairObserver = null;
+let _uiTextRepairQueued = false;
+
+const CP1252_REVERSE_BYTE_MAP = new Map([
+  ["€", 0x80], ["‚", 0x82], ["ƒ", 0x83], ["„", 0x84], ["…", 0x85], ["†", 0x86], ["‡", 0x87],
+  ["ˆ", 0x88], ["‰", 0x89], ["Š", 0x8a], ["‹", 0x8b], ["Œ", 0x8c], ["Ž", 0x8e], ["‘", 0x91],
+  ["’", 0x92], ["“", 0x93], ["”", 0x94], ["•", 0x95], ["–", 0x96], ["—", 0x97], ["˜", 0x98],
+  ["™", 0x99], ["š", 0x9a], ["›", 0x9b], ["œ", 0x9c], ["ž", 0x9e], ["Ÿ", 0x9f],
+]);
+const MOJIBAKE_PATTERN = /(?:Ã.|Â.|â.|�)/;
+const _utf8TextDecoder = typeof TextDecoder === "function"
+  ? new TextDecoder("utf-8", { fatal: false })
+  : null;
+
+function cp1252CharToByte(char) {
+  const code = char.codePointAt(0);
+  if (code <= 0xff) {
+    return code;
+  }
+  return CP1252_REVERSE_BYTE_MAP.get(char) ?? null;
+}
+
+function decodeMojibakeOnce(value) {
+  if (!_utf8TextDecoder) {
+    return value;
+  }
+  const bytes = [];
+  for (const char of String(value ?? "")) {
+    const byte = cp1252CharToByte(char);
+    if (byte == null) {
+      return value;
+    }
+    bytes.push(byte);
+  }
+  try {
+    return _utf8TextDecoder.decode(Uint8Array.from(bytes));
+  } catch {
+    return value;
+  }
+}
+
+function repairMojibakeText(value) {
+  let text = String(value ?? "");
+  if (!text || !MOJIBAKE_PATTERN.test(text)) {
+    return text;
+  }
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (!MOJIBAKE_PATTERN.test(text)) {
+      break;
+    }
+    const decoded = decodeMojibakeOnce(text);
+    if (!decoded || decoded === text) {
+      break;
+    }
+    text = decoded;
+  }
+  return text
+    .replace(/\uFFFD/g, "")
+    .replace(/Â(?=\s|[.,;:!?)}\]>"'`]|$)/g, "");
+}
+
+function repairElementTextArtifacts(root = document.body) {
+  if (!root) {
+    return;
+  }
+  const textNodes = [];
+  if (root.nodeType === Node.TEXT_NODE) {
+    textNodes.push(root);
+  } else if (root.nodeType === Node.ELEMENT_NODE || root === document.body) {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    let current = walker.nextNode();
+    while (current) {
+      textNodes.push(current);
+      current = walker.nextNode();
+    }
+  }
+  textNodes.forEach((node) => {
+    const repaired = repairMojibakeText(node.nodeValue);
+    if (repaired !== node.nodeValue) {
+      node.nodeValue = repaired;
+    }
+  });
+
+  const elementTargets = [];
+  if (root.nodeType === Node.ELEMENT_NODE) {
+    elementTargets.push(root, ...root.querySelectorAll("*"));
+  }
+  const attrNames = ["placeholder", "title", "aria-label", "data-label"];
+  elementTargets.forEach((element) => {
+    attrNames.forEach((attrName) => {
+      const current = element.getAttribute?.(attrName);
+      if (current == null) {
+        return;
+      }
+      const repaired = repairMojibakeText(current);
+      if (repaired !== current) {
+        element.setAttribute(attrName, repaired);
+      }
+    });
+  });
+}
+
+function scheduleUiTextRepair(root = document.body) {
+  if (_uiTextRepairQueued) {
+    return;
+  }
+  _uiTextRepairQueued = true;
+  window.requestAnimationFrame(() => {
+    _uiTextRepairQueued = false;
+    repairElementTextArtifacts(root);
+  });
+}
+
+function initUiTextRepair() {
+  if (_uiTextRepairObserver || typeof MutationObserver !== "function") {
+    scheduleUiTextRepair();
+    return;
+  }
+  scheduleUiTextRepair();
+  _uiTextRepairObserver = new MutationObserver((mutations) => {
+    mutations.forEach((mutation) => {
+      if (mutation.type === "characterData") {
+        repairElementTextArtifacts(mutation.target);
+        return;
+      }
+      if (mutation.type === "attributes") {
+        repairElementTextArtifacts(mutation.target);
+        return;
+      }
+      mutation.addedNodes.forEach((node) => {
+        repairElementTextArtifacts(node);
+      });
+    });
+  });
+  _uiTextRepairObserver.observe(document.body, {
+    subtree: true,
+    childList: true,
+    characterData: true,
+    attributes: true,
+    attributeFilter: ["placeholder", "title", "aria-label", "data-label"],
+  });
+}
 
 function loadExternalScript(src) {
   if (_externalScriptPromises.has(src)) {
@@ -1835,6 +1977,23 @@ const dom = {
   emittersCountValue: document.querySelector("#emittersCountValue"),
   emittersLinkedValue: document.querySelector("#emittersLinkedValue"),
   emittersVisibleValue: document.querySelector("#emittersVisibleValue"),
+  emittersCanvas: document.querySelector("#emittersCanvas"),
+  emittersWorld: document.querySelector("#emittersWorld"),
+  emittersEmptyState: document.querySelector("#emittersEmptyState"),
+  emittersContextMenu: document.querySelector("#emittersContextMenu"),
+  emittersCtxConfigureNet: document.querySelector("#emittersCtxConfigureNet"),
+  emittersCtxShowMap: document.querySelector("#emittersCtxShowMap"),
+  emittersCtxEdit: document.querySelector("#emittersCtxEdit"),
+  emittersNetModal: document.querySelector("#emittersNetModal"),
+  emittersNetModalTitle: document.querySelector("#emittersNetModalTitle"),
+  emittersNetModalSubtitle: document.querySelector("#emittersNetModalSubtitle"),
+  emittersNetModalValidation: document.querySelector("#emittersNetModalValidation"),
+  emittersNetModalCloseBtn: document.querySelector("#emittersNetModalCloseBtn"),
+  emittersNetModalCancelBtn: document.querySelector("#emittersNetModalCancelBtn"),
+  emittersNetModalSaveBtn: document.querySelector("#emittersNetModalSaveBtn"),
+  emittersNetFreqInput: document.querySelector("#emittersNetFreqInput"),
+  emittersNetBandwidthInput: document.querySelector("#emittersNetBandwidthInput"),
+  emittersNetWaveformInput: document.querySelector("#emittersNetWaveformInput"),
   aiPanelDivider: document.querySelector("#aiPanelDivider"),
   imageryMenuBtn: document.querySelector("#imageryMenuBtn"),
   imageryMenu: document.querySelector("#imageryMenu"),
@@ -2183,7 +2342,6 @@ const dom = {
   assetColor: document.querySelector("#assetColor"),
   assetNotes: document.querySelector("#assetNotes"),
   emittersSection: document.querySelector("#emittersSection"),
-  assetList: document.querySelector("#assetList"),
   exportMenuBtn: document.querySelector("#exportMenuBtn"),
   exportDropdown: document.querySelector("#exportDropdown"),
   exportGeoJsonBtn: document.querySelector("#exportGeoJsonBtn"),
@@ -7892,6 +8050,7 @@ const emitterModal = {
     this.currentSavedProfileLink = null;
     this.originalAssetProfileLink = null;
     this.originalAssetPayload = null;
+    _emittersWorkspaceState.pendingSpawnLayout = null;
     clearPendingToLink();
     updateEmitterToLinkBadge(null);
     // If opened from tactical editor link mode and user cancelled, reopen the tactical editor
@@ -8495,6 +8654,19 @@ const emitterModal = {
       return;
     }
 
+    if (state.ui?.currentView === "emitters" && state.map) {
+      state.pendingEmitterData = {
+        ...data,
+        workspaceLayout: _emittersWorkspaceState.pendingSpawnLayout || data.workspaceLayout || null,
+      };
+      const center = state.map.getCenter();
+      setAssetPlacementMode(false);
+      addAsset(center);
+      this.close();
+      setStatus("Emitter added to the workspace. Use Show on Map to adjust its map position.");
+      return;
+    }
+
     // New placement
     state.pendingEmitterData = data;
     this.close();
@@ -8589,6 +8761,7 @@ function initColorSwatches() {
 }
 
 async function init() {
+  initUiTextRepair();
   initMap();
   initTopBarDropdowns();
   initColorSwatches();
@@ -9129,7 +9302,9 @@ function wireEvents() {
     emitterModal.open();
   });
   dom.emittersAddBtn?.addEventListener("click", () => {
-    switchView("map");
+    if (state.ui?.currentView === "emitters") {
+      reserveEmitterWorkspaceSpawnLayout();
+    }
     emitterModal.open();
   });
   dom.emittersRefreshBtn?.addEventListener("click", () => {
@@ -21958,11 +22133,431 @@ function renderAssetPopup(asset) {
 }
 
 function renderEmittersView() {
+  initEmittersViewIfNeeded();
   renderAssets();
 }
 
+function buildEmitterWorkspaceDefaultLayout(index = 0) {
+  const columnCount = 4;
+  const column = index % columnCount;
+  const row = Math.floor(index / columnCount);
+  return {
+    x: 190 + (column * 320),
+    y: 190 + (row * 290),
+  };
+}
+
+function ensureEmitterWorkspaceLayout(asset, index = 0) {
+  if (!asset || typeof asset !== "object") {
+    return buildEmitterWorkspaceDefaultLayout(index);
+  }
+  const current = asset.workspaceLayout;
+  if (current && Number.isFinite(Number(current.x)) && Number.isFinite(Number(current.y))) {
+    return {
+      x: Number(current.x),
+      y: Number(current.y),
+    };
+  }
+  const pending = _emittersWorkspaceState.pendingSpawnLayout;
+  const nextLayout = pending && Number.isFinite(Number(pending.x)) && Number.isFinite(Number(pending.y))
+    ? { x: Number(pending.x), y: Number(pending.y) }
+    : buildEmitterWorkspaceDefaultLayout(index);
+  asset.workspaceLayout = nextLayout;
+  _emittersWorkspaceState.pendingSpawnLayout = null;
+  return nextLayout;
+}
+
+function reserveEmitterWorkspaceSpawnLayout() {
+  const canvas = dom.emittersCanvas;
+  if (!canvas) {
+    _emittersWorkspaceState.pendingSpawnLayout = buildEmitterWorkspaceDefaultLayout(state.assets.length);
+    return;
+  }
+  const zoom = Math.max(_emittersWorkspaceState.zoom || 1, 0.2);
+  const centerX = (canvas.clientWidth / 2) - (_emittersWorkspaceState.panX / zoom);
+  const centerY = (canvas.clientHeight / 2) - (_emittersWorkspaceState.panY / zoom);
+  const jitter = () => (Math.random() - 0.5) * 80;
+  _emittersWorkspaceState.pendingSpawnLayout = {
+    x: Math.max(150, centerX + jitter()),
+    y: Math.max(150, centerY + jitter()),
+  };
+}
+
+function resolveEmitterGraphicPath(asset) {
+  const haystack = [
+    asset?.ext?.emitterType,
+    asset?.emitterLabel,
+    asset?.name,
+    asset?.waveform,
+    asset?.type,
+    asset?.notes,
+  ].join(" ").toLowerCase();
+  const matchers = [
+    [["prc-163", "prc163"], "PRC163 svg.png"],
+    [["prc-117g", "prc117g"], "PRC117G.png"],
+    [["prc-160", "prc160"], "PRC160.png"],
+    [["mpu-5", "mpu5", "wave relay"], "MPU5.png"],
+    [["mototrbo", "r7"], "Motorola MOTOTRBO R7.png"],
+    [["xts 2500"], "Motorola XTS 2500 (P25).png"],
+    [["xg-100p", "xg100p"], "Harris XG-100P (P25-LTE).png"],
+    [["sc4200", "silvus 4200"], "SC4200.png"],
+    [["sc4400", "silvus 4400"], "SC4400.png"],
+    [["tw950", "tw-950", "trellisware"], "TW950.png"],
+    [["win-t", "wint"], "WIN-T.png"],
+    [["starlink", "starshield"], "Starlink.png"],
+    [["dmr", "repeater"], "DMR repeater.png"],
+    [["dmr", "mobile"], "DMR (mobile).png"],
+    [["dmr", "portable"], "DMR (portable).png"],
+    [["p25", "repeater"], "P25 repeater.png"],
+    [["p25", "mobile"], "P25 (mobile).png"],
+    [["p25", "portable"], "P25 (portable).png"],
+  ];
+  for (const [needles, fileName] of matchers) {
+    if (needles.every((needle) => haystack.includes(needle))) {
+      return encodeURI(`images/emitter_graphics/${fileName}`);
+    }
+  }
+  if (haystack.includes("dmr")) {
+    return encodeURI("images/emitter_graphics/DMR (portable).png");
+  }
+  if (haystack.includes("p25")) {
+    return encodeURI("images/emitter_graphics/P25 (portable).png");
+  }
+  return "";
+}
+
+function formatEmitterWorkspaceFrequency(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return "Unset";
+  return `${numeric >= 100 ? numeric.toFixed(0) : numeric.toFixed(3).replace(/\.?0+$/, "")} MHz`;
+}
+
+function formatEmitterWorkspaceBandwidth(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric < 0) return "Unset";
+  return `${numeric >= 100 ? numeric.toFixed(0) : numeric.toFixed(1).replace(/\.?0+$/, "")} kHz`;
+}
+
+function selectEmitterWorkspaceAsset(assetId = "") {
+  _emittersWorkspaceState.selectedAssetId = assetId || "";
+  syncEmittersWorkspaceSelectionUi();
+}
+
+function syncEmittersWorkspaceSelectionUi() {
+  if (!dom.emittersWorld) {
+    return;
+  }
+  dom.emittersWorld.querySelectorAll(".emitters-card").forEach((card) => {
+    card.classList.toggle("is-selected", card.dataset.assetId === _emittersWorkspaceState.selectedAssetId);
+  });
+}
+
+function applyEmittersWorkspaceTransform() {
+  if (!dom.emittersWorld) {
+    return;
+  }
+  dom.emittersWorld.style.transform = `translate(${_emittersWorkspaceState.panX}px, ${_emittersWorkspaceState.panY}px) scale(${_emittersWorkspaceState.zoom})`;
+}
+
+function hideEmittersContextMenu() {
+  dom.emittersContextMenu?.classList.add("hidden");
+}
+
+function showEmittersContextMenu(assetId, x, y) {
+  if (!dom.emittersContextMenu) {
+    return;
+  }
+  _emittersWorkspaceState.contextAssetId = assetId;
+  dom.emittersContextMenu.style.left = `${x}px`;
+  dom.emittersContextMenu.style.top = `${y}px`;
+  dom.emittersContextMenu.classList.remove("hidden");
+}
+
+function closeEmittersNetModal() {
+  _emittersWorkspaceState.netAssetId = "";
+  dom.emittersNetModalValidation && (dom.emittersNetModalValidation.textContent = "");
+  dom.emittersNetModal?.classList.add("hidden");
+  updateModalBodyState();
+}
+
+function openEmittersNetModal(assetId) {
+  const asset = state.assets.find((entry) => entry.id === assetId);
+  if (!asset || !dom.emittersNetModal) {
+    return;
+  }
+  _emittersWorkspaceState.netAssetId = asset.id;
+  if (dom.emittersNetModalTitle) {
+    dom.emittersNetModalTitle.textContent = `Configure A Net`;
+  }
+  if (dom.emittersNetModalSubtitle) {
+    dom.emittersNetModalSubtitle.textContent = asset.name || asset.emitterLabel || "Selected emitter";
+  }
+  if (dom.emittersNetFreqInput) dom.emittersNetFreqInput.value = Number.isFinite(Number(asset.frequencyMHz)) ? String(asset.frequencyMHz) : "";
+  if (dom.emittersNetBandwidthInput) dom.emittersNetBandwidthInput.value = Number.isFinite(Number(asset.bandwidthKHz)) ? String(asset.bandwidthKHz) : "";
+  if (dom.emittersNetWaveformInput) dom.emittersNetWaveformInput.value = asset.waveform || asset.ext?.waveform || "";
+  if (dom.emittersNetModalValidation) dom.emittersNetModalValidation.textContent = "";
+  dom.emittersNetModal.classList.remove("hidden");
+  updateModalBodyState();
+  dom.emittersNetFreqInput?.focus();
+}
+
+function saveEmittersNetModal() {
+  const asset = state.assets.find((entry) => entry.id === _emittersWorkspaceState.netAssetId);
+  if (!asset) {
+    closeEmittersNetModal();
+    return;
+  }
+  const frequencyMHz = Number(dom.emittersNetFreqInput?.value);
+  const bandwidthKHz = Number(dom.emittersNetBandwidthInput?.value);
+  const waveform = String(dom.emittersNetWaveformInput?.value || "").trim();
+  if (!Number.isFinite(frequencyMHz) || frequencyMHz <= 0) {
+    if (dom.emittersNetModalValidation) dom.emittersNetModalValidation.textContent = "Enter a valid frequency in MHz.";
+    dom.emittersNetFreqInput?.focus();
+    return;
+  }
+  if (dom.emittersNetBandwidthInput?.value && (!Number.isFinite(bandwidthKHz) || bandwidthKHz < 0)) {
+    if (dom.emittersNetModalValidation) dom.emittersNetModalValidation.textContent = "Bandwidth must be zero or greater.";
+    dom.emittersNetBandwidthInput?.focus();
+    return;
+  }
+  asset.frequencyMHz = frequencyMHz;
+  asset.bandwidthKHz = dom.emittersNetBandwidthInput?.value ? bandwidthKHz : null;
+  asset.waveform = waveform;
+  asset.ext = asset.ext && typeof asset.ext === "object" ? asset.ext : {};
+  asset.ext.bandwidthKHz = asset.bandwidthKHz;
+  asset.ext.waveform = waveform;
+  asset.version = (asset.version ?? 1) + 1;
+  asset.lastModified = nowIso();
+  updateAssetMarker(asset);
+  renderAssets();
+  syncCesiumEntities();
+  saveMapState();
+  setStatus(`Updated net settings for ${asset.name}.`);
+  closeEmittersNetModal();
+}
+
+function renderEmittersWorkspace() {
+  if (!dom.emittersWorld) {
+    return;
+  }
+  dom.emittersWorld.innerHTML = "";
+  if (dom.emittersEmptyState) {
+    dom.emittersEmptyState.classList.toggle("hidden", state.assets.length > 0);
+  }
+  if (!state.assets.length) {
+    return;
+  }
+  state.assets.forEach((asset, index) => {
+    const layout = ensureEmitterWorkspaceLayout(asset, index);
+    const linkedUnit = Number.isFinite(Number(asset.toUnitId))
+      ? _toState.units.find((unit) => Number(unit.id) === Number(asset.toUnitId))
+      : null;
+    const linkedLabel = linkedUnit
+      ? (linkedUnit.label || linkedUnit.designator || `Unit ${linkedUnit.id}`)
+      : "Unlinked";
+    const visibilityLabel = isContentEffectivelyHidden(`asset:${asset.id}`) ? "Hidden on map" : "Visible on map";
+    const graphicPath = resolveEmitterGraphicPath(asset);
+    const markerColor = asset.color || FORCE_COLORS[asset.force] || FORCE_COLORS.friendly;
+    const type = EMITTER_ICONS[asset.type] ? asset.type : "radio";
+    const placeholderStyle = type === "radio"
+      ? `--marker-color:${escapeHtml(markerColor)};`
+      : `background:${escapeHtml(markerColor)}`;
+    const card = document.createElement("article");
+    card.className = `emitters-card${_emittersWorkspaceState.selectedAssetId === asset.id ? " is-selected" : ""}`;
+    card.dataset.assetId = asset.id;
+    card.style.left = `${layout.x}px`;
+    card.style.top = `${layout.y}px`;
+    card.innerHTML = `
+      <div class="emitters-card-header">
+        <div class="emitters-card-title">
+          <strong>${escapeHtml(asset.name || "Emitter")}</strong>
+          <span>${escapeHtml(asset.emitterLabel || asset.ext?.emitterType || asset.type || "Emitter")}</span>
+        </div>
+        <span class="force-pill"><span class="force-dot" style="background:${escapeHtml(markerColor)}"></span>${escapeHtml(FORCE_LABELS[asset.force] || "Unknown")}</span>
+      </div>
+      <div class="emitters-card-media">
+        ${graphicPath
+          ? `<img src="${graphicPath}" alt="${escapeHtml(asset.emitterLabel || asset.name || "Emitter")}">`
+          : `<div class="emitters-card-placeholder"><div class="emitter-marker ${type}" style="${placeholderStyle}">${getAssetIconSvg(type)}</div></div>`}
+      </div>
+      <dl class="emitters-card-meta">
+        <div class="emitters-card-kv"><dt>Unit</dt><dd>${escapeHtml(asset.unit || "Unassigned")}</dd></div>
+        <div class="emitters-card-kv"><dt>Linked</dt><dd>${escapeHtml(linkedLabel)}</dd></div>
+        <div class="emitters-card-kv"><dt>Map</dt><dd>${escapeHtml(visibilityLabel)}</dd></div>
+      </dl>
+      <div class="emitters-card-net">
+        <span class="emitters-card-net-title">Net</span>
+        <dl class="emitters-card-meta">
+          <div class="emitters-card-kv"><dt>Frequency</dt><dd>${escapeHtml(formatEmitterWorkspaceFrequency(asset.frequencyMHz))}</dd></div>
+          <div class="emitters-card-kv"><dt>Bandwidth</dt><dd>${escapeHtml(formatEmitterWorkspaceBandwidth(asset.bandwidthKHz))}</dd></div>
+          <div class="emitters-card-kv"><dt>Waveform</dt><dd>${escapeHtml(asset.waveform || "Unset")}</dd></div>
+        </dl>
+      </div>
+    `;
+    card.addEventListener("click", (event) => {
+      event.stopPropagation();
+      _emittersWorkspaceState.selectedAssetId = asset.id;
+      syncEmittersWorkspaceSelectionUi();
+    });
+    card.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return;
+      event.stopPropagation();
+      hideEmittersContextMenu();
+      _emittersWorkspaceState.selectedAssetId = asset.id;
+      _emittersWorkspaceState.dragging = {
+        assetId: asset.id,
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        origX: layout.x,
+        origY: layout.y,
+        sourceEl: card,
+      };
+      card.setPointerCapture?.(event.pointerId);
+      syncEmittersWorkspaceSelectionUi();
+    });
+    card.addEventListener("lostpointercapture", () => {
+      if (_emittersWorkspaceState.dragging?.sourceEl === card) {
+        _emittersWorkspaceState.dragging = null;
+      }
+    });
+    card.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      _emittersWorkspaceState.selectedAssetId = asset.id;
+      syncEmittersWorkspaceSelectionUi();
+      showEmittersContextMenu(asset.id, event.clientX, event.clientY);
+    });
+    dom.emittersWorld.appendChild(card);
+  });
+}
+
+function initEmittersViewIfNeeded() {
+  if (_emittersWorkspaceState._initialized) {
+    return;
+  }
+  _emittersWorkspaceState._initialized = true;
+  applyEmittersWorkspaceTransform();
+
+  dom.emittersCanvas?.addEventListener("wheel", (event) => {
+    event.preventDefault();
+    const factor = event.deltaY < 0 ? 1.08 : 0.92;
+    const rect = dom.emittersCanvas.getBoundingClientRect();
+    const mx = event.clientX - rect.left;
+    const my = event.clientY - rect.top;
+    const nextZoom = clamp(_emittersWorkspaceState.zoom * factor, 0.5, 1.8);
+    _emittersWorkspaceState.panX = mx - (mx - _emittersWorkspaceState.panX) * (nextZoom / _emittersWorkspaceState.zoom);
+    _emittersWorkspaceState.panY = my - (my - _emittersWorkspaceState.panY) * (nextZoom / _emittersWorkspaceState.zoom);
+    _emittersWorkspaceState.zoom = nextZoom;
+    applyEmittersWorkspaceTransform();
+  }, { passive: false });
+
+  dom.emittersCanvas?.addEventListener("mousedown", (event) => {
+    if (event.button !== 0) return;
+    if (event.target === dom.emittersCanvas || event.target === dom.emittersWorld) {
+      hideEmittersContextMenu();
+      _emittersWorkspaceState.selectedAssetId = "";
+      _emittersWorkspaceState.panning = true;
+      _emittersWorkspaceState.panStart = {
+        x: event.clientX - _emittersWorkspaceState.panX,
+        y: event.clientY - _emittersWorkspaceState.panY,
+      };
+      syncEmittersWorkspaceSelectionUi();
+    }
+  });
+
+  document.addEventListener("pointermove", (event) => {
+    if (_emittersWorkspaceState.panning) {
+      _emittersWorkspaceState.panX = event.clientX - _emittersWorkspaceState.panStart.x;
+      _emittersWorkspaceState.panY = event.clientY - _emittersWorkspaceState.panStart.y;
+      applyEmittersWorkspaceTransform();
+      return;
+    }
+    if (_emittersWorkspaceState.dragging && event.pointerId === _emittersWorkspaceState.dragging.pointerId) {
+      const { assetId, startX, startY, origX, origY } = _emittersWorkspaceState.dragging;
+      const asset = state.assets.find((entry) => entry.id === assetId);
+      if (!asset) {
+        return;
+      }
+      const dx = (event.clientX - startX) / _emittersWorkspaceState.zoom;
+      const dy = (event.clientY - startY) / _emittersWorkspaceState.zoom;
+      asset.workspaceLayout = {
+        x: origX + dx,
+        y: origY + dy,
+      };
+      const card = dom.emittersWorld.querySelector(`.emitters-card[data-asset-id="${CSS.escape(assetId)}"]`);
+      if (card) {
+        card.style.left = `${asset.workspaceLayout.x}px`;
+        card.style.top = `${asset.workspaceLayout.y}px`;
+      }
+    }
+  });
+
+  document.addEventListener("pointerup", (event) => {
+    if (_emittersWorkspaceState.dragging?.pointerId === event.pointerId) {
+      _emittersWorkspaceState.dragging.sourceEl?.releasePointerCapture?.(event.pointerId);
+      _emittersWorkspaceState.dragging = null;
+      saveMapState();
+    }
+    _emittersWorkspaceState.panning = false;
+  });
+
+  document.addEventListener("pointercancel", (event) => {
+    if (_emittersWorkspaceState.dragging?.pointerId === event.pointerId) {
+      _emittersWorkspaceState.dragging.sourceEl?.releasePointerCapture?.(event.pointerId);
+      _emittersWorkspaceState.dragging = null;
+    }
+    _emittersWorkspaceState.panning = false;
+  });
+
+  dom.emittersCanvas?.addEventListener("click", (event) => {
+    if (event.target === dom.emittersCanvas || event.target === dom.emittersWorld) {
+      _emittersWorkspaceState.selectedAssetId = "";
+      hideEmittersContextMenu();
+      syncEmittersWorkspaceSelectionUi();
+    }
+  });
+
+  dom.emittersCtxConfigureNet?.addEventListener("click", () => {
+    hideEmittersContextMenu();
+    if (_emittersWorkspaceState.contextAssetId) {
+      openEmittersNetModal(_emittersWorkspaceState.contextAssetId);
+    }
+  });
+  dom.emittersCtxShowMap?.addEventListener("click", () => {
+    const assetId = _emittersWorkspaceState.contextAssetId;
+    hideEmittersContextMenu();
+    if (!assetId) return;
+    switchView("map");
+    focusMapContent(`asset:${assetId}`);
+  });
+  dom.emittersCtxEdit?.addEventListener("click", () => {
+    const assetId = _emittersWorkspaceState.contextAssetId;
+    hideEmittersContextMenu();
+    if (!assetId) return;
+    state.editingAssetId = assetId;
+    emitterModal.open(state.assets.find((entry) => entry.id === assetId) || null);
+  });
+
+  dom.emittersNetModalCloseBtn?.addEventListener("click", closeEmittersNetModal);
+  dom.emittersNetModalCancelBtn?.addEventListener("click", closeEmittersNetModal);
+  dom.emittersNetModalSaveBtn?.addEventListener("click", saveEmittersNetModal);
+  addModalBackdropClose(dom.emittersNetModal, closeEmittersNetModal);
+
+  document.addEventListener("click", (event) => {
+    if (!dom.emittersContextMenu?.contains(event.target)) {
+      hideEmittersContextMenu();
+    }
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      hideEmittersContextMenu();
+      closeEmittersNetModal();
+    }
+  });
+}
+
 function renderAssets() {
-  if (dom.assetList) dom.assetList.innerHTML = "";
   dom.assetSelect.innerHTML = "";
   if (dom.planningTxAsset) dom.planningTxAsset.innerHTML = "";
   if (dom.planningRxAsset) dom.planningRxAsset.innerHTML = "";
@@ -21979,64 +22574,16 @@ function renderAssets() {
   }
 
   if (!state.assets.length) {
-    if (dom.assetList) dom.assetList.innerHTML = `<div class="asset-item emitters-asset-item">No systems placed yet.</div>`;
     dom.assetSelect.innerHTML = `<option value="">No emitters available</option>`;
     if (dom.planningTxAsset) dom.planningTxAsset.innerHTML = `<option value="">No assets</option>`;
     if (dom.planningRxAsset) dom.planningRxAsset.innerHTML = `<option value="">No assets</option>`;
+    renderEmittersWorkspace();
     renderSiteStudyAssetOptions();
     renderMapContents();
     return;
   }
 
   state.assets.forEach((asset, index) => {
-    if (dom.assetList) {
-      const linkedUnit = Number.isFinite(Number(asset.toUnitId))
-        ? _toState.units.find((unit) => Number(unit.id) === Number(asset.toUnitId))
-        : null;
-      const linkedLabel = linkedUnit
-        ? (linkedUnit.label || linkedUnit.designator || `Unit ${linkedUnit.id}`)
-        : "Unlinked";
-      const visibilityLabel = isContentEffectivelyHidden(`asset:${asset.id}`) ? "Hidden on map" : "Visible on map";
-      const row = document.createElement("article");
-      row.className = "asset-item emitters-asset-item";
-      row.innerHTML = `
-        <header>
-          <strong>${escapeHtml(asset.name)}</strong>
-          <span class="force-pill"><span class="force-dot" style="background:${asset.color || FORCE_COLORS[asset.force]}"></span>${FORCE_LABELS[asset.force]}</span>
-        </header>
-        <div class="asset-meta">
-          <span>${escapeHtml(asset.unit)}</span>
-          <span>${escapeHtml(asset.type)}</span>
-          <span>${asset.frequencyMHz} MHz</span>
-          <span>${asset.powerW} W</span>
-          <span>${asset.antennaGainDbi} dBi</span>
-          <span>${asset.antennaHeightM} m</span>
-        </div>
-        <div class="emitters-asset-footer">
-          <span class="fine-print">${escapeHtml(linkedLabel)} | ${visibilityLabel}</span>
-          <div class="emitters-asset-actions">
-            <button class="ghost-button small" type="button" data-emitter-action="focus">Show on Map</button>
-            <button class="ghost-button small" type="button" data-emitter-action="edit">Edit</button>
-          </div>
-        </div>
-      `;
-      row.querySelector('[data-emitter-action="focus"]')?.addEventListener("click", (event) => {
-        event.stopPropagation();
-        switchView("map");
-        focusMapContent(`asset:${asset.id}`);
-      });
-      row.querySelector('[data-emitter-action="edit"]')?.addEventListener("click", (event) => {
-        event.stopPropagation();
-        switchView("map");
-        editMapContent(`asset:${asset.id}`);
-      });
-      row.addEventListener("click", () => {
-        switchView("map");
-        focusMapContent(`asset:${asset.id}`);
-      });
-      dom.assetList.appendChild(row);
-    }
-
     const optionLabel = `${index + 1}. ${asset.name} (${asset.unit})`;
     [dom.assetSelect, dom.planningTxAsset, dom.planningRxAsset].filter(Boolean).forEach((select) => {
       const option = document.createElement("option");
@@ -22046,6 +22593,7 @@ function renderAssets() {
     });
   });
 
+  renderEmittersWorkspace();
   renderMapContents();
 }
 
@@ -25532,6 +26080,79 @@ function countFolderDescendantItems(folderContentId) {
   return total;
 }
 
+function getMapContentReorderBlockIds(contentId) {
+  const entries = getMapContentEntries();
+  const entryIds = entries.map((entry) => entry.id);
+  const orderToUse = state.mapContentOrder.length
+    ? state.mapContentOrder.filter((id) => entryIds.includes(id))
+    : entryIds;
+  const folderIds = new Set(state.mapContentFolders.map((folder) => `folder:${folder.id}`));
+  if (!contentId || !orderToUse.includes(contentId)) {
+    return [];
+  }
+  if (!contentId.startsWith("folder:")) {
+    return [contentId];
+  }
+
+  const results = [];
+  const seen = new Set();
+  const visit = (folderContentId) => {
+    if (seen.has(folderContentId)) {
+      return;
+    }
+    seen.add(folderContentId);
+    if (orderToUse.includes(folderContentId)) {
+      results.push(folderContentId);
+    }
+    orderToUse.forEach((entryId) => {
+      if (folderIds.has(entryId)) {
+        if (getFolderParentContentId(entryId) === folderContentId) {
+          visit(entryId);
+        }
+        return;
+      }
+      if (getMapContentFolderId(entryId) === folderContentId && !seen.has(entryId)) {
+        seen.add(entryId);
+        results.push(entryId);
+      }
+    });
+  };
+
+  visit(contentId);
+  return results;
+}
+
+function canReorderMapContent(contentId) {
+  if (!contentId) {
+    return false;
+  }
+  if (contentId.startsWith("folder:")) {
+    return countFolderDescendantItems(contentId) > 0;
+  }
+  return getMapContentReorderBlockIds(contentId).length > 0;
+}
+
+function reorderMapContentBlock(contentId, direction = "front") {
+  const blockIds = getMapContentReorderBlockIds(contentId);
+  if (!blockIds.length) {
+    return false;
+  }
+  const orderToUse = state.mapContentOrder.length
+    ? [...state.mapContentOrder]
+    : getMapContentEntries().map((entry) => entry.id);
+  const blockSet = new Set(blockIds);
+  const block = orderToUse.filter((id) => blockSet.has(id));
+  const remainder = orderToUse.filter((id) => !blockSet.has(id));
+  const nextOrder = direction === "back"
+    ? [...block, ...remainder]
+    : [...remainder, ...block];
+  const changed = nextOrder.length === orderToUse.length && nextOrder.some((id, index) => id !== orderToUse[index]);
+  state.mapContentOrder = nextOrder;
+  renderMapContents();
+  saveMapState();
+  return changed;
+}
+
 function wouldCreateFolderCycle(folderId, parentFolderId) {
   const draggedFolderId = normalizeFolderContentId(folderId);
   let currentParentId = normalizeFolderContentId(parentFolderId);
@@ -26703,6 +27324,17 @@ function openMapContentsMenu(event, contentId) {
       labelButton.textContent = isFolder ? "Hide Labels in Folder" : "Hide Label";
     }
   }
+  const bringToFrontButton = dom.mapContentsMenu.querySelector('[data-map-content-action="bring-to-front"]');
+  const sendToBackButton = dom.mapContentsMenu.querySelector('[data-map-content-action="send-to-back"]');
+  const canReorder = canReorderMapContent(contentId);
+  if (bringToFrontButton) {
+    bringToFrontButton.classList.toggle("hidden", !canReorder);
+    bringToFrontButton.textContent = isFolder ? "Bring Folder to Front" : "Bring to Front";
+  }
+  if (sendToBackButton) {
+    sendToBackButton.classList.toggle("hidden", !canReorder);
+    sendToBackButton.textContent = isFolder ? "Send Folder to Back" : "Send to Back";
+  }
   const deleteButton = dom.mapContentsMenu.querySelector('[data-map-content-action="delete"]');
   if (deleteButton) {
     deleteButton.classList.toggle("hidden", isTakLive);
@@ -26772,6 +27404,18 @@ function onMapContentsMenuAction(event) {
 
   if (action === "toggle-labels") {
     toggleMapContentLabels(contentId);
+    return;
+  }
+
+  if (action === "bring-to-front") {
+    const changed = reorderMapContentBlock(contentId, "front");
+    setStatus(changed ? "Map content moved to the front." : "Map content is already at the front.");
+    return;
+  }
+
+  if (action === "send-to-back") {
+    const changed = reorderMapContentBlock(contentId, "back");
+    setStatus(changed ? "Map content moved to the back." : "Map content is already at the back.");
     return;
   }
 
@@ -31421,7 +32065,7 @@ function hexToKmlColor(value) {
 }
 
 function escapeHtml(value) {
-  return String(value).replace(/[&<>"']/g, (char) => {
+  return repairMojibakeText(String(value)).replace(/[&<>"']/g, (char) => {
     const map = {
       "&": "&amp;",
       "<": "&lt;",
@@ -34177,7 +34821,7 @@ function ensureAnalyticsInitialized() {
 
 /* Module-level HTML escape helper used by new view renderers */
 function esc(s) {
-  return String(s ?? "")
+  return repairMojibakeText(String(s ?? ""))
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
@@ -34551,6 +35195,20 @@ const _toState = {
   editingUnitId: null,
   linkMode: null,  // null | { type: "parent"|"child", fromId }
   _initialized: false,
+};
+
+const _emittersWorkspaceState = {
+  _initialized: false,
+  panX: 0,
+  panY: 0,
+  zoom: 1,
+  panning: false,
+  panStart: null,
+  dragging: null,
+  selectedAssetId: "",
+  contextAssetId: "",
+  netAssetId: "",
+  pendingSpawnLayout: null,
 };
 
 

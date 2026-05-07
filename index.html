@@ -1187,7 +1187,7 @@
         <div class="emitters-toolbar">
           <div class="to-toolbar-section">
             <span class="to-toolbar-label">Emitter Workspace</span>
-            <span class="fine-print">Review placed RF emitters, linked units, and quick actions.</span>
+            <span class="fine-print">Place emitters, arrange cards, and configure nets from a shared workspace.</span>
           </div>
           <div class="to-toolbar-section to-toolbar-section-right emitters-toolbar-actions">
             <button id="emittersAddBtn" class="primary-button small" type="button">Add Emitter</button>
@@ -1200,7 +1200,7 @@
             <article class="emitters-summary-card">
               <span class="eyebrow">Placed</span>
               <strong id="emittersCountValue">0</strong>
-              <span class="fine-print">Total emitters in the scenario</span>
+              <span class="fine-print">Emitter cards in this workspace</span>
             </article>
             <article class="emitters-summary-card">
               <span class="eyebrow">Linked</span>
@@ -1213,11 +1213,58 @@
               <span class="fine-print">Currently visible on the map</span>
             </article>
           </div>
-          <div class="list-shell emitters-list-shell">
-            <div class="list-header">
-              <span>Placed Emitters</span>
+          <div class="emitters-workspace-shell">
+            <div class="list-header emitters-workspace-header">
+              <span>Emitter Workspace</span>
+              <span class="fine-print">Right-click a card to configure a net, show it on the map, or edit the emitter.</span>
             </div>
-            <div id="assetList" class="asset-list emitters-list"></div>
+            <div id="emittersCanvas" class="emitters-canvas" tabindex="0">
+              <div id="emittersWorld" class="emitters-world"></div>
+              <div id="emittersEmptyState" class="emitters-empty-state">
+                <strong>No emitters placed yet.</strong>
+                <span>Add an emitter to create a workspace card.</span>
+              </div>
+              <div id="emittersContextMenu" class="emitters-context-menu hidden">
+                <button id="emittersCtxConfigureNet" class="to-ctx-item" type="button">Configure A Net</button>
+                <button id="emittersCtxShowMap" class="to-ctx-item" type="button">Show on Map</button>
+                <button id="emittersCtxEdit" class="to-ctx-item" type="button">Edit Emitter</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="emittersNetModal" class="emitter-modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="emittersNetModalTitle">
+      <div class="emitter-modal emitters-net-modal">
+        <div class="emitter-modal-header">
+          <div class="emitter-modal-title-group">
+            <h2 id="emittersNetModalTitle">Configure A Net</h2>
+            <p id="emittersNetModalSubtitle">Set the RF net values for the selected emitter.</p>
+          </div>
+          <button id="emittersNetModalCloseBtn" class="ghost-button small icon-button" type="button" aria-label="Close">&#10005;</button>
+        </div>
+        <div class="emitters-net-modal-body">
+          <div class="emitter-param-grid emitters-net-grid">
+            <label>
+              <span>Frequency (MHz)</span>
+              <input id="emittersNetFreqInput" type="number" step="any" min="0">
+            </label>
+            <label>
+              <span>Bandwidth (kHz)</span>
+              <input id="emittersNetBandwidthInput" type="number" step="any" min="0">
+            </label>
+            <label class="emitter-span-2">
+              <span>Waveform</span>
+              <input id="emittersNetWaveformInput" type="text" maxlength="80" placeholder="P25-C4FM, TSM-X, Wave Relay, ...">
+            </label>
+          </div>
+        </div>
+        <div class="emitter-modal-footer">
+          <div id="emittersNetModalValidation" class="emitter-validation"></div>
+          <div class="emitter-footer-actions">
+            <button id="emittersNetModalCancelBtn" class="ghost-button" type="button">Cancel</button>
+            <button id="emittersNetModalSaveBtn" class="primary-button" type="button">Save Net</button>
           </div>
         </div>
       </div>
@@ -1374,6 +1421,8 @@
     <button type="button" class="ghost-button small" data-map-content-action="relocate">Relocate</button>
     <button type="button" class="ghost-button small hidden" data-map-content-action="toggle-tak-stream">Toggle TAK Stream</button>
     <button type="button" class="ghost-button small hidden" data-map-content-action="toggle-labels" id="mcMenuToggleLabels">Hide Label</button>
+    <button type="button" class="ghost-button small hidden" data-map-content-action="bring-to-front" id="mcMenuBringToFront">Bring to Front</button>
+    <button type="button" class="ghost-button small hidden" data-map-content-action="send-to-back" id="mcMenuSendToBack">Send to Back</button>
     <button type="button" class="ghost-button small" data-map-content-action="rename">Rename</button>
     <button type="button" class="ghost-button small" data-map-content-action="delete">Delete</button>
   </div>
