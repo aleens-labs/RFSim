@@ -8733,16 +8733,10 @@ const emitterModal = {
       return;
     }
 
-    if (state.ui?.currentView === "emitters" && state.map) {
-      state.pendingEmitterData = {
-        ...data,
-        workspaceLayout: _emittersWorkspaceState.pendingSpawnLayout || data.workspaceLayout || null,
-      };
-      const center = state.map.getCenter();
-      setAssetPlacementMode(false);
-      addAsset(center);
+    if (state.ui?.currentView === "emitters") {
+      addAssetToWorkspace(data);
       this.close();
-      setStatus("Emitter added to the workspace. Use Show on Map to adjust its map position.");
+      setStatus("Emitter added to the workspace.");
       return;
     }
 
@@ -10206,6 +10200,7 @@ function applySavedMapState(rawSaved) {
       if (!asset.lastModified) asset.lastModified = nowIso();
       asset.tak = normalizeTakMetadata(asset.tak);
       state.assets.push(asset);
+      if (asset.lat == null || asset.lon == null) return;
       const marker = L.marker([asset.lat, asset.lon], {
         icon: createEmitterIcon(asset),
         pane: getMapContentPaneName(`asset:${asset.id}`),
@@ -22059,6 +22054,29 @@ function applyEmitterFormData(profile) {
   dom.assetNotes.value = profile.notes ?? dom.assetNotes.value;
 }
 
+function addAssetToWorkspace(formData) {
+  const layout = _emittersWorkspaceState.pendingSpawnLayout
+    || buildEmitterWorkspaceDefaultLayout(state.assets.length);
+  _emittersWorkspaceState.pendingSpawnLayout = null;
+
+  const asset = stampContentRecord({
+    id: generateId(),
+    ...formData,
+    lat: null,
+    lon: null,
+    groundElevationM: null,
+    workspaceLayout: layout,
+    ...(window._pendingToUnitId != null ? { toUnitId: window._pendingToUnitId } : {}),
+  });
+  clearPendingToLink();
+
+  ensureTakMetadataForAsset(asset);
+  state.assets.push(asset);
+  renderAssets();
+  renderEmittersWorkspace();
+  saveMapState();
+}
+
 function addAsset(latlng) {
   // Use modal data if available (preferred), else fall back to hidden form fields
   const formData = state.pendingEmitterData ?? getEmitterFormData();
@@ -30839,7 +30857,7 @@ function _syncCesiumEntitiesImmediate() {
   };
 
   // --- ASSETS ---
-  state.assets.filter((asset) => isVisible(`asset:${asset.id}`)).forEach((asset) => {
+  state.assets.filter((asset) => isVisible(`asset:${asset.id}`) && asset.lat != null && asset.lon != null).forEach((asset) => {
     const assetHeight = resolveAbsoluteHeight(asset);
     const heightRef = assetHeight.useRelativeToGround ? C.HeightReference.RELATIVE_TO_GROUND : C.HeightReference.NONE;
     const showLabel = Boolean(asset.name) && !isContentLabelEffectivelyHidden(`asset:${asset.id}`);
