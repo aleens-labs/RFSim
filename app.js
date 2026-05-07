@@ -30193,9 +30193,10 @@ function _syncCesiumEntitiesImmediate() {
 
     const framePath = resolveMilstdFramePath(unit);
     const mainPath = unit.frameOnly ? null : resolveMilstdMainPath(unit);
+    const modifierPaths = unit.frameOnly ? [] : resolveMilstdModifierPaths(unit);
     const echelonPath = unit.frameOnly ? null : (MILSTD_ECHELON_PATHS[size] || null);
 
-    const key = `${framePath}|${mainPath}|${echelonPath}`;
+    const key = `${framePath}|${mainPath}|${modifierPaths.join(",")}|${echelonPath}`;
     if (_cesiumBillboardCache.has(key)) return Promise.resolve(_cesiumBillboardCache.get(key));
 
     // Fetch each SVG as text, inject explicit width/height, then render to
@@ -30221,16 +30222,17 @@ function _syncCesiumEntitiesImmediate() {
       img.src = dataUrl;
     });
 
-    const promise = Promise.all([framePath, mainPath, echelonPath].map(fetchSvgDataUrl))
+    const layerPaths = [framePath, mainPath, ...modifierPaths, echelonPath];
+    const promise = Promise.all(layerPaths.map(fetchSvgDataUrl))
       .then((dataUrls) => Promise.all(dataUrls.map(loadDataUrl)))
-      .then(([frame, main, echelon]) => {
+      .then((images) => {
         const canvas = document.createElement("canvas");
         canvas.width = SIZE;
         canvas.height = SIZE;
         const ctx = canvas.getContext("2d");
-        if (frame)   ctx.drawImage(frame,   0, 0, SIZE, SIZE);
-        if (main)    ctx.drawImage(main,    0, 0, SIZE, SIZE);
-        if (echelon) ctx.drawImage(echelon, 0, 0, SIZE, SIZE);
+        images.forEach((img) => {
+          if (img) ctx.drawImage(img, 0, 0, SIZE, SIZE);
+        });
         const url = canvas.toDataURL("image/png");
         _cesiumBillboardCache.set(key, url);
         return url;
@@ -34401,11 +34403,11 @@ const MILSTD_MAIN_ASSETS = {
   headquarters: { path: "images/milstd/Appendices/Land/10110000.svg" },
   civil_affairs: { path: "images/milstd/Appendices/Land/10110200.svg" },
   psyop: { path: "images/milstd/Appendices/Land/10110600.svg" },
-  signal: { path: "images/milstd/Appendices/Land/10120500.svg" },
-  armor: { base: "images/milstd/Appendices/Land/10121100", fullFrame: true },
-  recon: { base: "images/milstd/Appendices/Land/10121101", fullFrame: true },
+  signal: { base: "images/milstd/Appendices/Land/10111000", fullFrame: true },
+  armor: { path: "images/milstd/Appendices/Land/10120500.svg" },
+  recon: { base: "images/milstd/Appendices/Land/10121300", fullFrame: true },
   mechanized_infantry: { base: "images/milstd/Appendices/Land/10121102", fullFrame: true },
-  armored_cavalry: { base: "images/milstd/Appendices/Land/10121300", fullFrame: true },
+  armored_cavalry: { base: "images/milstd/Appendices/Land/10120501", fullFrame: true },
   special_forces: { path: "images/milstd/Appendices/Land/10121700.svg" },
   artillery: { path: "images/milstd/Appendices/Land/10130300.svg" },
   air_defense: { base: "images/milstd/Appendices/Land/10130100", fullFrame: true },
@@ -34415,11 +34417,13 @@ const MILSTD_MAIN_ASSETS = {
   ew: { path: "images/milstd/Appendices/Land/10150500.svg" },
   military_intelligence: { path: "images/milstd/Appendices/Land/10151000.svg" },
   logistics: { path: "images/milstd/Appendices/Land/10160700.svg" },
+  maintenance: { base: "images/milstd/Appendices/Land/10161300", fullFrame: true },
   judge_advocate: { path: "images/milstd/Appendices/Land/10160800.svg" },
-  infantry: { path: "images/milstd/Appendices/Land/10161100.svg" },
-  light_infantry: { path: "images/milstd/Appendices/Land/10161100.svg" },
-  marine_infantry: { path: "images/milstd/Appendices/Land/10161100.svg" },
-  airborne_infantry: { base: "images/milstd/Appendices/Land/10163400", fullFrame: true },
+  infantry: { base: "images/milstd/Appendices/Land/10121100", fullFrame: true },
+  light_infantry: { base: "images/milstd/Appendices/Land/10121100", fullFrame: true, modifiers: ["images/milstd/Appendices/Land/mod2/10192.svg"] },
+  marine_infantry: { base: "images/milstd/Appendices/Land/10121100", fullFrame: true },
+  airborne_infantry: { base: "images/milstd/Appendices/Land/10121100", fullFrame: true, modifiers: ["images/milstd/Appendices/Land/mod2/10012.svg"] },
+  ranger: { base: "images/milstd/Appendices/Land/10121100", fullFrame: true, modifiers: ["images/milstd/Appendices/Land/mod1/10761.svg"] },
   aviation_fixed: { path: "images/milstd/Appendices/Air/01110300.svg" },
   fighter: { path: "images/milstd/Appendices/Air/01110300.svg" },
   bomber: { path: "images/milstd/Appendices/Air/01110300.svg" },
@@ -34481,6 +34485,12 @@ function resolveMilstdMainPath(unit) {
     return `${asset.base}_${suffix}.svg`;
   }
   return asset.base ? `${asset.base}.svg` : null;
+}
+
+function resolveMilstdModifierPaths(unit) {
+  const type = normalizeToUnitType(unit?.type);
+  const asset = MILSTD_MAIN_ASSETS[type];
+  return Array.isArray(asset?.modifiers) ? asset.modifiers.filter(Boolean) : [];
 }
 
 function getMilstdFallbackText(unit) {
@@ -34738,10 +34748,12 @@ function milstd2525Svg(unit) {
     </span>`;
   }
   const mainPath = resolveMilstdMainPath(unit);
+  const modifierPaths = resolveMilstdModifierPaths(unit);
   const echelonPath = MILSTD_ECHELON_PATHS[unit.size] || "";
   return `<span class="milstd-stack ms2525-icon" aria-hidden="true">
     <img src="${framePath}" class="milstd-layer" alt="">
     ${mainPath ? `<img src="${mainPath}" class="milstd-layer" alt="">` : ""}
+    ${modifierPaths.map((path) => `<img src="${path}" class="milstd-layer" alt="">`).join("")}
     ${echelonPath ? `<img src="${echelonPath}" class="milstd-layer" alt="">` : ""}
   </span>`;
 }
