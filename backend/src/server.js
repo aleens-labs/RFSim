@@ -2347,6 +2347,7 @@ app.put("/api/projects/:projectId", authRequired, async (request, response) => {
     }
     await logAnalyticsEventForUser(request.user.sub, {
       event_type: "project_save",
+      skip_activity_log: true,
       meta: {
         project_id: result.rows[0].id,
         project_name: result.rows[0].name,
