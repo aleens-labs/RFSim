@@ -8405,7 +8405,7 @@ body.emitter-modal-open {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   border: 1px solid var(--border);
-  background: rgba(7, 13, 24, 0.68);
+  background: var(--bg);
 }
 
 .emitters-workspace-header {
@@ -8417,9 +8417,10 @@ body.emitter-modal-open {
   position: relative;
   min-height: 0;
   overflow: hidden;
+  --dot-color: rgba(148, 163, 184, 0.18);
   background:
-    radial-gradient(circle, rgba(148, 163, 184, 0.18) 1px, transparent 1px) 0 0 / 28px 28px,
-    linear-gradient(180deg, rgba(14, 24, 40, 0.96), rgba(5, 10, 18, 0.98));
+    radial-gradient(circle, var(--dot-color) 1px, transparent 1px) 0 0 / 28px 28px,
+    var(--bg-soft);
   cursor: grab;
   -webkit-user-select: none;
   user-select: none;
@@ -8431,6 +8432,10 @@ body.emitter-modal-open {
 
 .emitters-canvas:focus {
   outline: none;
+}
+
+body.theme-light .emitters-canvas {
+  --dot-color: rgba(100, 116, 139, 0.22);
 }
 
 .emitters-world {

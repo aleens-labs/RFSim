@@ -1705,7 +1705,6 @@ const FONT_FAMILY_OPTIONS = {
   consolas: `Consolas, "Cascadia Mono", "Courier New", monospace`,
   roboto: `Roboto, "Segoe UI", Arial, sans-serif`,
   "segoe-ui": `"Segoe UI", Tahoma, Geneva, Verdana, sans-serif`,
-  verdana: `Verdana, "Segoe UI", Tahoma, sans-serif`,
 };
 const CESIUM_ION_TOKEN_STORAGE_KEY = "ew-sim-cesium-ion-token";
 const AI_PROVIDER_STORAGE_KEY = "ew-sim-ai-provider";
@@ -8085,7 +8084,15 @@ const emitterModal = {
     this.renderSavedProfileLibrary();
     this.syncSavedProfileSelectionUi();
     const placeBtn = document.querySelector("#emitterPlaceBtn");
-    if (placeBtn) placeBtn.textContent = isEditing ? "Save Changes" : "Place on Map";
+    if (placeBtn) {
+      if (isEditing) {
+        placeBtn.textContent = "Save Changes";
+      } else if (state.ui?.currentView === "emitters") {
+        placeBtn.textContent = "Add to Workspace";
+      } else {
+        placeBtn.textContent = "Place on Map";
+      }
+    }
     this.updateDerivedFields();
     this.updateLinkBudget();
     this.fields.emName?.focus();
@@ -8117,6 +8124,7 @@ const emitterModal = {
     const placeBtn = document.querySelector("#emitterPlaceBtn");
     if (placeBtn) placeBtn.textContent = "Place on Map";
     state.editingAssetId = null;
+
     _currentEmitterEditId = null;
     this.currentSavedProfileLink = null;
     this.originalAssetProfileLink = null;
