@@ -255,6 +255,44 @@ function extractCotEventsFromBuffer(buffer = "") {
   return { events, remainder };
 }
 
+function parseTakGeoChatEvent(xml = "") {
+  const eventMatch = String(xml || "").match(/<event\b([^>]*)>/i);
+  if (!eventMatch) return null;
+  const eventAttrs = parseXmlAttributes(eventMatch[1]);
+  const type = String(eventAttrs.type || "").toLowerCase();
+  // GeoChat events have type t-x-c-t (to individual) or t-x-c (group)
+  if (!type.startsWith("t-x-c")) return null;
+
+  // Extract <__chat> element attributes for sender info
+  const chatMatch = String(xml || "").match(/<__chat\b([^>]*)(?:\/>|>[\s\S]*?<\/__chat>)/i);
+  const chatAttrs = chatMatch ? parseXmlAttributes(chatMatch[1]) : {};
+
+  // Extract message text from <remarks>
+  const remarksMatch = String(xml || "").match(/<remarks[^>]*>([\s\S]*?)<\/remarks>/i);
+  const text = decodeXmlEntities((remarksMatch?.[1] || "").trim());
+  if (!text) return null;
+
+  const senderUid = String(chatAttrs.senderCallsign ? (eventAttrs.uid || "") : (eventAttrs.uid || "")).trim()
+    || String(eventAttrs.uid || "").trim();
+  const senderCallsign = String(chatAttrs.senderCallsign || chatAttrs.groupOwner || eventAttrs.uid || "").trim();
+  const chatroom = String(chatAttrs.chatroom || chatAttrs.id || "All Chat Rooms").trim();
+
+  // Try to get actual sender uid from <chatgrp> or <__chatgrp>
+  const chatGrpMatch = String(xml || "").match(/<(?:chatgrp|__chatgrp)\b([^>]*)\/>/i);
+  const chatGrpAttrs = chatGrpMatch ? parseXmlAttributes(chatGrpMatch[1]) : {};
+  const resolvedSenderUid = String(chatGrpAttrs.uid0 || chatAttrs.uid || eventAttrs.uid || "").trim();
+
+  return {
+    kind: "geochat",
+    uid: String(eventAttrs.uid || "").trim(),
+    senderUid: resolvedSenderUid || senderUid,
+    senderCallsign,
+    chatroom,
+    text,
+    time: String(eventAttrs.time || "").trim(),
+  };
+}
+
 function parseTakCotEvent(xml = "") {
   const eventMatch = String(xml || "").match(/<event\b([^>]*)>/i);
   const pointMatch = String(xml || "").match(/<point\b([^>]*)\/?>/i);
@@ -372,6 +410,8 @@ function pruneTakConnectorContacts(connector) {
 
 function summarizeTakConnector(connector) {
   pruneTakConnectorContacts(connector);
+  // Drain pending chat messages (delivered once per poll, then cleared)
+  const chatMessages = Array.isArray(connector.chatMessages) ? connector.chatMessages.splice(0) : [];
   return {
     status: connector.status,
     connected: connector.status === "connected",
@@ -385,6 +425,7 @@ function summarizeTakConnector(connector) {
     lastOutboundAt: connector.lastOutboundAt,
     contactCount: connector.contacts.size,
     contacts: [...connector.contacts.values()].map(serializeTakConnectorContact),
+    chatMessages,
     debugEvents: Array.isArray(connector.debugEvents) ? connector.debugEvents.slice(-80) : [],
   };
 }
@@ -415,6 +456,20 @@ function buildTakGpsCotEvent({
   const now = new Date();
   const stale = new Date(now.getTime() + 120000);
   return `<event version="2.0" uid="${escapeXmlText(uid)}" type="${escapeXmlText(cotType)}" how="${escapeXmlText(how)}" time="${now.toISOString()}" start="${now.toISOString()}" stale="${stale.toISOString()}"><point lat="${Number(lat).toFixed(6)}" lon="${Number(lon).toFixed(6)}" hae="${Number.isFinite(Number(hae)) ? Number(hae).toFixed(1) : "0.0"}" ce="${Number.isFinite(Number(ce)) ? Number(ce).toFixed(1) : "25.0"}" le="${Number.isFinite(Number(le)) ? Number(le).toFixed(1) : "35.0"}"/><detail><contact callsign="${escapeXmlText(callsign)}"/><__group name="${escapeXmlText(team)}" role="${escapeXmlText(role)}"/><remarks>${escapeXmlText(displayType ? `RF SIM GPS PLI • ${displayType}` : "RF SIM GPS PLI")}</remarks></detail></event>`;
+}
+
+function buildGeoChatCotEvent({ fromUid, fromCallsign, toUid, toCallsign, text, chatroom = "All Chat Rooms" } = {}) {
+  const now = new Date();
+  const stale = new Date(now.getTime() + 120000);
+  const msgId = `${fromUid || "rfsim"}.${now.getTime()}`;
+  const safeText = escapeXmlText(text || "");
+  const safeTo = escapeXmlText(toCallsign || toUid || "");
+  const safeFrom = escapeXmlText(fromCallsign || fromUid || "RF SIM");
+  const safeFromUid = escapeXmlText(fromUid || "rfsim");
+  const safeToUid = escapeXmlText(toUid || "");
+  const safeChatroom = escapeXmlText(toCallsign || chatroom);
+  // t-x-c-t = personal/direct GeoChat; chatgrp uid0=sender uid1=recipient
+  return `<event version="2.0" uid="${escapeXmlText(msgId)}" type="t-x-c-t" how="h-g-i-g-o" time="${now.toISOString()}" start="${now.toISOString()}" stale="${stale.toISOString()}"><point lat="0.0" lon="0.0" hae="0.0" ce="9999999" le="9999999"/><detail><__chat id="${safeToUid}" chatroom="${safeChatroom}" groupOwner="false" messageId="${escapeXmlText(msgId)}" senderCallsign="${safeFrom}"><chatgrp uid0="${safeFromUid}" uid1="${safeToUid}" id="${safeToUid}"/></__chat><link uid="${safeFromUid}" type="a-f-G-U-C" relation="p-p"/><remarks source="BAO.F.ATAK.${safeFromUid}" to="${safeToUid}" time="${now.toISOString()}">${safeText}</remarks><__serverdestination destinations="${safeToUid}"/></detail></event>`;
 }
 
 function sendTakConnectorCot(connector, xml, summary = "Outbound CoT") {
@@ -530,6 +585,25 @@ function startTakConnector(connector) {
     const parsed = extractCotEventsFromBuffer(connector.buffer);
     connector.buffer = parsed.remainder;
     parsed.events.forEach((xml) => {
+      // Check for GeoChat first (type t-x-c*)
+      const chatEvent = parseTakGeoChatEvent(xml);
+      if (chatEvent) {
+        if (!connector.chatMessages) connector.chatMessages = [];
+        connector.chatMessages.push(chatEvent);
+        // Keep only last 200 chat messages
+        if (connector.chatMessages.length > 200) {
+          connector.chatMessages.splice(0, connector.chatMessages.length - 200);
+        }
+        pushTakConnectorDebug(
+          connector,
+          "inbound",
+          `GeoChat from ${chatEvent.senderCallsign || chatEvent.senderUid}`,
+          chatEvent.text.slice(0, 200),
+          "info"
+        );
+        return;
+      }
+
       const event = parseTakCotEvent(xml);
       if (!event) {
         pushTakConnectorDebug(connector, "inbound", "Unreadable CoT event", String(xml || "").slice(0, 800), "warn");
@@ -2004,6 +2078,53 @@ app.post("/api/projects/:projectId/tak-event", authRequired, async (request, res
     });
   } catch (error) {
     sendInternalError(response, "publish TAK event", error);
+  }
+});
+
+app.post("/api/projects/:projectId/tak-chat", authRequired, async (request, response) => {
+  const { toUid, toCallsign, text } = request.body || {};
+  if (!toUid || !text || typeof text !== "string" || !text.trim()) {
+    response.status(400).json({ error: "toUid and text are required." });
+    return;
+  }
+  try {
+    const projectResult = await query(
+      "select id from project where id = $1 and owner_user_id = $2",
+      [request.params.projectId, request.user.sub]
+    );
+    if (projectResult.rowCount === 0) {
+      response.status(404).json({ error: "Project not found." });
+      return;
+    }
+    const bindingResult = await query(
+      `select t.*, p.project_id
+       from project_tak_binding p
+       join user_tak_profile t
+         on t.id = p.tak_profile_id
+        and t.owner_user_id = p.owner_user_id
+       where p.project_id = $1
+         and p.owner_user_id = $2`,
+      [request.params.projectId, request.user.sub]
+    );
+    if (bindingResult.rowCount === 0) {
+      response.status(409).json({ linked: false, message: "Project is not linked to a TAK server." });
+      return;
+    }
+    const profileRow = bindingResult.rows[0];
+    const connector = ensureTakConnector(request.user.sub, profileRow);
+    connector.lastAccessAt = Date.now();
+    if (connector.status !== "connected") {
+      response.status(409).json({ ok: false, sent: false, message: connector.statusMessage || "TAK connector is not connected." });
+      return;
+    }
+    // Build the from-uid the same way the GPS publish does
+    const fromUid = `rfsim:${request.params.projectId}:${String(request.user.sub).toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 80)}:gps`;
+    const fromCallsign = String(request.body.fromCallsign || "RF SIM").trim();
+    const xml = buildGeoChatCotEvent({ fromUid, fromCallsign, toUid, toCallsign, text: text.trim() });
+    sendTakConnectorCot(connector, xml, `GeoChat → ${toCallsign || toUid}: ${text.slice(0, 60)}`);
+    response.json({ ok: true, sent: true });
+  } catch (error) {
+    sendInternalError(response, "send TAK GeoChat", error);
   }
 });
 
