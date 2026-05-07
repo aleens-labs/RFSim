@@ -9251,6 +9251,7 @@ function wireEvents() {
   });
   dom.connectGeolocationBtn.addEventListener("click", connectBrowserGeolocation);
   dom.connectUsbGpsBtn.addEventListener("click", connectUsbGps);
+  document.getElementById("plotManualLocationBtn")?.addEventListener("click", startManualLocationPlot);
   dom.drawPlanningRegionBtn?.addEventListener("click", drawPlanningRegion);
   dom.runPlanningBtn?.addEventListener("click", runPlanning);
   dom.runSiteStudyBtn?.addEventListener("click", runSiteStudy);
@@ -23367,11 +23368,56 @@ function nmeaToDecimal(raw, hemisphere) {
   return decimal;
 }
 
+function startManualLocationPlot() {
+  if (!state.map) return;
+  closeGpsMenu();
+  // If already in manual plot mode, cancel it
+  if (state.gps.manualPlotActive) {
+    cancelManualLocationPlot();
+    return;
+  }
+  state.gps.manualPlotActive = true;
+  state.map.getContainer().classList.add("gps-manual-plot-mode");
+  document.getElementById("plotManualLocationBtn")?.classList.add("active");
+  setStatus("Click the map to set your location. Press Escape to cancel.");
+
+  const onClick = (e) => {
+    const { lat, lng } = e.latlng;
+    cancelManualLocationPlot();
+    applyGpsFix({ lat, lon: lng, accuracyM: null }, "manual");
+    setGpsStatusMessage("Manual location set.");
+    setStatus(`Manual location set: ${formatCoordinate(lat, lng, state.settings.coordinateSystem)}`);
+  };
+
+  const onKeydown = (e) => {
+    if (e.key === "Escape") cancelManualLocationPlot();
+  };
+
+  state.gps._manualPlotClick = onClick;
+  state.gps._manualPlotKeydown = onKeydown;
+  state.map.once("click", onClick);
+  document.addEventListener("keydown", onKeydown);
+}
+
+function cancelManualLocationPlot() {
+  state.gps.manualPlotActive = false;
+  state.map?.getContainer().classList.remove("gps-manual-plot-mode");
+  document.getElementById("plotManualLocationBtn")?.classList.remove("active");
+  if (state.gps._manualPlotClick) {
+    state.map?.off("click", state.gps._manualPlotClick);
+    state.gps._manualPlotClick = null;
+  }
+  if (state.gps._manualPlotKeydown) {
+    document.removeEventListener("keydown", state.gps._manualPlotKeydown);
+    state.gps._manualPlotKeydown = null;
+  }
+}
+
 function applyGpsFix(fix, mode) {
   state.gps.mode = mode;
   state.gps.location = fix;
   state.gps.statusIsError = false;
-  dom.gpsStatusValue.textContent = mode === "usb" ? "USB GPS Active" : "Browser GPS Active";
+  dom.gpsStatusValue.textContent = mode === "usb" ? "USB GPS Active" : mode === "manual" ? "Manual Location" : "Browser GPS Active";
   updateCoordinateDisplays();
 
   if (!state.gps.marker) {

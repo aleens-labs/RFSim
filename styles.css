@@ -4825,6 +4825,18 @@ button:focus {
   box-shadow: 0 0 0 6px rgba(52, 211, 153, 0.18);
 }
 
+/* Manual location plot mode — crosshair cursor on map */
+.gps-manual-plot-mode,
+.gps-manual-plot-mode .leaflet-grab,
+.gps-manual-plot-mode .leaflet-interactive {
+  cursor: crosshair !important;
+}
+#plotManualLocationBtn.active {
+  background: rgba(52, 211, 153, 0.15);
+  border-color: #34d399;
+  color: #34d399;
+}
+
 .recommendation-marker {
   width: 14px;
   height: 14px;
