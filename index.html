@@ -593,6 +593,43 @@
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="21" x2="12" y2="3"/><rect x="2" y="3" width="8" height="6" rx="1"/><rect x="14" y="3" width="8" height="6" rx="1"/></svg>
           Offline
         </button>
+        <!-- TAK Contacts overlay -->
+        <div id="takContactsOverlay" class="tak-contacts-overlay hidden" aria-label="TAK Contacts">
+          <div class="tak-contacts-pill" id="takContactsPill">
+            <span class="tak-contacts-dot" id="takContactsStatusDot"></span>
+            <span class="tak-contacts-label">TAK Contacts</span>
+            <span class="tak-contacts-unread hidden" id="takContactsUnread">0</span>
+            <button class="tak-contacts-chevron" id="takContactsChevron" type="button" aria-label="Expand TAK Contacts" aria-expanded="false">
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,3 5,7 8,3"/></svg>
+            </button>
+          </div>
+          <div class="tak-contacts-panel hidden" id="takContactsPanel">
+            <div class="tak-contacts-panel-header">
+              <span class="tak-contacts-panel-title">Connected Contacts</span>
+              <span class="tak-contacts-panel-count" id="takContactsPanelCount">0 online</span>
+            </div>
+            <div class="tak-contacts-list" id="takContactsList">
+              <div class="tak-contacts-empty">No contacts connected.</div>
+            </div>
+          </div>
+          <!-- Per-contact chat window (one at a time) -->
+          <div class="tak-chat-window hidden" id="takChatWindow">
+            <div class="tak-chat-header">
+              <button class="tak-chat-back" id="takChatBack" type="button" aria-label="Back to contacts">
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="7,2 3,5 7,8"/></svg>
+              </button>
+              <span class="tak-chat-contact-name" id="takChatContactName">Contact</span>
+              <button class="tak-chat-close-btn" id="takChatCloseBtn" type="button" aria-label="Close chat">&#10005;</button>
+            </div>
+            <div class="tak-chat-messages" id="takChatMessages"></div>
+            <form class="tak-chat-form" id="takChatForm" autocomplete="off">
+              <input class="tak-chat-input" id="takChatInput" type="text" placeholder="Message…" maxlength="800" autocomplete="off">
+              <button class="tak-chat-send" type="submit" aria-label="Send">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+              </button>
+            </form>
+          </div>
+        </div>
         <button id="takIdentityBtn" class="map-tak-identity-btn ghost-button small hidden" type="button" aria-label="Edit TAK identity">
           <span class="map-tak-identity-label">TAK Callsign:</span>
           <strong id="takIdentityBtnValue">RF SIM</strong>
@@ -2552,50 +2589,60 @@
             <div class="weather-summary ai-summary" id="takSettingsSummary">Save a TAK server profile to assign it to server-backed projects.</div>
 
             <!-- TAK Triggered Prompting -->
-            <div class="menu-title-row tak-triggered-title-row">
-              <strong>TAK Triggered Prompting</strong>
-              <label class="settings-toggle-inline">
-                <input id="takTriggeredPromptingToggle" type="checkbox">
-                <span class="settings-toggle-label">Enable</span>
-              </label>
-            </div>
-            <div id="takTriggeredPromptingSection" class="tak-triggered-section">
-              <p class="tak-triggered-description">
-                When enabled, TAK contacts can send a GeoChat message beginning with the trigger prefix to
-                automatically route their text as an AI prompt to your linked AI provider. The AI response
-                is sent back as a GeoChat reply to the originating contact. Messages not starting with the
-                trigger are ignored.
-              </p>
-              <div class="settings-modal-grid tak-triggered-grid">
-                <label class="settings-span-2 tak-triggered-trigger-row">
-                  Trigger Prefix
-                  <span class="fine-print">Case-insensitive. The text that must start the message to activate AI routing.</span>
-                  <div class="tak-trigger-input-row">
-                    <div class="tak-trigger-chips" id="takTriggerChips"></div>
-                    <div class="tak-trigger-add-row">
-                      <input id="takTriggerNewInput" type="text" maxlength="32" placeholder="/ai">
-                      <button id="takTriggerAddBtn" class="ghost-button small" type="button">Add</button>
+            <div class="tak-triggered-card">
+              <div class="menu-title-row tak-triggered-title-row">
+                <strong>TAK Triggered Prompting</strong>
+                <label class="pill-toggle-label" title="Enable TAK Triggered Prompting">
+                  <input id="takTriggeredPromptingToggle" type="checkbox" class="pill-toggle-input">
+                  <span class="pill-toggle-track">
+                    <span class="pill-toggle-thumb"></span>
+                    <span class="pill-toggle-text-on">&#10005;</span>
+                    <span class="pill-toggle-text-off">Enable</span>
+                  </span>
+                </label>
+              </div>
+              <div id="takTriggeredPromptingSection" class="tak-triggered-section">
+                <p class="tak-triggered-description">
+                  When enabled, TAK contacts can send a GeoChat message beginning with the trigger prefix to
+                  automatically route their text as an AI prompt to your linked AI provider. The AI response
+                  is sent back as a GeoChat reply to the originating contact. Messages not starting with the
+                  trigger are ignored.
+                </p>
+                <div class="tak-triggered-two-col">
+                  <div class="tak-triggered-col">
+                    <div class="tak-triggered-field-label">
+                      Trigger Prefix
+                      <span class="fine-print">Case-insensitive. Starts the message to activate AI routing.</span>
+                    </div>
+                    <div class="tak-trigger-input-row">
+                      <div class="tak-trigger-chips" id="takTriggerChips"></div>
+                      <div class="tak-trigger-add-row">
+                        <input id="takTriggerNewInput" type="text" maxlength="32" placeholder="/ai">
+                        <button id="takTriggerAddBtn" class="ghost-button small" type="button">Add</button>
+                      </div>
                     </div>
                   </div>
-                </label>
-                <label class="settings-span-2">
-                  System Prompt Prefix
-                  <span class="fine-print">Optional. Prepended to every TAK-triggered AI request before the contact's message. Useful for context like "You are assisting a TAK operator in the field."</span>
-                  <textarea id="takTriggeredSystemPrompt" rows="3" placeholder="Optional context injected before every TAK-triggered AI request…"></textarea>
-                </label>
-                <label class="settings-check-row settings-span-2">
+                  <div class="tak-triggered-col">
+                    <div class="tak-triggered-field-label">
+                      System Prompt Prefix
+                      <span class="fine-print">Optional. Prepended before the contact's message to every AI request.</span>
+                    </div>
+                    <textarea id="takTriggeredSystemPrompt" rows="4" placeholder="Optional context injected before every TAK-triggered AI request…"></textarea>
+                  </div>
+                </div>
+                <label class="settings-check-row">
                   <input id="takTriggeredIncludeMapContextToggle" type="checkbox">
                   <span>Include current map context in TAK-triggered requests</span>
                 </label>
-                <label class="settings-check-row settings-span-2">
+                <label class="settings-check-row">
                   <input id="takTriggeredNotifyToggle" type="checkbox" checked>
                   <span>Show in-app notification when a TAK-triggered prompt is received</span>
                 </label>
-                <label class="settings-check-row settings-span-2">
+                <label class="settings-check-row">
                   <input id="takTriggeredLogToggle" type="checkbox" checked>
                   <span>Log TAK-triggered exchanges in the AI chat history panel</span>
                 </label>
-                <div class="settings-span-2 tak-triggered-status-row">
+                <div class="tak-triggered-status-row">
                   <div class="tak-triggered-status-label">
                     <span class="eyebrow">Status</span>
                     <span id="takTriggeredStatusText" class="tak-triggered-status-text">Waiting for TAK connection…</span>
@@ -2616,7 +2663,7 @@
                   </div>
                 </div>
               </div>
-            </div>
+            </div><!-- /tak-triggered-card -->
           </div>
         </section>
         </section>

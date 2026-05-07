@@ -1802,6 +1802,21 @@ const dom = {
   takCertPasswordCloseBtn: document.querySelector("#takCertPasswordCloseBtn"),
   takIdentityBtn: document.querySelector("#takIdentityBtn"),
   takIdentityBtnValue: document.querySelector("#takIdentityBtnValue"),
+  takContactsOverlay: document.querySelector("#takContactsOverlay"),
+  takContactsPill: document.querySelector("#takContactsPill"),
+  takContactsStatusDot: document.querySelector("#takContactsStatusDot"),
+  takContactsUnread: document.querySelector("#takContactsUnread"),
+  takContactsChevron: document.querySelector("#takContactsChevron"),
+  takContactsPanel: document.querySelector("#takContactsPanel"),
+  takContactsPanelCount: document.querySelector("#takContactsPanelCount"),
+  takContactsList: document.querySelector("#takContactsList"),
+  takChatWindow: document.querySelector("#takChatWindow"),
+  takChatBack: document.querySelector("#takChatBack"),
+  takChatContactName: document.querySelector("#takChatContactName"),
+  takChatCloseBtn: document.querySelector("#takChatCloseBtn"),
+  takChatMessages: document.querySelector("#takChatMessages"),
+  takChatForm: document.querySelector("#takChatForm"),
+  takChatInput: document.querySelector("#takChatInput"),
   takIdentityModal: document.querySelector("#takIdentityModal"),
   takIdentityCallsignInput: document.querySelector("#takIdentityCallsignInput"),
   takIdentityTeamSelect: document.querySelector("#takIdentityTeamSelect"),
@@ -2462,6 +2477,13 @@ const state = {
     triggeredPromptCountReceived: 0,
     triggeredPromptCountReplied: 0,
     triggeredPromptCountFailed: 0,
+  },
+  // Per-contact chat threads: uid → { uid, callsign, messages: [{role,text,ts,isAiRelay}], unread }
+  takChat: {
+    threads: new Map(),   // uid → thread object
+    activeUid: null,      // which contact's chat is open
+    panelOpen: false,     // contacts list expanded
+    totalUnread: 0,
   },
   takIdentity: {
     callsign: "RF SIM",
@@ -3685,6 +3707,7 @@ function clearTakLiveContacts() {
   [...state.takRuntime.objectsByUid.keys()].forEach((uid) => removeTakLiveRuntimeObject(uid));
   renderMapContents();
   syncCesiumEntities();
+  renderTakContactsOverlay();
 }
 
 function createTakDebugEntry(direction, summary, detail = "", level = "info", at = nowIso()) {
@@ -3794,8 +3817,17 @@ async function pollTakLiveContacts({ immediate = false } = {}) {
       renderMapContents();
       syncCesiumEntities();
     }
+    // Process any incoming GeoChat messages returned by the poll
+    if (Array.isArray(payload.chatMessages)) {
+      for (const msg of payload.chatMessages) {
+        if (msg?.senderUid && msg?.text) {
+          await handleIncomingTakChatMessage(msg);
+        }
+      }
+    }
     renderMapTakDebugPanel();
     updateTakTriggeredStatusDisplay();
+    renderTakContactsOverlay();
   } catch (error) {
     state.takLive.status = "error";
     state.takLive.message = error.message;
@@ -3803,6 +3835,7 @@ async function pollTakLiveContacts({ immediate = false } = {}) {
     state.takRuntime.message = error.message;
     pushClientTakDebug("status", "TAK poll failed", error.message, "error");
     updateTakTriggeredStatusDisplay();
+    renderTakContactsOverlay();
   } finally {
     if (state.session.token && state.session.activeProjectId === currentProjectId && isTakEnabledForProject(currentProjectId)) {
       state.takLive.pollTimerId = window.setTimeout(() => {
@@ -3881,48 +3914,268 @@ function updateTakTriggeredStatusDisplay() {
   if (dom.takTriggeredCountFailed) dom.takTriggeredCountFailed.textContent = String(state.takRuntime.triggeredPromptCountFailed);
 }
 
+// ── TAK Contacts Overlay & Chat ──────────────────────────────────────────────
+
+function getTakChatThread(uid, callsign) {
+  if (!state.takChat.threads.has(uid)) {
+    state.takChat.threads.set(uid, { uid, callsign: callsign || uid, messages: [], unread: 0 });
+  }
+  const t = state.takChat.threads.get(uid);
+  if (callsign && callsign !== uid) t.callsign = callsign;
+  return t;
+}
+
+function takChatAddMessage(uid, callsign, { role, text, isAiRelay = false }) {
+  const thread = getTakChatThread(uid, callsign);
+  thread.messages.push({ role, text, ts: Date.now(), isAiRelay });
+  const isActive = state.takChat.activeUid === uid && state.takChat.panelOpen;
+  if (!isActive) {
+    thread.unread++;
+    state.takChat.totalUnread++;
+  }
+  renderTakContactsOverlay();
+  if (state.takChat.activeUid === uid) renderTakChatMessages();
+}
+
+function renderTakContactsOverlay() {
+  if (!dom.takContactsOverlay) return;
+
+  // Show overlay only when TAK is connected
+  const connected = state.takRuntime.status === "connected";
+  dom.takContactsOverlay.classList.toggle("hidden", !connected);
+
+  // Status dot color
+  if (dom.takContactsStatusDot) {
+    dom.takContactsStatusDot.dataset.status = connected ? "connected" : "idle";
+  }
+
+  // Unread badge
+  const unread = state.takChat.totalUnread;
+  if (dom.takContactsUnread) {
+    dom.takContactsUnread.textContent = unread > 99 ? "99+" : String(unread);
+    dom.takContactsUnread.classList.toggle("hidden", unread === 0);
+  }
+
+  // Chevron direction
+  if (dom.takContactsChevron) {
+    dom.takContactsChevron.setAttribute("aria-expanded", state.takChat.panelOpen ? "true" : "false");
+    dom.takContactsChevron.classList.toggle("open", state.takChat.panelOpen);
+  }
+
+  // Panel visibility
+  if (dom.takContactsPanel) {
+    dom.takContactsPanel.classList.toggle("hidden", !state.takChat.panelOpen || state.takChat.activeUid !== null);
+  }
+  if (dom.takChatWindow) {
+    dom.takChatWindow.classList.toggle("hidden", !state.takChat.panelOpen || state.takChat.activeUid === null);
+  }
+
+  renderTakContactsList();
+}
+
+function renderTakContactsList() {
+  if (!dom.takContactsList) return;
+  const contacts = [...state.takRuntime.objectsByUid.values()];
+  if (dom.takContactsPanelCount) {
+    dom.takContactsPanelCount.textContent = `${contacts.length} online`;
+  }
+  if (!contacts.length) {
+    dom.takContactsList.innerHTML = '<div class="tak-contacts-empty">No contacts connected.</div>';
+    return;
+  }
+  dom.takContactsList.innerHTML = contacts.map((c) => {
+    const uid = c.uid;
+    const name = escapeHtml(c.name || c.designator || uid);
+    const thread = state.takChat.threads.get(uid);
+    const unread = thread?.unread || 0;
+    const lastMsg = thread?.messages[thread.messages.length - 1];
+    const preview = lastMsg ? escapeHtml(lastMsg.text.slice(0, 40)) : "";
+    const aff = c.affiliation || "unknown";
+    return `<button class="tak-contact-row" data-uid="${escapeHtml(uid)}" type="button">
+      <span class="tak-contact-avatar tak-contact-avatar--${escapeHtml(aff)}">${escapeHtml((c.name || uid).charAt(0).toUpperCase())}</span>
+      <span class="tak-contact-info">
+        <span class="tak-contact-name">${name}</span>
+        ${preview ? `<span class="tak-contact-preview">${preview}${lastMsg.text.length > 40 ? "…" : ""}</span>` : ""}
+      </span>
+      ${unread > 0 ? `<span class="tak-contact-unread-pip">${unread}</span>` : ""}
+    </button>`;
+  }).join("");
+
+  dom.takContactsList.querySelectorAll(".tak-contact-row").forEach((btn) => {
+    btn.addEventListener("click", () => openTakChat(btn.dataset.uid));
+  });
+}
+
+function openTakChat(uid) {
+  const contact = state.takRuntime.objectsByUid.get(uid);
+  if (!contact) return;
+  state.takChat.activeUid = uid;
+  // Clear unread for this thread
+  const thread = getTakChatThread(uid, contact.name || contact.designator);
+  state.takChat.totalUnread = Math.max(0, state.takChat.totalUnread - thread.unread);
+  thread.unread = 0;
+  if (dom.takChatContactName) dom.takChatContactName.textContent = thread.callsign;
+  renderTakChatMessages();
+  renderTakContactsOverlay();
+  requestAnimationFrame(() => dom.takChatInput?.focus());
+}
+
+function closeTakChat() {
+  state.takChat.activeUid = null;
+  renderTakContactsOverlay();
+}
+
+function renderTakChatMessages() {
+  if (!dom.takChatMessages) return;
+  const uid = state.takChat.activeUid;
+  if (!uid) { dom.takChatMessages.innerHTML = ""; return; }
+  const thread = state.takChat.threads.get(uid);
+  if (!thread || !thread.messages.length) {
+    dom.takChatMessages.innerHTML = '<div class="tak-chat-empty">No messages yet. Say hello!</div>';
+    return;
+  }
+  dom.takChatMessages.innerHTML = thread.messages.map((m) => {
+    const ts = new Date(m.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    if (m.role === "outbound") {
+      // RF SIM user sent this
+      return `<div class="tak-msg tak-msg--out">
+        <div class="tak-msg-header"><span>You</span><span class="tak-msg-ts">${ts}</span></div>
+        <div class="tak-msg-bubble">${escapeHtml(m.text)}</div>
+      </div>`;
+    }
+    if (m.isAiRelay) {
+      // AI-generated reply sent to the TAK contact on the user's behalf
+      return `<div class="tak-msg tak-msg--ai">
+        <div class="tak-msg-header"><span class="tak-msg-ai-label">AI</span><span class="tak-msg-ts">${ts}</span></div>
+        <div class="tak-msg-bubble">${escapeHtml(m.text)}</div>
+      </div>`;
+    }
+    // Inbound from TAK contact
+    const name = escapeHtml(thread.callsign);
+    return `<div class="tak-msg tak-msg--in">
+      <div class="tak-msg-header"><span>${name}</span><span class="tak-msg-ts">${ts}</span></div>
+      <div class="tak-msg-bubble">${escapeHtml(m.text)}</div>
+    </div>`;
+  }).join("");
+  dom.takChatMessages.scrollTop = dom.takChatMessages.scrollHeight;
+}
+
+async function sendTakChatMessage(uid, text) {
+  const contact = state.takRuntime.objectsByUid.get(uid);
+  if (!contact || !text.trim()) return;
+  const callsign = contact.name || contact.designator || uid;
+  // Optimistically append outbound message
+  takChatAddMessage(uid, callsign, { role: "outbound", text });
+  try {
+    await sendTakChatReply({ toUid: uid, toCallsign: callsign, text });
+  } catch (err) {
+    pushClientTakDebug("outbound", "TAK chat send failed", err.message, "error");
+  }
+}
+
+function initTakContactsOverlay() {
+  if (!dom.takContactsOverlay) return;
+
+  // Toggle panel on chevron or pill click
+  dom.takContactsChevron?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    state.takChat.panelOpen = !state.takChat.panelOpen;
+    if (!state.takChat.panelOpen) state.takChat.activeUid = null;
+    renderTakContactsOverlay();
+  });
+  dom.takContactsPill?.addEventListener("click", (e) => {
+    if (e.target === dom.takContactsChevron || dom.takContactsChevron?.contains(e.target)) return;
+    state.takChat.panelOpen = !state.takChat.panelOpen;
+    if (!state.takChat.panelOpen) state.takChat.activeUid = null;
+    renderTakContactsOverlay();
+  });
+
+  // Back button: close chat, show contact list
+  dom.takChatBack?.addEventListener("click", closeTakChat);
+
+  // Close button: collapse everything
+  dom.takChatCloseBtn?.addEventListener("click", () => {
+    state.takChat.panelOpen = false;
+    state.takChat.activeUid = null;
+    renderTakContactsOverlay();
+  });
+
+  // Send message form
+  dom.takChatForm?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const text = dom.takChatInput?.value.trim();
+    if (!text || !state.takChat.activeUid) return;
+    dom.takChatInput.value = "";
+    await sendTakChatMessage(state.takChat.activeUid, text);
+  });
+
+  // Close panel when clicking outside
+  document.addEventListener("click", (e) => {
+    if (!dom.takContactsOverlay?.contains(e.target)) {
+      if (state.takChat.panelOpen) {
+        state.takChat.panelOpen = false;
+        state.takChat.activeUid = null;
+        renderTakContactsOverlay();
+      }
+    }
+  });
+}
+
 /**
  * Entry point for incoming TAK GeoChat messages.
  * Call this when a GeoChat CoT event is received from the TAK server.
  * @param {{ senderUid: string, senderCallsign: string, text: string, chatroom?: string }} msg
  */
 async function handleIncomingTakChatMessage(msg) {
-  if (!state.settings.takTriggeredPromptingEnabled) return;
-  const prefixes = (state.settings.takTriggerPrefixes || ["/ai"]).map((p) => p.toLowerCase());
+  const uid = msg.senderUid || "";
+  const callsign = msg.senderCallsign || uid;
   const text = (msg.text || "").trim();
+  if (!text) return;
+
+  pushClientTakDebug("inbound", "TAK GeoChat received", `From ${callsign}: ${text.slice(0, 80)}`, "info");
+
+  // Always add inbound message to the chat thread
+  takChatAddMessage(uid, callsign, { role: "inbound", text });
+
+  if (state.settings.takTriggeredNotify) {
+    setStatus(`TAK message from ${callsign}: "${text.slice(0, 60)}${text.length > 60 ? "…" : ""}"`);
+  }
+
+  // Check for AI trigger prefix
+  const prefixes = (state.settings.takTriggerPrefixes || ["/ai"]).map((p) => p.toLowerCase());
   const lc = text.toLowerCase();
   const matchedPrefix = prefixes.find((p) => lc.startsWith(p));
-  if (!matchedPrefix) return;
+
+  if (!matchedPrefix || !state.settings.takTriggeredPromptingEnabled) return;
 
   const prompt = text.slice(matchedPrefix.length).trim();
   if (!prompt) return;
 
   state.takRuntime.triggeredPromptCountReceived++;
   updateTakTriggeredStatusDisplay();
-  pushClientTakDebug("inbound", "TAK triggered prompt received", `From ${msg.senderCallsign || msg.senderUid}: ${prompt.slice(0, 80)}`, "info");
-
-  if (state.settings.takTriggeredNotify) {
-    setStatus(`TAK prompt from ${msg.senderCallsign || msg.senderUid}: "${prompt.slice(0, 60)}${prompt.length > 60 ? "…" : ""}"`);
-  }
 
   if (state.settings.takTriggeredLog) {
-    appendAiMessage("system", `[TAK Prompt from ${escapeHtml(msg.senderCallsign || msg.senderUid)}] ${escapeHtml(prompt)}`);
+    appendAiMessage("system", `[TAK Prompt from ${escapeHtml(callsign)}] ${escapeHtml(prompt)}`);
   }
 
   try {
     const systemPrefix = (state.settings.takTriggeredSystemPrompt || "").trim();
-    const mapContext = state.settings.takTriggeredIncludeMapContext ? buildAiMapContext() : "";
+    const mapContext = state.settings.takTriggeredIncludeMapContext ? (buildCompactAiScenarioSummary ? buildCompactAiScenarioSummary([]) : "") : "";
     const fullPrompt = [systemPrefix, mapContext, prompt].filter(Boolean).join("\n\n");
 
     const response = await runAiPromptHeadless(fullPrompt);
     if (!response) throw new Error("No response from AI provider.");
 
     state.takRuntime.triggeredPromptCountReplied++;
+
+    // Add AI relay message to the chat thread (distinct colour/label)
+    takChatAddMessage(uid, callsign, { role: "outbound", text: response, isAiRelay: true });
+
     if (state.settings.takTriggeredLog) {
-      appendAiMessage("assistant", `[TAK Reply to ${escapeHtml(msg.senderCallsign || msg.senderUid)}] ${escapeHtml(response)}`);
+      appendAiMessage("assistant", `[TAK Reply to ${escapeHtml(callsign)}] ${escapeHtml(response)}`);
     }
-    pushClientTakDebug("outbound", "TAK triggered reply sent", `To ${msg.senderCallsign || msg.senderUid}: ${response.slice(0, 80)}`, "info");
-    await sendTakChatReply({ toUid: msg.senderUid, toCallsign: msg.senderCallsign, text: response });
+    pushClientTakDebug("outbound", "TAK triggered reply sent", `To ${callsign}: ${response.slice(0, 80)}`, "info");
+    await sendTakChatReply({ toUid: uid, toCallsign: callsign, text: response });
   } catch (err) {
     state.takRuntime.triggeredPromptCountFailed++;
     pushClientTakDebug("outbound", "TAK triggered reply failed", err.message, "error");
@@ -3950,24 +4203,12 @@ async function sendTakChatReply({ toUid, toCallsign, text }) {
  * Wraps the existing AI provider call pattern for headless use.
  */
 async function runAiPromptHeadless(prompt) {
-  const provider = state.ai.provider;
-  const apiKey = state.ai.apiKey;
-  const model = state.ai.model;
-  if (!provider || !apiKey) throw new Error("No AI provider configured.");
-  // Delegate to the existing AI stream infrastructure with a one-shot callback
-  return new Promise((resolve, reject) => {
-    let accumulated = "";
-    runAiStreamRequest({
-      prompt,
-      provider,
-      apiKey,
-      model,
-      onChunk: (chunk) => { accumulated += chunk; },
-      onDone: () => resolve(accumulated.trim()),
-      onError: reject,
-      headless: true,
-    });
+  if (!getEffectiveAiConfig()) throw new Error("No AI provider configured.");
+  let accumulated = "";
+  await callAiPlanningAssistant(prompt, [], [], [], {
+    onToken: (text) => { accumulated = text; },
   });
+  return accumulated.trim();
 }
 
 function refreshTakLiveFeed({ immediate = false } = {}) {
@@ -7920,6 +8161,7 @@ const emitterModal = {
 function initEmitterModal() {
   emitterModal.init();
   initToPickerModal();
+  initTakContactsOverlay();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -33609,7 +33851,7 @@ function renderToCustomSymbolShapes(type, stroke = "#000000", milstd = false, un
   const HANDLED = [
     "infantry", "light_infantry", "mechanized_infantry", "airborne_infantry",
     "armor", "recon",
-    "signal", "ew", "artillery", "engineer", "medical", "military_intelligence",
+    "signal", "artillery", "engineer", "medical",
     "air_defense", "special_forces", "logistics",
   ];
   if (!HANDLED.includes(normalizedType)) return "";
@@ -33663,11 +33905,9 @@ function renderToCustomSymbolShapes(type, stroke = "#000000", milstd = false, un
       case "airborne_infantry":   return wrap(`${xLines}${canopy}`);
       case "armor":           return wrap(oval);
       case "signal":          return sigWave;
-      case "ew":              return ewWave;
       case "artillery":       return artCircle;
       case "engineer":        return engCastle;
       case "medical":         return medCross;
-      case "military_intelligence": return miShape;
       case "air_defense":     return adArc;
       case "special_forces":  return sfBar;
       case "logistics":       return logBox;
@@ -33726,11 +33966,9 @@ function renderToCustomSymbolShapes(type, stroke = "#000000", milstd = false, un
     case "airborne_infantry":   return `${xLines}${canopy}`;
     case "armor":           return oval;
     case "signal":          return sigWaveS;
-    case "ew":              return ewWaveS;
     case "artillery":       return artCircleS;
     case "engineer":        return engCastleS;
     case "medical":         return medCrossS;
-    case "military_intelligence": return miShapeS;
     case "air_defense":     return adArcS;
     case "special_forces":  return sfBarS;
     case "logistics":       return logBoxS;

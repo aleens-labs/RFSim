@@ -6264,38 +6264,90 @@ button:focus {
   line-height: 1.3;
 }
 
+/* ── Pill Toggle (reusable) ──────────────────────────────────────────────── */
+.pill-toggle-label {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.pill-toggle-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+.pill-toggle-track {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  min-width: 72px;
+  padding: 0 10px;
+  border-radius: 100px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: rgba(148, 163, 184, 0.08);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
+  gap: 6px;
+  cursor: pointer;
+}
+.pill-toggle-thumb {
+  display: none;
+}
+.pill-toggle-text-on {
+  display: none;
+}
+.pill-toggle-text-off {
+  display: inline;
+}
+.pill-toggle-input:checked ~ .pill-toggle-track {
+  background: rgba(59, 130, 246, 0.18);
+  border-color: rgba(96, 165, 250, 0.55);
+  color: #93c5fd;
+}
+.pill-toggle-input:checked ~ .pill-toggle-track .pill-toggle-text-on {
+  display: inline;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+.pill-toggle-input:checked ~ .pill-toggle-track .pill-toggle-text-off {
+  display: none;
+}
+.pill-toggle-label:hover .pill-toggle-track {
+  border-color: rgba(148, 163, 184, 0.5);
+}
+.pill-toggle-input:checked ~ .pill-toggle-track:hover,
+.pill-toggle-label:hover .pill-toggle-input:checked ~ .pill-toggle-track {
+  border-color: rgba(96, 165, 250, 0.75);
+}
+
 /* ── TAK Triggered Prompting ─────────────────────────────────────────────── */
+.tak-triggered-card {
+  margin-top: 16px;
+  padding: 14px 16px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
 .tak-triggered-title-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: 18px;
-  padding-top: 14px;
-  border-top: 1px solid var(--border);
-}
-.settings-toggle-inline {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  cursor: pointer;
-  font-size: 0.82rem;
-  color: var(--text-muted);
-  -webkit-user-select: none;
-  user-select: none;
-}
-.settings-toggle-inline input[type="checkbox"] {
-  width: 15px;
-  height: 15px;
-  accent-color: var(--accent);
-  cursor: pointer;
-}
-.settings-toggle-label {
-  font-size: 0.8rem;
+  gap: 12px;
 }
 .tak-triggered-section {
-  display: grid;
-  gap: 10px;
-  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
   transition: opacity 160ms ease;
 }
 .tak-triggered-section.tak-triggered-disabled {
@@ -6308,39 +6360,57 @@ button:focus {
   line-height: 1.5;
   margin: 0;
 }
-.tak-triggered-grid {
-  grid-template-columns: 1fr;
-  gap: 10px;
+.tak-triggered-two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  align-items: start;
 }
-.tak-triggered-trigger-row {
+.tak-triggered-col {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+.tak-triggered-field-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.tak-triggered-col textarea {
+  width: 100%;
+  resize: vertical;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  min-height: 88px;
+  box-sizing: border-box;
 }
 .tak-trigger-input-row {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 10px;
+  padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: var(--bg-soft);
+  background: rgba(8, 13, 24, 0.55);
 }
 .tak-trigger-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  min-height: 26px;
+  gap: 5px;
+  min-height: 24px;
 }
 .tak-trigger-chip {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 3px 8px 3px 10px;
+  gap: 4px;
+  padding: 2px 7px 2px 9px;
   background: rgba(59, 130, 246, 0.15);
   border: 1px solid rgba(96, 165, 250, 0.35);
   border-radius: 100px;
-  font-size: 0.78rem;
+  font-size: 0.76rem;
   font-family: monospace;
   color: var(--accent);
 }
@@ -6353,13 +6423,13 @@ button:focus {
   padding: 0 2px;
   cursor: pointer;
   color: var(--text-muted);
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   line-height: 1;
   opacity: 0.7;
 }
 .tak-trigger-chip-remove:hover {
   opacity: 1;
-  color: var(--accent-danger, #f87171);
+  color: #f87171;
 }
 .tak-trigger-add-row {
   display: flex;
@@ -6371,12 +6441,9 @@ button:focus {
   font-family: monospace;
   font-size: 0.82rem;
 }
-.tak-triggered-section textarea {
-  width: 100%;
-  resize: vertical;
+.tak-triggered-section .settings-check-row {
   font-size: 0.82rem;
-  line-height: 1.5;
-  min-height: 60px;
+  gap: 8px;
 }
 .tak-triggered-status-row {
   display: flex;
@@ -6386,7 +6453,7 @@ button:focus {
   padding: 10px 14px;
   border: 1px solid var(--border);
   border-radius: 10px;
-  background: var(--bg-soft);
+  background: rgba(8, 13, 24, 0.55);
   flex-wrap: wrap;
 }
 .tak-triggered-status-label {
@@ -6398,12 +6465,8 @@ button:focus {
   font-size: 0.82rem;
   color: var(--text-muted);
 }
-.tak-triggered-status-text[data-level="ok"] {
-  color: #4ade80;
-}
-.tak-triggered-status-text[data-level="error"] {
-  color: #f87171;
-}
+.tak-triggered-status-text[data-level="ok"] { color: #4ade80; }
+.tak-triggered-status-text[data-level="error"] { color: #f87171; }
 .tak-triggered-counters {
   display: flex;
   gap: 20px;
@@ -7415,10 +7478,332 @@ body.emitter-modal-open {
   font-size: 12px;
 }
 
+/* ─── TAK Contacts Overlay ────────────────────────────────────────────────── */
+.tak-contacts-overlay {
+  position: absolute;
+  top: 14px;
+  /* sits right of the offline button */
+  left: calc(138px + 340px + 8px + 86px + 8px);
+  z-index: 660;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+}
+
+/* ---- Pill (stowed state) ---- */
+.tak-contacts-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px 0 10px;
+  background: var(--bg-overlay);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+  white-space: nowrap;
+}
+.tak-contacts-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(148, 163, 184, 0.4);
+  flex-shrink: 0;
+  transition: background 0.2s;
+}
+.tak-contacts-dot[data-status="connected"] { background: #4ade80; box-shadow: 0 0 5px rgba(74, 222, 128, 0.55); }
+.tak-contacts-dot[data-status="error"]     { background: #f87171; }
+.tak-contacts-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--text);
+}
+.tak-contacts-unread {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  background: #f87171;
+  border-radius: 100px;
+  font-size: 9px;
+  font-weight: 800;
+  color: #fff;
+  line-height: 1;
+  animation: tak-unread-pulse 1.4s ease infinite;
+}
+@keyframes tak-unread-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.65; }
+}
+.tak-contacts-chevron {
+  background: none;
+  border: none;
+  padding: 2px;
+  cursor: pointer;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  transition: transform 0.18s ease;
+}
+.tak-contacts-chevron.open svg {
+  transform: rotate(180deg);
+}
+
+/* ---- Expanded panel (contacts list) ---- */
+.tak-contacts-panel,
+.tak-chat-window {
+  width: 260px;
+  margin-top: 4px;
+  background: var(--bg-overlay, rgba(13,16,24,0.96));
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.45);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.tak-contacts-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 12px 7px;
+  border-bottom: 1px solid rgba(148,163,184,0.1);
+}
+.tak-contacts-panel-title {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.tak-contacts-panel-count {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.tak-contacts-list {
+  max-height: 240px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px 0;
+}
+.tak-contacts-empty {
+  padding: 14px 14px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+.tak-contact-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 12px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  transition: background 0.12s;
+}
+.tak-contact-row:hover { background: rgba(148,163,184,0.08); }
+.tak-contact-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(59,130,246,0.25);
+  border: 1px solid rgba(96,165,250,0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #93c5fd;
+  flex-shrink: 0;
+}
+.tak-contact-avatar--hostile { background: rgba(248,113,113,0.2); border-color: rgba(248,113,113,0.35); color: #fca5a5; }
+.tak-contact-avatar--neutral { background: rgba(52,211,153,0.2); border-color: rgba(52,211,153,0.35); color: #6ee7b7; }
+.tak-contact-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.tak-contact-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tak-contact-preview {
+  font-size: 10px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tak-contact-unread-pip {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  background: #3b82f6;
+  border-radius: 100px;
+  font-size: 9px;
+  font-weight: 800;
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* ---- Chat window ---- */
+.tak-chat-window {
+  width: 280px;
+  height: 380px;
+}
+.tak-chat-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(148,163,184,0.1);
+  flex-shrink: 0;
+}
+.tak-chat-back {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  padding: 2px;
+}
+.tak-chat-back:hover { color: var(--text); }
+.tak-chat-contact-name {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tak-chat-close-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 11px;
+  padding: 2px 4px;
+  line-height: 1;
+}
+.tak-chat-close-btn:hover { color: var(--text); }
+.tak-chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 10px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.tak-chat-empty {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 20px 0;
+}
+/* Message bubbles */
+.tak-msg {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 88%;
+}
+.tak-msg--in  { align-self: flex-start; }
+.tak-msg--out { align-self: flex-end;   }
+.tak-msg--ai  { align-self: flex-end;   }
+.tak-msg-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 9px;
+  color: var(--text-muted);
+}
+.tak-msg--out .tak-msg-header,
+.tak-msg--ai  .tak-msg-header  { flex-direction: row-reverse; }
+.tak-msg-ai-label {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: #a78bfa;
+  text-transform: uppercase;
+}
+.tak-msg-ts { opacity: 0.65; }
+.tak-msg-bubble {
+  padding: 7px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  line-height: 1.45;
+  word-break: break-word;
+}
+.tak-msg--in  .tak-msg-bubble { background: rgba(55,65,81,0.85);  color: var(--text); border-bottom-left-radius: 3px; }
+.tak-msg--out .tak-msg-bubble { background: rgba(37,99,235,0.8);  color: #e0f2fe; border-bottom-right-radius: 3px; }
+.tak-msg--ai  .tak-msg-bubble { background: rgba(109,40,217,0.75); color: #ede9fe; border-bottom-right-radius: 3px; }
+
+/* Input row */
+.tak-chat-form {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 8px;
+  border-top: 1px solid rgba(148,163,184,0.1);
+  flex-shrink: 0;
+}
+.tak-chat-input {
+  flex: 1;
+  border: 1px solid rgba(148,163,184,0.2);
+  border-radius: 20px;
+  padding: 5px 12px;
+  font-size: 12px;
+  background: rgba(255,255,255,0.04);
+  color: var(--text);
+  outline: none;
+}
+.tak-chat-input:focus {
+  border-color: rgba(96,165,250,0.45);
+  background: rgba(255,255,255,0.07);
+}
+.tak-chat-send {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: none;
+  background: #2563eb;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+.tak-chat-send:hover { background: #1d4ed8; }
+
 .map-tak-identity-btn {
   position: absolute;
   top: 14px;
-  left: calc(138px + 340px + 8px + 86px + 8px);
+  left: calc(138px + 340px + 8px + 86px + 8px + 120px + 8px);
   z-index: 650;
   height: 32px;
   padding: 0 12px;
@@ -7768,7 +8153,7 @@ body.emitter-modal-open {
   align-items: center;
   justify-content: center;
   gap: 0;
-  padding: 5px 10px;
+  padding: 5px 6px;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
@@ -7776,7 +8161,7 @@ body.emitter-modal-open {
   white-space: nowrap;
   flex-shrink: 0;
   align-self: stretch;
-  min-width: 376px;
+  min-width: 280px;
 }
 .view-mode-toggle {
   display: flex;
@@ -9039,6 +9424,7 @@ label:has(#tacticalEditorLon) {
 }
 body.topo-debug-resizing {
   cursor: nesw-resize;
+  -webkit-user-select: none;
   user-select: none;
 }
 .map-tak-debug-panel {
@@ -9146,6 +9532,7 @@ body.topo-debug-resizing {
 }
 body.map-tak-debug-resizing {
   cursor: nesw-resize;
+  -webkit-user-select: none;
   user-select: none;
 }
 /* SVG lives inside .topo-nodes so lines share the same transform */
@@ -9939,6 +10326,7 @@ body.map-tak-debug-resizing {
   padding: 5px 10px;
   pointer-events: none;
   z-index: 10;
+  -webkit-backdrop-filter: blur(4px);
   backdrop-filter: blur(4px);
 }
 .topo-legend-title {
