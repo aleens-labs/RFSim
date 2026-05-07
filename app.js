@@ -1987,6 +1987,7 @@ const dom = {
   emittersContextMenu: document.querySelector("#emittersContextMenu"),
   emittersCtxAddNet: document.querySelector("#emittersCtxAddNet"),
   emittersCtxConfigureNet: document.querySelector("#emittersCtxConfigureNet"),
+  emittersCtxLinkUnit: document.querySelector("#emittersCtxLinkUnit"),
   emittersCtxShowMap: document.querySelector("#emittersCtxShowMap"),
   emittersCtxEdit: document.querySelector("#emittersCtxEdit"),
   emittersNetModal: document.querySelector("#emittersNetModal"),
@@ -8708,6 +8709,7 @@ const emitterModal = {
           asset.lat = null;
           asset.lon = null;
           asset.groundElevationM = null;
+          asset.workspaceVisible = true;
         }
         asset.groundElevationM = hasAssetMapLocation(asset)
           ? sampleTerrainElevation(asset.lat, asset.lon)
@@ -10210,6 +10212,9 @@ function applySavedMapState(rawSaved) {
       if (!asset.version) asset.version = 1;
       if (!asset.lastModified) asset.lastModified = nowIso();
       asset.tak = normalizeTakMetadata(asset.tak);
+      if (asset.workspaceVisible !== true && !hasAssetMapLocation(asset)) {
+        asset.workspaceVisible = true;
+      }
       state.assets.push(asset);
       if (asset.lat == null || asset.lon == null) return;
       const marker = L.marker([asset.lat, asset.lon], {
@@ -17153,6 +17158,7 @@ function serializeAssetForAi(asset) {
     receiverSensitivityDbm: roundAiNumber(asset.receiverSensitivityDbm ?? asset.receiverSensitivity, 3),
     systemLossDb: roundAiNumber(asset.systemLossDb ?? asset.systemLoss, 3),
     groundElevationM: roundAiNumber(asset.groundElevationM, 2),
+    workspaceVisible: asset.workspaceVisible === true,
     hidden: state.hiddenContentIds.has(`asset:${asset.id}`),
     folderId: getMapContentFolderId(`asset:${asset.id}`),
   };
@@ -22067,7 +22073,7 @@ function applyEmitterFormData(profile) {
 
 function addAssetToWorkspace(formData) {
   const layout = _emittersWorkspaceState.pendingSpawnLayout
-    || buildEmitterWorkspaceDefaultLayout(state.assets.length);
+    || buildEmitterWorkspaceDefaultLayout(getEmitterWorkspaceAssets().length);
   _emittersWorkspaceState.pendingSpawnLayout = null;
 
   const asset = stampContentRecord({
@@ -22076,6 +22082,7 @@ function addAssetToWorkspace(formData) {
     lat: null,
     lon: null,
     groundElevationM: null,
+    workspaceVisible: true,
     workspaceLayout: layout,
     ...(window._pendingToUnitId != null ? { toUnitId: window._pendingToUnitId } : {}),
   });
@@ -22261,9 +22268,29 @@ function hasAssetMapLocation(asset) {
   return Number.isFinite(Number(asset.lat)) && Number.isFinite(Number(asset.lon));
 }
 
+function isEmitterWorkspaceAsset(asset) {
+  if (!asset || typeof asset !== "object") {
+    return false;
+  }
+  if (asset.workspaceVisible === true) {
+    return true;
+  }
+  return !hasAssetMapLocation(asset);
+}
+
+function getEmitterWorkspaceAssets() {
+  return (state.assets || []).filter((asset) => isEmitterWorkspaceAsset(asset));
+}
+
 function renderEmittersView() {
   initEmittersViewIfNeeded();
   renderAssets();
+  requestAnimationFrame(() => {
+    renderEmittersWorkspace();
+    if (getEmitterWorkspaceAssets().length) {
+      centerEmittersWorkspaceOnAssets();
+    }
+  });
 }
 
 function buildEmitterWorkspaceDefaultLayout(index = 0) {
@@ -22302,8 +22329,8 @@ function centerEmittersWorkspaceOnAssets({ assetId = "", padding = 140 } = {}) {
     return;
   }
   const targetAssets = assetId
-    ? state.assets.filter((asset) => asset.id === assetId)
-    : [...state.assets];
+    ? getEmitterWorkspaceAssets().filter((asset) => asset.id === assetId)
+    : [...getEmitterWorkspaceAssets()];
   if (!targetAssets.length) {
     return;
   }
@@ -22330,12 +22357,13 @@ function centerEmittersWorkspaceOnAssets({ assetId = "", padding = 140 } = {}) {
 
 function emittersWorkspaceHasVisibleCards() {
   const canvas = dom.emittersCanvas;
-  if (!canvas || !state.assets.length) {
+  const workspaceAssets = getEmitterWorkspaceAssets();
+  if (!canvas || !workspaceAssets.length) {
     return false;
   }
   const width = canvas.clientWidth;
   const height = canvas.clientHeight;
-  return state.assets.some((asset, index) => {
+  return workspaceAssets.some((asset, index) => {
     const layout = ensureEmitterWorkspaceLayout(asset, index);
     const x = (layout.x * _emittersWorkspaceState.zoom) + _emittersWorkspaceState.panX;
     const y = (layout.y * _emittersWorkspaceState.zoom) + _emittersWorkspaceState.panY;
@@ -22346,7 +22374,7 @@ function emittersWorkspaceHasVisibleCards() {
 function reserveEmitterWorkspaceSpawnLayout() {
   const canvas = dom.emittersCanvas;
   if (!canvas) {
-    _emittersWorkspaceState.pendingSpawnLayout = buildEmitterWorkspaceDefaultLayout(state.assets.length);
+    _emittersWorkspaceState.pendingSpawnLayout = buildEmitterWorkspaceDefaultLayout(getEmitterWorkspaceAssets().length);
     return;
   }
   const zoom = Math.max(_emittersWorkspaceState.zoom || 1, 0.2);
@@ -22604,14 +22632,15 @@ function renderEmittersWorkspace() {
   if (!dom.emittersWorld) {
     return;
   }
+  const workspaceAssets = getEmitterWorkspaceAssets();
   dom.emittersWorld.innerHTML = "";
   if (dom.emittersEmptyState) {
-    dom.emittersEmptyState.classList.toggle("hidden", state.assets.length > 0);
+    dom.emittersEmptyState.classList.toggle("hidden", workspaceAssets.length > 0);
   }
-  if (!state.assets.length) {
+  if (!workspaceAssets.length) {
     return;
   }
-  state.assets.forEach((asset, index) => {
+  workspaceAssets.forEach((asset, index) => {
     const layout = ensureEmitterWorkspaceLayout(asset, index);
     const linkedUnit = Number.isFinite(Number(asset.toUnitId))
       ? _toState.units.find((unit) => Number(unit.id) === Number(asset.toUnitId))
@@ -22719,7 +22748,7 @@ function renderEmittersWorkspace() {
     });
     dom.emittersWorld.appendChild(card);
   });
-  if (state.assets.length && !emittersWorkspaceHasVisibleCards()) {
+  if (workspaceAssets.length && !emittersWorkspaceHasVisibleCards()) {
     centerEmittersWorkspaceOnAssets();
   }
 }
@@ -22823,6 +22852,19 @@ function initEmittersViewIfNeeded() {
     hideEmittersContextMenu();
     if (!assetId) return;
     openEmittersNetModal(assetId, "", { createNew: true });
+  });
+  dom.emittersCtxLinkUnit?.addEventListener("click", () => {
+    const assetId = _emittersWorkspaceState.contextAssetId;
+    hideEmittersContextMenu();
+    if (!assetId) return;
+    _currentEmitterEditId = assetId;
+    const asset = state.assets.find((entry) => entry.id === assetId) || null;
+    if (asset?.toUnitId) {
+      updateEmitterToLinkBadge((_toState.units || []).find((unit) => Number(unit.id) === Number(asset.toUnitId)) || null);
+    } else {
+      updateEmitterToLinkBadge(null);
+    }
+    openToPicker({ mode: "emitter-link", commitEmitterId: assetId });
   });
   dom.emittersCtxShowMap?.addEventListener("click", () => {
     const assetId = _emittersWorkspaceState.contextAssetId;
@@ -35136,6 +35178,7 @@ let _emitterLinkCallback = null;
 const _toPickerState = {
   mode: "emitter-link",
   selectedUnitIds: new Set(),
+  commitEmitterId: null,
 };
 
 function initToPickerModal() {
@@ -35190,6 +35233,9 @@ function openToPicker(options = {}) {
   _toPickerState.selectedUnitIds = new Set(
     (options.selectedUnitIds ?? []).map((value) => Number(value)).filter((value) => Number.isFinite(value)),
   );
+  _toPickerState.commitEmitterId = typeof options.commitEmitterId === "string" && options.commitEmitterId.trim()
+    ? options.commitEmitterId.trim()
+    : null;
   if (_toPickerState.mode === "tactical-placement" && !_toPickerState.selectedUnitIds.size && Number.isFinite(Number(_toState.selectedUnit))) {
     _toPickerState.selectedUnitIds.add(Number(_toState.selectedUnit));
   }
@@ -35201,6 +35247,7 @@ function openToPicker(options = {}) {
 function closeToPicker() {
   _toPickerState.mode = "emitter-link";
   _toPickerState.selectedUnitIds.clear();
+  _toPickerState.commitEmitterId = null;
   configureToPickerModal("emitter-link");
   document.getElementById("toPickerModal")?.classList.add("hidden");
 }
@@ -35404,6 +35451,16 @@ function selectToUnitForEmitter(unit, el) {
 
   // Store the link on the pending emitter state
   linkEmitterToToUnit(unit.id);
+  if (_toPickerState.commitEmitterId) {
+    commitEmitterToLink(_toPickerState.commitEmitterId);
+    const asset = (state.assets || []).find((entry) => entry.id === _toPickerState.commitEmitterId) || null;
+    if (asset) {
+      asset.version = (asset.version ?? 1) + 1;
+      asset.lastModified = nowIso();
+    }
+    renderEmittersWorkspace();
+    saveMapState();
+  }
   updateEmitterToLinkBadge(unit);
 
   closeToPicker();
@@ -36666,14 +36723,15 @@ function buildPlanAiContext(options = {}) {
 
 function buildEmittersAiContext(options = {}) {
   const compact = options.compact !== false;
-  const emitterLimit = compact ? 28 : state.assets.length;
-  const linkedCount = state.assets.filter((asset) => Number.isFinite(Number(asset.toUnitId))).length;
+  const workspaceAssets = getEmitterWorkspaceAssets();
+  const emitterLimit = compact ? 28 : workspaceAssets.length;
+  const linkedCount = workspaceAssets.filter((asset) => Number.isFinite(Number(asset.toUnitId))).length;
   return JSON.stringify({
     view: "emitters",
-    emitterCount: state.assets.length,
+    emitterCount: workspaceAssets.length,
     linkedCount,
-    visibleCount: state.assets.filter((asset) => !isContentEffectivelyHidden(`asset:${asset.id}`)).length,
-    emitters: state.assets.slice(0, emitterLimit).map((asset) => serializeAssetForAi(asset)),
+    visibleCount: workspaceAssets.filter((asset) => !isContentEffectivelyHidden(`asset:${asset.id}`)).length,
+    emitters: workspaceAssets.slice(0, emitterLimit).map((asset) => serializeAssetForAi(asset)),
   });
 }
 
