@@ -2345,19 +2345,6 @@ app.put("/api/projects/:projectId", authRequired, async (request, response) => {
       });
       return;
     }
-    await logAnalyticsEventForUser(request.user.sub, {
-      event_type: "project_save",
-      skip_activity_log: true,
-      meta: {
-        project_id: result.rows[0].id,
-        project_name: result.rows[0].name,
-        field_count: updates.length,
-        prior_revision: parsed.data.revision,
-        revision: result.rows[0].revision,
-        schema_version: schema.hasStateSchemaVersion ? (parsed.data.schemaVersion ?? null) : null,
-        client_saved_at: schema.hasClientSavedAt ? (parsed.data.clientSavedAt ?? null) : null,
-      },
-    }, { username: request.user.email });
     response.json({ project: result.rows[0] });
   } catch (error) {
     sendInternalError(response, "save project", error);
@@ -2748,6 +2735,7 @@ app.get("/api/admin/users/:userId/stats", authRequired, serverAiKeyManagerRequir
                 (coalesce(input_tokens, 0) + coalesce(output_tokens, 0))::int as total_tokens
            from analytics_event
           where user_id = $1
+            and event_type != 'project_save'
           order by created_at desc
           limit 10`,
         [userId]
@@ -2953,6 +2941,7 @@ app.get("/api/admin/analytics", authRequired, adminRequired, async (_request, re
                  e.meta,
                  e.created_at
           from analytics_event e
+          where e.event_type != 'project_save'
           order by e.created_at desc
           limit 800
         `)
