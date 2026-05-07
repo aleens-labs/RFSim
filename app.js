@@ -9390,6 +9390,9 @@ function wireEvents() {
   });
   dom.emittersRefreshBtn?.addEventListener("click", () => {
     renderEmittersView();
+    if (state.assets.length) {
+      centerEmittersWorkspaceOnAssets();
+    }
     setStatus("Emitter view refreshed.");
   });
   dom.emittersOpenMapBtn?.addEventListener("click", () => {
@@ -22080,8 +22083,9 @@ function addAssetToWorkspace(formData) {
 
   ensureTakMetadataForAsset(asset);
   state.assets.push(asset);
+  _emittersWorkspaceState.selectedAssetId = asset.id;
   renderAssets();
-  renderEmittersWorkspace();
+  centerEmittersWorkspaceOnAssets({ assetId: asset.id });
   saveMapState();
 }
 
@@ -22251,7 +22255,10 @@ function renderAssetPopup(asset) {
 }
 
 function hasAssetMapLocation(asset) {
-  return Number.isFinite(Number(asset?.lat)) && Number.isFinite(Number(asset?.lon));
+  if (asset?.lat === null || asset?.lat === undefined || asset?.lon === null || asset?.lon === undefined) {
+    return false;
+  }
+  return Number.isFinite(Number(asset.lat)) && Number.isFinite(Number(asset.lon));
 }
 
 function renderEmittersView() {
@@ -22287,6 +22294,53 @@ function ensureEmitterWorkspaceLayout(asset, index = 0) {
   asset.workspaceLayout = nextLayout;
   _emittersWorkspaceState.pendingSpawnLayout = null;
   return nextLayout;
+}
+
+function centerEmittersWorkspaceOnAssets({ assetId = "", padding = 140 } = {}) {
+  const canvas = dom.emittersCanvas;
+  if (!canvas) {
+    return;
+  }
+  const targetAssets = assetId
+    ? state.assets.filter((asset) => asset.id === assetId)
+    : [...state.assets];
+  if (!targetAssets.length) {
+    return;
+  }
+  const layouts = targetAssets.map((asset, index) => ensureEmitterWorkspaceLayout(asset, index));
+  const xs = layouts.map((layout) => Number(layout.x) || 0);
+  const ys = layouts.map((layout) => Number(layout.y) || 0);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const contentWidth = Math.max((maxX - minX) + 320, 320);
+  const contentHeight = Math.max((maxY - minY) + 280, 280);
+  const zoomX = canvas.clientWidth > 0 ? (canvas.clientWidth - padding * 2) / contentWidth : _emittersWorkspaceState.zoom;
+  const zoomY = canvas.clientHeight > 0 ? (canvas.clientHeight - padding * 2) / contentHeight : _emittersWorkspaceState.zoom;
+  if (!assetId && canvas.clientWidth > 0 && canvas.clientHeight > 0) {
+    _emittersWorkspaceState.zoom = clamp(Math.min(zoomX, zoomY, 1), 0.5, 1.8);
+  }
+  const centerX = (minX + maxX) / 2;
+  const centerY = (minY + maxY) / 2;
+  _emittersWorkspaceState.panX = (canvas.clientWidth / 2) - (centerX * _emittersWorkspaceState.zoom);
+  _emittersWorkspaceState.panY = (canvas.clientHeight / 2) - (centerY * _emittersWorkspaceState.zoom);
+  applyEmittersWorkspaceTransform();
+}
+
+function emittersWorkspaceHasVisibleCards() {
+  const canvas = dom.emittersCanvas;
+  if (!canvas || !state.assets.length) {
+    return false;
+  }
+  const width = canvas.clientWidth;
+  const height = canvas.clientHeight;
+  return state.assets.some((asset, index) => {
+    const layout = ensureEmitterWorkspaceLayout(asset, index);
+    const x = (layout.x * _emittersWorkspaceState.zoom) + _emittersWorkspaceState.panX;
+    const y = (layout.y * _emittersWorkspaceState.zoom) + _emittersWorkspaceState.panY;
+    return x >= -220 && x <= width + 220 && y >= -220 && y <= height + 220;
+  });
 }
 
 function reserveEmitterWorkspaceSpawnLayout() {
@@ -22665,6 +22719,9 @@ function renderEmittersWorkspace() {
     });
     dom.emittersWorld.appendChild(card);
   });
+  if (state.assets.length && !emittersWorkspaceHasVisibleCards()) {
+    centerEmittersWorkspaceOnAssets();
+  }
 }
 
 function initEmittersViewIfNeeded() {
