@@ -4242,9 +4242,10 @@ async function sendTakChatReply({ toUid, toCallsign, text }) {
   const token = state.session.token;
   if (!projectId || !token) throw new Error("No active project or session.");
   const fromCallsign = getTakGpsCallsign();
+  const fromUid = buildTakGpsUid(projectId);
   await apiFetch(`/projects/${projectId}/tak-chat`, {
     method: "POST",
-    body: JSON.stringify({ toUid, toCallsign, text, fromCallsign }),
+    body: JSON.stringify({ toUid, toCallsign, text, fromCallsign, fromUid }),
   });
 }
 
