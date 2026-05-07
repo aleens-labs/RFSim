@@ -1699,6 +1699,14 @@ const EMITTER_PROFILE_LEGACY_STORAGE_KEY = "ew-sim-emitter-profiles";
 const EMITTER_PROFILE_STORAGE_KEY = "ew-sim-emitter-profiles-library";
 const PROFILE_STORAGE_KEY = EMITTER_PROFILE_STORAGE_KEY;
 const SETTINGS_STORAGE_KEY = "ew-sim-map-settings";
+const FONT_FAMILY_OPTIONS = {
+  bahnschrift: `Bahnschrift, "DIN Alternate", "Segoe UI", sans-serif`,
+  inter: `Inter, "Segoe UI", Roboto, Arial, sans-serif`,
+  consolas: `Consolas, "Cascadia Mono", "Courier New", monospace`,
+  roboto: `Roboto, "Segoe UI", Arial, sans-serif`,
+  "segoe-ui": `"Segoe UI", Tahoma, Geneva, Verdana, sans-serif`,
+  verdana: `Verdana, "Segoe UI", Tahoma, sans-serif`,
+};
 const CESIUM_ION_TOKEN_STORAGE_KEY = "ew-sim-cesium-ion-token";
 const AI_PROVIDER_STORAGE_KEY = "ew-sim-ai-provider";
 const TAK_IDENTITY_STORAGE_KEY_PREFIX = "ew-sim-tak-identity";
@@ -1974,13 +1982,11 @@ const dom = {
   emittersAddBtn: document.querySelector("#emittersAddBtn"),
   emittersRefreshBtn: document.querySelector("#emittersRefreshBtn"),
   emittersOpenMapBtn: document.querySelector("#emittersOpenMapBtn"),
-  emittersCountValue: document.querySelector("#emittersCountValue"),
-  emittersLinkedValue: document.querySelector("#emittersLinkedValue"),
-  emittersVisibleValue: document.querySelector("#emittersVisibleValue"),
   emittersCanvas: document.querySelector("#emittersCanvas"),
   emittersWorld: document.querySelector("#emittersWorld"),
   emittersEmptyState: document.querySelector("#emittersEmptyState"),
   emittersContextMenu: document.querySelector("#emittersContextMenu"),
+  emittersCtxAddNet: document.querySelector("#emittersCtxAddNet"),
   emittersCtxConfigureNet: document.querySelector("#emittersCtxConfigureNet"),
   emittersCtxShowMap: document.querySelector("#emittersCtxShowMap"),
   emittersCtxEdit: document.querySelector("#emittersCtxEdit"),
@@ -1990,7 +1996,9 @@ const dom = {
   emittersNetModalValidation: document.querySelector("#emittersNetModalValidation"),
   emittersNetModalCloseBtn: document.querySelector("#emittersNetModalCloseBtn"),
   emittersNetModalCancelBtn: document.querySelector("#emittersNetModalCancelBtn"),
+  emittersNetModalDeleteBtn: document.querySelector("#emittersNetModalDeleteBtn"),
   emittersNetModalSaveBtn: document.querySelector("#emittersNetModalSaveBtn"),
+  emittersNetNameInput: document.querySelector("#emittersNetNameInput"),
   emittersNetFreqInput: document.querySelector("#emittersNetFreqInput"),
   emittersNetBandwidthInput: document.querySelector("#emittersNetBandwidthInput"),
   emittersNetWaveformInput: document.querySelector("#emittersNetWaveformInput"),
@@ -2165,6 +2173,7 @@ const dom = {
   tacticalMarkerSizeValue: document.querySelector("#tacticalMarkerSizeValue"),
   measurementUnitsSelect: document.querySelector("#measurementUnitsSelect"),
   themeSelect: document.querySelector("#themeSelect"),
+  fontFamilySelect: document.querySelector("#fontFamilySelect"),
   coordinateSystemSelect: document.querySelector("#coordinateSystemSelect"),
   gridlinesToggle: document.querySelector("#gridlinesToggle"),
   centerGridToggle: document.querySelector("#centerGridToggle"),
@@ -2621,6 +2630,7 @@ const state = {
   settings: {
     measurementUnits: "standard",
     theme: "dark",
+    fontFamily: "bahnschrift",
     coordinateSystem: "mgrs",
     gridLinesEnabled: false,
     centerGridEnabled: false,
@@ -3210,8 +3220,68 @@ function formatEmitterProfileListMeta(profile) {
   return `${freq > 0 ? `${freq.toFixed(freq >= 100 ? 0 : 3)} MHz` : "No frequency"}${power > 0 ? ` Â· ${power} W` : ""}${waveform ? ` Â· ${waveform}` : ""}`;
 }
 
+function buildEmitterNetRecord(data = {}, index = 0) {
+  const fallbackName = `Net ${index + 1}`;
+  const numericFrequency = Number(data.frequencyMHz);
+  const numericBandwidth = Number(data.bandwidthKHz);
+  return {
+    id: typeof data.id === "string" && data.id.trim() ? data.id.trim() : generateId(),
+    name: typeof data.name === "string" && data.name.trim() ? data.name.trim() : fallbackName,
+    frequencyMHz: Number.isFinite(numericFrequency) ? numericFrequency : null,
+    bandwidthKHz: Number.isFinite(numericBandwidth) ? numericBandwidth : null,
+    waveform: typeof data.waveform === "string" ? data.waveform.trim() : "",
+  };
+}
+
+function buildPrimaryEmitterNetFromAsset(asset) {
+  if (!asset) {
+    return buildEmitterNetRecord({}, 0);
+  }
+  return buildEmitterNetRecord({
+    name: asset.waveform || asset.emitterLabel || asset.name || "Net 1",
+    frequencyMHz: asset.frequencyMHz,
+    bandwidthKHz: asset.bandwidthKHz ?? asset.ext?.bandwidthKHz,
+    waveform: asset.waveform || asset.ext?.waveform || "",
+  }, 0);
+}
+
+function getEmitterNets(asset) {
+  const source = Array.isArray(asset?.ext?.nets) ? asset.ext.nets : [];
+  const normalized = source
+    .map((net, index) => buildEmitterNetRecord(net, index))
+    .filter((net) => Number.isFinite(Number(net.frequencyMHz)) || net.waveform || Number.isFinite(Number(net.bandwidthKHz)) || net.name);
+  if (normalized.length) {
+    return normalized;
+  }
+  const primaryExists = Number.isFinite(Number(asset?.frequencyMHz))
+    || Number.isFinite(Number(asset?.bandwidthKHz ?? asset?.ext?.bandwidthKHz))
+    || Boolean(asset?.waveform || asset?.ext?.waveform);
+  return primaryExists ? [buildPrimaryEmitterNetFromAsset(asset)] : [];
+}
+
+function syncPrimaryEmitterNetToAsset(asset) {
+  if (!asset) {
+    return;
+  }
+  asset.ext = asset.ext && typeof asset.ext === "object" ? asset.ext : {};
+  const nets = getEmitterNets(asset);
+  asset.ext.nets = nets;
+  const primary = nets[0] || null;
+  asset.frequencyMHz = primary?.frequencyMHz ?? null;
+  asset.bandwidthKHz = primary?.bandwidthKHz ?? null;
+  asset.waveform = primary?.waveform ?? "";
+  asset.ext.bandwidthKHz = asset.bandwidthKHz;
+  asset.ext.waveform = asset.waveform;
+}
+
 function buildEmitterAssetFromProfilePayload(payload, { profileRef = null } = {}) {
   const normalized = normalizeEmitterProfilePayload(payload);
+  const primaryNet = buildEmitterNetRecord({
+    name: normalized.rf.waveform || normalized.name || normalized.emitterType || "Net 1",
+    frequencyMHz: normalized.rf.frequencyMHz,
+    bandwidthKHz: normalized.rf.bandwidthKHz,
+    waveform: normalized.rf.waveform,
+  }, 0);
   const asset = {
     type: normalized.type,
     emitterLabel: normalized.emitterLabel,
@@ -3300,6 +3370,7 @@ function buildEmitterAssetFromProfilePayload(payload, { profileRef = null } = {}
       satGainDbi: normalized.network.satGainDbi,
       locationGrid: normalized.locationDefaults.gridLocation,
       colocateAssetId: normalized.locationDefaults.colocateAssetId,
+      nets: [primaryNet],
     },
     profileId: "",
     profileName: "",
@@ -9454,6 +9525,7 @@ function wireEvents() {
   dom.map.addEventListener("drop", onMapFileDrop);
   dom.measurementUnitsSelect.addEventListener("change", onSettingsChanged);
   dom.themeSelect.addEventListener("change", onSettingsChanged);
+  dom.fontFamilySelect?.addEventListener("change", onSettingsChanged);
   dom.coordinateSystemSelect.addEventListener("change", onSettingsChanged);
   dom.gridlinesToggle.addEventListener("change", onSettingsChanged);
   dom.centerGridToggle.addEventListener("change", onSettingsChanged);
@@ -9774,6 +9846,9 @@ function loadSettings() {
     state.settings.theme = ["dark", "light"].includes(parsed.theme)
       ? parsed.theme
       : state.settings.theme;
+    state.settings.fontFamily = FONT_FAMILY_OPTIONS[parsed.fontFamily]
+      ? parsed.fontFamily
+      : state.settings.fontFamily;
     state.settings.coordinateSystem = ["mgrs", "latlon", "dms"].includes(parsed.coordinateSystem)
       ? parsed.coordinateSystem
       : state.settings.coordinateSystem;
@@ -10474,6 +10549,9 @@ function onRenamePopoverKeyDown(event) {
 function onSettingsChanged() {
   state.settings.measurementUnits = dom.measurementUnitsSelect.value;
   state.settings.theme = dom.themeSelect.value;
+  state.settings.fontFamily = FONT_FAMILY_OPTIONS[dom.fontFamilySelect?.value]
+    ? dom.fontFamilySelect.value
+    : state.settings.fontFamily;
   state.settings.coordinateSystem = dom.coordinateSystemSelect.value;
   state.settings.gridLinesEnabled = dom.gridlinesToggle.checked;
   state.settings.centerGridEnabled = dom.centerGridToggle.checked;
@@ -10500,6 +10578,7 @@ function onSettingsChanged() {
 function applySettings() {
   dom.measurementUnitsSelect.value = state.settings.measurementUnits;
   dom.themeSelect.value = state.settings.theme;
+  if (dom.fontFamilySelect) dom.fontFamilySelect.value = FONT_FAMILY_OPTIONS[state.settings.fontFamily] ? state.settings.fontFamily : "bahnschrift";
   dom.coordinateSystemSelect.value = state.settings.coordinateSystem;
   dom.gridlinesToggle.checked = state.settings.gridLinesEnabled;
   dom.centerGridToggle.checked = state.settings.centerGridEnabled;
@@ -10531,6 +10610,7 @@ function applySettings() {
   if (dom.buildingPropagationMode) dom.buildingPropagationMode.value = state.settings.buildingPropagationMode;
   updateCenterCrosshairVisibility();
   document.body.classList.toggle("theme-light", state.settings.theme === "light");
+  document.documentElement.style.setProperty("--app-font-family", FONT_FAMILY_OPTIONS[state.settings.fontFamily] || FONT_FAMILY_OPTIONS.bahnschrift);
   if (dom.coordsLabel) dom.coordsLabel.textContent = coordinateSystemStatusLabel(state.settings.coordinateSystem);
   updateWeatherUnitLabels();
   syncWeatherInputsFromState();
@@ -11492,11 +11572,13 @@ function switchView(view, skipAnimation) {
 
   // Update toggle UI immediately
   if (dom.viewModeToggle) {
+    const viewIndex = { plan: 0, emitters: 1, map: 2, topology: 3, analyze: 4 };
     dom.viewModeToggle.querySelectorAll(".view-mode-tab").forEach(tab => {
       tab.classList.toggle("active", tab.dataset.view === view);
       tab.setAttribute("aria-selected", String(tab.dataset.view === view));
     });
     dom.viewModeToggle.setAttribute("data-active", view);
+    dom.viewModeToggle.style.setProperty("--view-active-index", String(viewIndex[view] ?? 0));
   }
 
   if (skipAnimation || !prevEl) {
@@ -11555,6 +11637,7 @@ function afterSwitchView(view) {
 
 function initViewModeToggle() {
   if (!dom.viewModeToggle) return;
+  const viewIndex = { plan: 0, emitters: 1, map: 2, topology: 3, analyze: 4 };
   dom.viewModeToggle.addEventListener("click", (e) => {
     const tab = e.target.closest(".view-mode-tab");
     if (!tab) return;
@@ -11574,6 +11657,7 @@ function initViewModeToggle() {
       tab.setAttribute("aria-selected", String(isMap));
     });
     dom.viewModeToggle.setAttribute("data-active", "map");
+    dom.viewModeToggle.style.setProperty("--view-active-index", String(viewIndex.map));
   }
   document.body.dataset.currentView = "map";
   syncAiUi();
@@ -22184,35 +22268,71 @@ function reserveEmitterWorkspaceSpawnLayout() {
 }
 
 function resolveEmitterGraphicPath(asset) {
+  const KEY_TO_GRAPHIC = {
+    "prc-163":          "PRC163 svg.png",
+    "prc-152a":         "PRC163 svg.png",
+    "prc-117g":         "PRC117G.png",
+    "prc-160":          "PRC160.png",
+    "prc-160-hf":       "PRC160.png",
+    "mototrbo-r7":      "Motorola MOTOTRBO R7.png",
+    "mpu-5":            "MPU5.png",
+    "silvus-sc4200":    "SC4200.png",
+    "silvus-sc4400":    "SC4400.png",
+    "tw-950":           "TW950.png",
+    "trellisware-tw950":"TW950.png",
+    "starlink-military":"Starlink.png",
+    "harris-xg100p":    "Harris XG-100P (P25-LTE).png",
+    "xts-2500":         "Motorola XTS 2500 (P25).png",
+    "p25-portable":     "P25 (portable).png",
+    "p25-mobile":       "P25 (mobile).png",
+    "p25-repeater":     "P25 repeater.png",
+    "dmr-portable":     "DMR (portable).png",
+    "dmr-mobile":       "DMR (mobile).png",
+    "dmr-repeater":     "DMR repeater.png",
+  };
+
+  const libraryKey = (asset?.ext?.emitterType || "").toLowerCase().trim();
+  if (libraryKey && KEY_TO_GRAPHIC[libraryKey]) {
+    return encodeURI(`images/emitter_graphics/${KEY_TO_GRAPHIC[libraryKey]}`);
+  }
+
+  // Fuzzy fallback for manual/custom entries using name, label, notes, etc.
   const haystack = [
-    asset?.ext?.emitterType,
     asset?.emitterLabel,
     asset?.name,
     asset?.waveform,
-    asset?.type,
     asset?.notes,
   ].join(" ").toLowerCase();
-  const matchers = [
-    [["prc-163", "prc163"], "PRC163 svg.png"],
-    [["prc-117g", "prc117g"], "PRC117G.png"],
-    [["prc-160", "prc160"], "PRC160.png"],
-    [["mpu-5", "mpu5", "wave relay"], "MPU5.png"],
-    [["mototrbo", "r7"], "Motorola MOTOTRBO R7.png"],
-    [["xts 2500"], "Motorola XTS 2500 (P25).png"],
-    [["xg-100p", "xg100p"], "Harris XG-100P (P25-LTE).png"],
-    [["sc4200", "silvus 4200"], "SC4200.png"],
-    [["sc4400", "silvus 4400"], "SC4400.png"],
-    [["tw950", "tw-950", "trellisware"], "TW950.png"],
-    [["win-t", "wint"], "WIN-T.png"],
-    [["starlink", "starshield"], "Starlink.png"],
-    [["dmr", "repeater"], "DMR repeater.png"],
-    [["dmr", "mobile"], "DMR (mobile).png"],
-    [["dmr", "portable"], "DMR (portable).png"],
-    [["p25", "repeater"], "P25 repeater.png"],
-    [["p25", "mobile"], "P25 (mobile).png"],
-    [["p25", "portable"], "P25 (portable).png"],
+
+  const fuzzyMatchers = [
+    [["prc-163"],                  "PRC163 svg.png"],
+    [["prc-152"],                  "PRC163 svg.png"],
+    [["prc-117g"],                 "PRC117G.png"],
+    [["prc-160"],                  "PRC160.png"],
+    [["mpu-5"],                    "MPU5.png"],
+    [["mpu5"],                     "MPU5.png"],
+    [["wave relay"],               "MPU5.png"],
+    [["mototrbo"],                 "Motorola MOTOTRBO R7.png"],
+    [["xts 2500"],                 "Motorola XTS 2500 (P25).png"],
+    [["xg-100p"],                  "Harris XG-100P (P25-LTE).png"],
+    [["streamcaster 4200"],        "SC4200.png"],
+    [["streamcaster 4400"],        "SC4400.png"],
+    [["silvus 4200"],              "SC4200.png"],
+    [["silvus 4400"],              "SC4400.png"],
+    [["tw-950"],                   "TW950.png"],
+    [["tw950"],                    "TW950.png"],
+    [["trellisware"],              "TW950.png"],
+    [["win-t"],                    "WIN-T.png"],
+    [["starlink"],                 "Starlink.png"],
+    [["starshield"],               "Starlink.png"],
+    [["dmr", "repeater"],          "DMR repeater.png"],
+    [["dmr", "mobile"],            "DMR (mobile).png"],
+    [["dmr", "portable"],          "DMR (portable).png"],
+    [["p25", "repeater"],          "P25 repeater.png"],
+    [["p25", "mobile"],            "P25 (mobile).png"],
+    [["p25", "portable"],          "P25 (portable).png"],
   ];
-  for (const [needles, fileName] of matchers) {
+  for (const [needles, fileName] of fuzzyMatchers) {
     if (needles.every((needle) => haystack.includes(needle))) {
       return encodeURI(`images/emitter_graphics/${fileName}`);
     }
@@ -22275,30 +22395,42 @@ function showEmittersContextMenu(assetId, x, y) {
 
 function closeEmittersNetModal() {
   _emittersWorkspaceState.netAssetId = "";
+  _emittersWorkspaceState.netId = "";
   dom.emittersNetModalValidation && (dom.emittersNetModalValidation.textContent = "");
   dom.emittersNetModal?.classList.add("hidden");
   updateModalBodyState();
 }
 
-function openEmittersNetModal(assetId) {
+function openEmittersNetModal(assetId, netId = "", { createNew = false } = {}) {
   const asset = state.assets.find((entry) => entry.id === assetId);
   if (!asset || !dom.emittersNetModal) {
     return;
   }
   _emittersWorkspaceState.netAssetId = asset.id;
+  const nets = getEmitterNets(asset);
+  const existingNet = netId
+    ? nets.find((entry) => entry.id === netId) || null
+    : nets[0] || null;
+  const isEditing = Boolean(existingNet) && !createNew;
+  const activeNet = isEditing
+    ? existingNet
+    : buildEmitterNetRecord({ name: `Net ${nets.length + 1}` }, nets.length);
+  _emittersWorkspaceState.netId = isEditing ? activeNet.id : "";
   if (dom.emittersNetModalTitle) {
-    dom.emittersNetModalTitle.textContent = `Configure A Net`;
+    dom.emittersNetModalTitle.textContent = isEditing ? "Edit Net" : "Add Net";
   }
   if (dom.emittersNetModalSubtitle) {
     dom.emittersNetModalSubtitle.textContent = asset.name || asset.emitterLabel || "Selected emitter";
   }
-  if (dom.emittersNetFreqInput) dom.emittersNetFreqInput.value = Number.isFinite(Number(asset.frequencyMHz)) ? String(asset.frequencyMHz) : "";
-  if (dom.emittersNetBandwidthInput) dom.emittersNetBandwidthInput.value = Number.isFinite(Number(asset.bandwidthKHz)) ? String(asset.bandwidthKHz) : "";
-  if (dom.emittersNetWaveformInput) dom.emittersNetWaveformInput.value = asset.waveform || asset.ext?.waveform || "";
+  if (dom.emittersNetNameInput) dom.emittersNetNameInput.value = activeNet.name || "";
+  if (dom.emittersNetFreqInput) dom.emittersNetFreqInput.value = Number.isFinite(Number(activeNet.frequencyMHz)) ? String(activeNet.frequencyMHz) : "";
+  if (dom.emittersNetBandwidthInput) dom.emittersNetBandwidthInput.value = Number.isFinite(Number(activeNet.bandwidthKHz)) ? String(activeNet.bandwidthKHz) : "";
+  if (dom.emittersNetWaveformInput) dom.emittersNetWaveformInput.value = activeNet.waveform || "";
   if (dom.emittersNetModalValidation) dom.emittersNetModalValidation.textContent = "";
+  dom.emittersNetModalDeleteBtn?.classList.toggle("hidden", !isEditing);
   dom.emittersNetModal.classList.remove("hidden");
   updateModalBodyState();
-  dom.emittersNetFreqInput?.focus();
+  dom.emittersNetNameInput?.focus();
 }
 
 function saveEmittersNetModal() {
@@ -22307,9 +22439,15 @@ function saveEmittersNetModal() {
     closeEmittersNetModal();
     return;
   }
+  const name = String(dom.emittersNetNameInput?.value || "").trim();
   const frequencyMHz = Number(dom.emittersNetFreqInput?.value);
   const bandwidthKHz = Number(dom.emittersNetBandwidthInput?.value);
   const waveform = String(dom.emittersNetWaveformInput?.value || "").trim();
+  if (!name) {
+    if (dom.emittersNetModalValidation) dom.emittersNetModalValidation.textContent = "Enter a net name.";
+    dom.emittersNetNameInput?.focus();
+    return;
+  }
   if (!Number.isFinite(frequencyMHz) || frequencyMHz <= 0) {
     if (dom.emittersNetModalValidation) dom.emittersNetModalValidation.textContent = "Enter a valid frequency in MHz.";
     dom.emittersNetFreqInput?.focus();
@@ -22320,19 +22458,53 @@ function saveEmittersNetModal() {
     dom.emittersNetBandwidthInput?.focus();
     return;
   }
-  asset.frequencyMHz = frequencyMHz;
-  asset.bandwidthKHz = dom.emittersNetBandwidthInput?.value ? bandwidthKHz : null;
-  asset.waveform = waveform;
   asset.ext = asset.ext && typeof asset.ext === "object" ? asset.ext : {};
-  asset.ext.bandwidthKHz = asset.bandwidthKHz;
-  asset.ext.waveform = waveform;
+  const nets = getEmitterNets(asset);
+  const nextNet = buildEmitterNetRecord({
+    id: _emittersWorkspaceState.netId || generateId(),
+    name,
+    frequencyMHz,
+    bandwidthKHz: dom.emittersNetBandwidthInput?.value ? bandwidthKHz : null,
+    waveform,
+  }, nets.length);
+  const existingIndex = _emittersWorkspaceState.netId
+    ? nets.findIndex((entry) => entry.id === _emittersWorkspaceState.netId)
+    : -1;
+  if (existingIndex >= 0) {
+    nets.splice(existingIndex, 1, nextNet);
+  } else {
+    nets.push(nextNet);
+  }
+  asset.ext.nets = nets;
+  syncPrimaryEmitterNetToAsset(asset);
   asset.version = (asset.version ?? 1) + 1;
   asset.lastModified = nowIso();
   updateAssetMarker(asset);
   renderAssets();
   syncCesiumEntities();
   saveMapState();
-  setStatus(`Updated net settings for ${asset.name}.`);
+  setStatus(`${existingIndex >= 0 ? "Updated" : "Added"} net for ${asset.name}.`);
+  closeEmittersNetModal();
+}
+
+function deleteEmittersNetFromModal() {
+  const asset = state.assets.find((entry) => entry.id === _emittersWorkspaceState.netAssetId);
+  const targetNetId = _emittersWorkspaceState.netId;
+  if (!asset || !targetNetId) {
+    closeEmittersNetModal();
+    return;
+  }
+  const nets = getEmitterNets(asset).filter((entry) => entry.id !== targetNetId);
+  asset.ext = asset.ext && typeof asset.ext === "object" ? asset.ext : {};
+  asset.ext.nets = nets;
+  syncPrimaryEmitterNetToAsset(asset);
+  asset.version = (asset.version ?? 1) + 1;
+  asset.lastModified = nowIso();
+  updateAssetMarker(asset);
+  renderAssets();
+  syncCesiumEntities();
+  saveMapState();
+  setStatus(`Deleted net from ${asset.name}.`);
   closeEmittersNetModal();
 }
 
@@ -22362,6 +22534,21 @@ function renderEmittersWorkspace() {
     const placeholderStyle = type === "radio"
       ? `--marker-color:${escapeHtml(markerColor)};`
       : `background:${escapeHtml(markerColor)}`;
+    const nets = getEmitterNets(asset);
+    const netMarkup = nets.length
+      ? nets.map((net, netIndex) => `
+          <button class="emitters-net-row" type="button" data-net-id="${escapeHtml(net.id)}" title="Edit ${escapeHtml(net.name || `Net ${netIndex + 1}`)}">
+            <div class="emitters-net-row-header">
+              <strong>${escapeHtml(net.name || `Net ${netIndex + 1}`)}</strong>
+              <span>${escapeHtml(formatEmitterWorkspaceFrequency(net.frequencyMHz))}</span>
+            </div>
+            <div class="emitters-net-row-meta">
+              <span>BW ${escapeHtml(formatEmitterWorkspaceBandwidth(net.bandwidthKHz))}</span>
+              <span>${escapeHtml(net.waveform || "Unset")}</span>
+            </div>
+          </button>
+        `).join("")
+      : `<div class="emitters-net-empty">No nets configured.</div>`;
     const card = document.createElement("article");
     card.className = `emitters-card${_emittersWorkspaceState.selectedAssetId === asset.id ? " is-selected" : ""}`;
     card.dataset.assetId = asset.id;
@@ -22386,14 +22573,22 @@ function renderEmittersWorkspace() {
         <div class="emitters-card-kv"><dt>Map</dt><dd>${escapeHtml(visibilityLabel)}</dd></div>
       </dl>
       <div class="emitters-card-net">
-        <span class="emitters-card-net-title">Net</span>
-        <dl class="emitters-card-meta">
-          <div class="emitters-card-kv"><dt>Frequency</dt><dd>${escapeHtml(formatEmitterWorkspaceFrequency(asset.frequencyMHz))}</dd></div>
-          <div class="emitters-card-kv"><dt>Bandwidth</dt><dd>${escapeHtml(formatEmitterWorkspaceBandwidth(asset.bandwidthKHz))}</dd></div>
-          <div class="emitters-card-kv"><dt>Waveform</dt><dd>${escapeHtml(asset.waveform || "Unset")}</dd></div>
-        </dl>
+        <div class="emitters-card-net-header">
+          <span class="emitters-card-net-title">Nets</span>
+          <span class="emitters-card-net-count">${nets.length}</span>
+        </div>
+        <div class="emitters-net-list">${netMarkup}</div>
       </div>
     `;
+    card.querySelectorAll(".emitters-net-row").forEach((row) => {
+      row.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        _emittersWorkspaceState.selectedAssetId = asset.id;
+        syncEmittersWorkspaceSelectionUi();
+        openEmittersNetModal(asset.id, row.dataset.netId || "");
+      });
+    });
     card.addEventListener("click", (event) => {
       event.stopPropagation();
       _emittersWorkspaceState.selectedAssetId = asset.id;
@@ -22519,10 +22714,18 @@ function initEmittersViewIfNeeded() {
   });
 
   dom.emittersCtxConfigureNet?.addEventListener("click", () => {
+    const assetId = _emittersWorkspaceState.contextAssetId;
     hideEmittersContextMenu();
-    if (_emittersWorkspaceState.contextAssetId) {
-      openEmittersNetModal(_emittersWorkspaceState.contextAssetId);
-    }
+    if (!assetId) return;
+    const asset = state.assets.find((entry) => entry.id === assetId);
+    const firstNet = asset ? getEmitterNets(asset)[0] : null;
+    openEmittersNetModal(assetId, firstNet?.id || "", { createNew: !firstNet });
+  });
+  dom.emittersCtxAddNet?.addEventListener("click", () => {
+    const assetId = _emittersWorkspaceState.contextAssetId;
+    hideEmittersContextMenu();
+    if (!assetId) return;
+    openEmittersNetModal(assetId, "", { createNew: true });
   });
   dom.emittersCtxShowMap?.addEventListener("click", () => {
     const assetId = _emittersWorkspaceState.contextAssetId;
@@ -22542,6 +22745,7 @@ function initEmittersViewIfNeeded() {
   dom.emittersNetModalCloseBtn?.addEventListener("click", closeEmittersNetModal);
   dom.emittersNetModalCancelBtn?.addEventListener("click", closeEmittersNetModal);
   dom.emittersNetModalSaveBtn?.addEventListener("click", saveEmittersNetModal);
+  dom.emittersNetModalDeleteBtn?.addEventListener("click", deleteEmittersNetFromModal);
   addModalBackdropClose(dom.emittersNetModal, closeEmittersNetModal);
 
   document.addEventListener("click", (event) => {
@@ -22561,17 +22765,6 @@ function renderAssets() {
   dom.assetSelect.innerHTML = "";
   if (dom.planningTxAsset) dom.planningTxAsset.innerHTML = "";
   if (dom.planningRxAsset) dom.planningRxAsset.innerHTML = "";
-  if (dom.emittersCountValue) dom.emittersCountValue.textContent = String(state.assets.length);
-  if (dom.emittersLinkedValue) {
-    dom.emittersLinkedValue.textContent = String(
-      state.assets.filter((asset) => Number.isFinite(Number(asset.toUnitId))).length
-    );
-  }
-  if (dom.emittersVisibleValue) {
-    dom.emittersVisibleValue.textContent = String(
-      state.assets.filter((asset) => !isContentEffectivelyHidden(`asset:${asset.id}`)).length
-    );
-  }
 
   if (!state.assets.length) {
     dom.assetSelect.innerHTML = `<option value="">No emitters available</option>`;
@@ -35208,6 +35401,7 @@ const _emittersWorkspaceState = {
   selectedAssetId: "",
   contextAssetId: "",
   netAssetId: "",
+  netId: "",
   pendingSpawnLayout: null,
 };
 
