@@ -1427,7 +1427,6 @@ const EMITTER_LIBRARY = {
     },
   },
 
-  ...RADAR_EMITTER_LIBRARY,
 };
 
 // ─── Link budget helpers ──────────────────────────────────────────────────────
