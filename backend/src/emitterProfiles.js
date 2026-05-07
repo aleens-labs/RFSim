@@ -7,6 +7,7 @@ const boundedNumber = (minimum, maximum) => z.number().finite().min(minimum).max
 const optionalNumber = (minimum, maximum) => boundedNumber(minimum, maximum).nullable().optional().default(null);
 
 const emitterProfilePayloadSchema = z.object({
+  emitterType: z.string().max(120).optional().default(""),
   radioType: z.string().max(120).optional().default(""),
   programKey: z.string().max(120).optional().default(""),
   type: z.enum(EMITTER_ICON_VALUES).optional().default("radio"),
@@ -104,6 +105,7 @@ function formatEmitterProfileRow(row) {
     return null;
   }
   const profile = emitterProfilePayloadSchema.parse(row.profile_json ?? {});
+  profile.emitterType = profile.emitterType || profile.radioType || "";
   return {
     id: row.id,
     name: row.name,

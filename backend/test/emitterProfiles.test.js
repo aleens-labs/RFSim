@@ -13,7 +13,7 @@ test("emitterProfileCreateSchema accepts a full normalized emitter profile", () 
   const parsed = emitterProfileCreateSchema.safeParse({
     name: "PRC-163 Assault Net",
     profile: {
-      radioType: "prc-163",
+      emitterType: "prc-163",
       programKey: "vhf-sincgars",
       type: "radio",
       emitterLabel: "AN/PRC-163 Falcon IV",
@@ -144,6 +144,8 @@ test("starter radar emitter profiles parse and include passive receiver entry", 
 
   const passiveProfile = starterProfiles.find((entry) => entry.name === "Passive Air-Surveillance Receiver Site");
   assert.ok(passiveProfile);
+  assert.equal(passiveProfile.profile.emitterType, "passive-air-surveillance-receiver-site");
+  assert.equal(passiveProfile.profile.programKey, "default");
   assert.equal(passiveProfile.profile.tx.powerW, 0);
   assert.equal(passiveProfile.profile.rf.waveform, "Passive DF");
 });

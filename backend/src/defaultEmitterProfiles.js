@@ -226,8 +226,8 @@ function buildStarterEmitterProfiles() {
     key: entry.key,
     name: entry.name,
     profile: emitterProfilePayloadSchema.parse({
-      radioType: "",
-      programKey: "",
+      emitterType: entry.key,
+      programKey: "default",
       locationDefaults: {
         gridLocation: "",
         colocateAssetId: "",

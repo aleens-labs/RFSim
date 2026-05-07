@@ -713,10 +713,241 @@ function generateId() {
   return `id-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-// ─── Radio Library ────────────────────────────────────────────────────────────
-// Each entry: radioType → { label, programs: { programKey → profile } }
+// ─── Emitter Library ────────────────────────────────────────────────────────────
+// Each entry: emitterType → { label, programs: { programKey → profile } }
 // Profile schema mirrors the emitter modal fields.
-const RADIO_LIBRARY = {
+const RADAR_EMITTER_LIBRARY = {
+  "long-range-early-warning-radar": {
+    label: "Long-Range Early Warning Radar",
+    programs: {
+      default: {
+        label: "Volume Search",
+        type: "sensor",
+        force: "enemy",
+        icon: "sensor",
+        color: "#ef4444",
+        notes: "Broad-area long-range surveillance radar optimized for wide azimuth coverage and early warning against aircraft and cruise-missile sized targets.",
+        rf: { frequencyMHz: 1250, bandwidthKHz: 8000, modulation: "Pulse", waveform: "Volume Search", duplex: "simplex", channelSpacingKHz: 5000 },
+        tx: { powerW: 850000, dutyCycle: 0.18, papr: 0, spectralEfficiency: null },
+        rx: { sensitivityDbm: -103, noiseFigDb: 4, requiredSnrDb: 13, acrDb: 80, bdrDb: 90 },
+        antenna: { type: "phased-array", gainDbi: 33, pattern: "sectoral", polarization: "linear", heightM: 14, cableLossDb: 1.2, systemLossDb: 4 },
+        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true, nvisEnabled: false, ionoModel: "simple", timeDayEffects: false, solarIndex: null },
+        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 120, adaptiveDataRate: false, satcomEnabled: false, satType: "", satUplinkMHz: null, satDownlinkMHz: null, satGainDbi: null },
+      },
+    },
+  },
+  "vhf-early-warning-radar": {
+    label: "VHF Early Warning Radar",
+    programs: {
+      default: {
+        label: "Low-Band Search",
+        type: "sensor",
+        force: "enemy",
+        icon: "sensor",
+        color: "#ef4444",
+        notes: "Low-band long-range surveillance radar emphasizing long detection range and reduced sensitivity to shaping, at the cost of coarser track quality.",
+        rf: { frequencyMHz: 180, bandwidthKHz: 3000, modulation: "Pulse", waveform: "Low-Band Search", duplex: "simplex", channelSpacingKHz: 1000 },
+        tx: { powerW: 600000, dutyCycle: 0.12, papr: 0, spectralEfficiency: null },
+        rx: { sensitivityDbm: -106, noiseFigDb: 3, requiredSnrDb: 10, acrDb: 75, bdrDb: 88 },
+        antenna: { type: "array", gainDbi: 24, pattern: "sectoral", polarization: "horizontal", heightM: 18, cableLossDb: 1.5, systemLossDb: 4.5 },
+        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true, nvisEnabled: false, ionoModel: "simple", timeDayEffects: false, solarIndex: null },
+        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 180, adaptiveDataRate: false, satcomEnabled: false, satType: "", satUplinkMHz: null, satDownlinkMHz: null, satGainDbi: null },
+      },
+    },
+  },
+  "3d-acquisition-radar": {
+    label: "3D Acquisition Radar",
+    programs: {
+      default: {
+        label: "3D Search",
+        type: "sensor",
+        force: "enemy",
+        icon: "sensor",
+        color: "#ef4444",
+        notes: "Altitude-capable surveillance and track-initiation radar for medium-to-long-range air defense batteries.",
+        rf: { frequencyMHz: 2900, bandwidthKHz: 6000, modulation: "Pulse-Doppler", waveform: "3D Search", duplex: "simplex", channelSpacingKHz: 2500 },
+        tx: { powerW: 320000, dutyCycle: 0.16, papr: 0, spectralEfficiency: null },
+        rx: { sensitivityDbm: -102, noiseFigDb: 4, requiredSnrDb: 12, acrDb: 78, bdrDb: 88 },
+        antenna: { type: "phased-array", gainDbi: 31, pattern: "sectoral", polarization: "linear", heightM: 12, cableLossDb: 1, systemLossDb: 3.5 },
+        prop: { model: "itu-p526", clutter: "suburban", terrainEnabled: true, diffractionEnabled: true, nvisEnabled: false, ionoModel: "simple", timeDayEffects: false, solarIndex: null },
+        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 90, adaptiveDataRate: false, satcomEnabled: false, satType: "", satUplinkMHz: null, satDownlinkMHz: null, satGainDbi: null },
+      },
+    },
+  },
+  "mobile-sector-search-radar": {
+    label: "Mobile Sector Search Radar",
+    programs: {
+      default: {
+        label: "Sector Search",
+        type: "sensor",
+        force: "enemy",
+        icon: "sensor",
+        color: "#ef4444",
+        notes: "Truck-mobile sector search radar for rapid emplacement, gap coverage, and cueing of nearby air-defense elements.",
+        rf: { frequencyMHz: 5600, bandwidthKHz: 4500, modulation: "Pulse-Doppler", waveform: "Sector Search", duplex: "simplex", channelSpacingKHz: 2000 },
+        tx: { powerW: 140000, dutyCycle: 0.14, papr: 0, spectralEfficiency: null },
+        rx: { sensitivityDbm: -100, noiseFigDb: 4.5, requiredSnrDb: 11, acrDb: 72, bdrDb: 84 },
+        antenna: { type: "phased-array", gainDbi: 29, pattern: "directional", polarization: "linear", heightM: 10, cableLossDb: 0.8, systemLossDb: 3.2 },
+        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true, nvisEnabled: false, ionoModel: "simple", timeDayEffects: false, solarIndex: null },
+        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 70, adaptiveDataRate: false, satcomEnabled: false, satType: "", satUplinkMHz: null, satDownlinkMHz: null, satGainDbi: null },
+      },
+    },
+  },
+  "long-range-aesa-surveillance-radar": {
+    label: "Long-Range AESA Surveillance Radar",
+    programs: {
+      default: {
+        label: "AESA Search",
+        type: "sensor",
+        force: "enemy",
+        icon: "sensor",
+        color: "#ef4444",
+        notes: "Modern electronically scanned long-range surveillance radar emphasizing rapid revisit rates, target density handling, and all-weather tracking.",
+        rf: { frequencyMHz: 3400, bandwidthKHz: 10000, modulation: "Pulse-Doppler", waveform: "AESA Search", duplex: "simplex", channelSpacingKHz: 5000 },
+        tx: { powerW: 280000, dutyCycle: 0.2, papr: 0, spectralEfficiency: null },
+        rx: { sensitivityDbm: -101, noiseFigDb: 3.5, requiredSnrDb: 12, acrDb: 82, bdrDb: 90 },
+        antenna: { type: "AESA", gainDbi: 35, pattern: "sectoral", polarization: "linear", heightM: 13, cableLossDb: 0.7, systemLossDb: 3.5 },
+        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true, nvisEnabled: false, ionoModel: "simple", timeDayEffects: false, solarIndex: null },
+        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 60, adaptiveDataRate: false, satcomEnabled: false, satType: "", satUplinkMHz: null, satDownlinkMHz: null, satGainDbi: null },
+      },
+    },
+  },
+  "sam-target-acquisition-radar": {
+    label: "SAM Target Acquisition Radar",
+    programs: {
+      default: {
+        label: "Acquisition Search",
+        type: "sensor",
+        force: "enemy",
+        icon: "sensor",
+        color: "#ef4444",
+        notes: "Battery-level target acquisition radar used to search, classify, and hand off tracks to engagement and command elements.",
+        rf: { frequencyMHz: 2700, bandwidthKHz: 5000, modulation: "Pulse-Doppler", waveform: "Acquisition Search", duplex: "simplex", channelSpacingKHz: 2500 },
+        tx: { powerW: 210000, dutyCycle: 0.15, papr: 0, spectralEfficiency: null },
+        rx: { sensitivityDbm: -101, noiseFigDb: 4, requiredSnrDb: 11, acrDb: 76, bdrDb: 86 },
+        antenna: { type: "phased-array", gainDbi: 30, pattern: "sectoral", polarization: "linear", heightM: 11, cableLossDb: 0.9, systemLossDb: 3.4 },
+        prop: { model: "itu-p526", clutter: "suburban", terrainEnabled: true, diffractionEnabled: true, nvisEnabled: false, ionoModel: "simple", timeDayEffects: false, solarIndex: null },
+        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 80, adaptiveDataRate: false, satcomEnabled: false, satType: "", satUplinkMHz: null, satDownlinkMHz: null, satGainDbi: null },
+      },
+    },
+  },
+  "sam-engagement-radar": {
+    label: "SAM Engagement Radar",
+    programs: {
+      default: {
+        label: "Target Track",
+        type: "sensor",
+        force: "enemy",
+        icon: "sensor",
+        color: "#ef4444",
+        notes: "High-gain engagement radar for precision target tracking, missile uplink support, and terminal fire-control tasking.",
+        rf: { frequencyMHz: 9300, bandwidthKHz: 2500, modulation: "Pulse-Doppler", waveform: "Target Track", duplex: "simplex", channelSpacingKHz: 1000 },
+        tx: { powerW: 95000, dutyCycle: 0.1, papr: 0, spectralEfficiency: null },
+        rx: { sensitivityDbm: -98, noiseFigDb: 5, requiredSnrDb: 14, acrDb: 85, bdrDb: 92 },
+        antenna: { type: "phased-array", gainDbi: 38, pattern: "directional", polarization: "linear", heightM: 9, cableLossDb: 0.7, systemLossDb: 3 },
+        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true, nvisEnabled: false, ionoModel: "simple", timeDayEffects: false, solarIndex: null },
+        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 45, adaptiveDataRate: false, satcomEnabled: false, satType: "", satUplinkMHz: null, satDownlinkMHz: null, satGainDbi: null },
+      },
+    },
+  },
+  "missile-track-illumination-radar": {
+    label: "Missile Track / Illumination Radar",
+    programs: {
+      default: {
+        label: "CW Illumination",
+        type: "sensor",
+        force: "enemy",
+        icon: "sensor",
+        color: "#ef4444",
+        notes: "Narrow-beam fire-control radar for terminal target illumination, missile track support, and high-precision engagement updates.",
+        rf: { frequencyMHz: 10300, bandwidthKHz: 1500, modulation: "CW", waveform: "CW Illumination", duplex: "simplex", channelSpacingKHz: 500 },
+        tx: { powerW: 70000, dutyCycle: 0.35, papr: 0, spectralEfficiency: null },
+        rx: { sensitivityDbm: -96, noiseFigDb: 5, requiredSnrDb: 15, acrDb: 88, bdrDb: 94 },
+        antenna: { type: "dish", gainDbi: 41, pattern: "directional", polarization: "linear", heightM: 8, cableLossDb: 0.9, systemLossDb: 3.3 },
+        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true, nvisEnabled: false, ionoModel: "simple", timeDayEffects: false, solarIndex: null },
+        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 35, adaptiveDataRate: false, satcomEnabled: false, satType: "", satUplinkMHz: null, satDownlinkMHz: null, satGainDbi: null },
+      },
+    },
+  },
+  "shorad-fire-control-radar": {
+    label: "SHORAD Fire-Control Radar",
+    programs: {
+      default: {
+        label: "SHORAD Track",
+        type: "sensor",
+        force: "enemy",
+        icon: "sensor",
+        color: "#ef4444",
+        notes: "Short-range fire-control radar supporting mobile SHORAD batteries against helicopters, low flyers, and pop-up threats.",
+        rf: { frequencyMHz: 15700, bandwidthKHz: 1800, modulation: "Pulse-Doppler", waveform: "SHORAD Track", duplex: "simplex", channelSpacingKHz: 750 },
+        tx: { powerW: 45000, dutyCycle: 0.12, papr: 0, spectralEfficiency: null },
+        rx: { sensitivityDbm: -97, noiseFigDb: 5.5, requiredSnrDb: 14, acrDb: 84, bdrDb: 90 },
+        antenna: { type: "AESA", gainDbi: 36, pattern: "directional", polarization: "linear", heightM: 6, cableLossDb: 0.6, systemLossDb: 2.8 },
+        prop: { model: "itu-p526", clutter: "urban", terrainEnabled: true, diffractionEnabled: true, nvisEnabled: false, ionoModel: "simple", timeDayEffects: false, solarIndex: null },
+        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 30, adaptiveDataRate: false, satcomEnabled: false, satType: "", satUplinkMHz: null, satDownlinkMHz: null, satGainDbi: null },
+      },
+    },
+  },
+  "low-altitude-gap-filler-radar": {
+    label: "Low-Altitude Gap-Filler Radar",
+    programs: {
+      default: {
+        label: "Gap Filler Search",
+        type: "sensor",
+        force: "enemy",
+        icon: "sensor",
+        color: "#ef4444",
+        notes: "Medium-range low-altitude surveillance radar intended to cover terrain-mask corridors and hand off low-flying targets to nearby batteries.",
+        rf: { frequencyMHz: 5400, bandwidthKHz: 4200, modulation: "Pulse-Doppler", waveform: "Gap Filler Search", duplex: "simplex", channelSpacingKHz: 1800 },
+        tx: { powerW: 90000, dutyCycle: 0.16, papr: 0, spectralEfficiency: null },
+        rx: { sensitivityDbm: -99, noiseFigDb: 4.5, requiredSnrDb: 11, acrDb: 73, bdrDb: 84 },
+        antenna: { type: "phased-array", gainDbi: 28, pattern: "sectoral", polarization: "linear", heightM: 9, cableLossDb: 0.8, systemLossDb: 3.1 },
+        prop: { model: "itu-p526", clutter: "urban", terrainEnabled: true, diffractionEnabled: true, nvisEnabled: false, ionoModel: "simple", timeDayEffects: false, solarIndex: null },
+        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 55, adaptiveDataRate: false, satcomEnabled: false, satType: "", satUplinkMHz: null, satDownlinkMHz: null, satGainDbi: null },
+      },
+    },
+  },
+  "counter-uas-surveillance-radar": {
+    label: "Counter-UAS Surveillance Radar",
+    programs: {
+      default: {
+        label: "Counter-UAS Search",
+        type: "sensor",
+        force: "enemy",
+        icon: "sensor",
+        color: "#ef4444",
+        notes: "Local-area surveillance radar optimized for small, slow, low targets and short revisit times around defended points.",
+        rf: { frequencyMHz: 9500, bandwidthKHz: 12000, modulation: "Pulse-Doppler", waveform: "Counter-UAS Search", duplex: "simplex", channelSpacingKHz: 4000 },
+        tx: { powerW: 18000, dutyCycle: 0.22, papr: 0, spectralEfficiency: null },
+        rx: { sensitivityDbm: -95, noiseFigDb: 5, requiredSnrDb: 10, acrDb: 68, bdrDb: 80 },
+        antenna: { type: "AESA", gainDbi: 30, pattern: "sectoral", polarization: "linear", heightM: 5, cableLossDb: 0.5, systemLossDb: 2.5 },
+        prop: { model: "itu-p526", clutter: "urban", terrainEnabled: true, diffractionEnabled: true, nvisEnabled: false, ionoModel: "simple", timeDayEffects: false, solarIndex: null },
+        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 20, adaptiveDataRate: false, satcomEnabled: false, satType: "", satUplinkMHz: null, satDownlinkMHz: null, satGainDbi: null },
+      },
+    },
+  },
+  "passive-air-surveillance-receiver-site": {
+    label: "Passive Air-Surveillance Receiver Site",
+    programs: {
+      default: {
+        label: "Passive DF",
+        type: "sensor",
+        force: "enemy",
+        icon: "sensor",
+        color: "#ef4444",
+        notes: "Passive DF and ESM-style site that contributes to the air picture without intentional RF transmission; use for bearing-only or emitter-cueing scenarios.",
+        rf: { frequencyMHz: 1200, bandwidthKHz: 25000, modulation: "Passive", waveform: "Passive DF", duplex: "simplex", channelSpacingKHz: 5000 },
+        tx: { powerW: 0, dutyCycle: 0, papr: 0, spectralEfficiency: null },
+        rx: { sensitivityDbm: -112, noiseFigDb: 3, requiredSnrDb: 6, acrDb: 70, bdrDb: 86 },
+        antenna: { type: "interferometer", gainDbi: 18, pattern: "omnidirectional", polarization: "linear", heightM: 7, cableLossDb: 0.6, systemLossDb: 2.2 },
+        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true, nvisEnabled: false, ionoModel: "simple", timeDayEffects: false, solarIndex: null },
+        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 25, adaptiveDataRate: false, satcomEnabled: false, satType: "", satUplinkMHz: null, satDownlinkMHz: null, satGainDbi: null },
+      },
+    },
+  },
+};
+
+const EMITTER_LIBRARY = {
   "prc-163": {
     label: "AN/PRC-163 Falcon IV",
     programs: {
@@ -1196,6 +1427,7 @@ const RADIO_LIBRARY = {
     },
   },
 
+  ...RADAR_EMITTER_LIBRARY,
 };
 
 // ─── Link budget helpers ──────────────────────────────────────────────────────
@@ -2368,7 +2600,7 @@ function timeoutAfter(ms, message = "Operation timed out") {
 
 function createDefaultEmitterProfilePayload() {
   return {
-    radioType: "",
+    emitterType: "",
     programKey: "",
     type: "radio",
     emitterLabel: "radio",
@@ -2445,7 +2677,7 @@ function normalizeEmitterProfilePayload(value) {
   const bool = (entry, fallback = false) => typeof entry === "boolean" ? entry : fallback;
   const num = (entry, fallback = null) => Number.isFinite(Number(entry)) ? Number(entry) : fallback;
   return {
-    radioType: str(src.radioType, base.radioType),
+    emitterType: str(src.emitterType || src.radioType, base.emitterType),
     programKey: str(src.programKey, base.programKey),
     type: EMITTER_ICONS[str(src.type, base.type)] ? str(src.type, base.type) : base.type,
     emitterLabel: str(src.emitterLabel, base.emitterLabel),
@@ -2514,15 +2746,20 @@ function normalizeEmitterProfilePayload(value) {
   };
 }
 
-function buildEmitterProfilePayloadFromProgram(radioType = "", programKey = "") {
-  const program = RADIO_LIBRARY[radioType]?.programs?.[programKey];
+function buildEmitterProfilePayloadFromProgram(emitterType = "", programKey = "") {
+  const program = EMITTER_LIBRARY[emitterType]?.programs?.[programKey];
   if (!program) {
     return createDefaultEmitterProfilePayload();
   }
   return normalizeEmitterProfilePayload({
-    radioType,
+    emitterType,
     programKey,
-    emitterLabel: RADIO_LIBRARY[radioType]?.label || "radio",
+    type: program.type,
+    force: program.force,
+    icon: program.icon,
+    color: program.color,
+    notes: program.notes,
+    emitterLabel: EMITTER_LIBRARY[emitterType]?.label || "emitter",
     rf: {
       frequencyMHz: program.rf?.frequencyMHz,
       bandwidthKHz: program.rf?.bandwidthKHz,
@@ -2581,7 +2818,7 @@ function buildEmitterProfilePayloadFromProgram(radioType = "", programKey = "") 
 function buildEmitterProfilePayloadFromAsset(asset) {
   const ext = asset?.ext && typeof asset.ext === "object" ? asset.ext : {};
   return normalizeEmitterProfilePayload({
-    radioType: ext.radioType || "",
+    emitterType: ext.emitterType || ext.radioType || "",
     programKey: ext.programKey || "",
     type: asset?.type || "radio",
     emitterLabel: asset?.emitterLabel || asset?.name || "radio",
@@ -2757,7 +2994,7 @@ function buildEmitterAssetFromProfilePayload(payload, { profileRef = null } = {}
     satDownlinkMHz: normalized.network.satDownlinkMHz,
     satGainDbi: normalized.network.satGainDbi,
     ext: {
-      radioType: normalized.radioType,
+      emitterType: normalized.emitterType,
       programKey: normalized.programKey,
       bandwidthKHz: normalized.rf.bandwidthKHz,
       modulation: normalized.rf.modulation,
@@ -2841,213 +3078,40 @@ function buildGuestEmitterProfilesFromLegacyRecords() {
 }
 
 function buildStarterGuestEmitterProfiles() {
-  const starterProfiles = [
-    {
-      id: "starter-radar-long-range-early-warning",
-      name: "Long-Range Early Warning Radar",
+  return Object.entries(RADAR_EMITTER_LIBRARY).map(([emitterType, entry]) => {
+    const program = entry.programs.default;
+    return normalizeEmitterProfileRecord({
+      id: `starter-${emitterType}`,
+      name: entry.label,
       profile: {
-        type: "sensor",
-        emitterLabel: "Long-Range Early Warning Radar",
-        force: "enemy",
-        icon: "sensor",
-        color: "#ef4444",
-        notes: "Broad-area long-range surveillance radar optimized for wide azimuth coverage and early warning against aircraft and cruise-missile sized targets.",
-        rf: { frequencyMHz: 1250, bandwidthKHz: 8000, modulation: "Pulse", waveform: "Volume Search", duplex: "simplex", channelSpacingKHz: 5000 },
-        tx: { powerW: 850000, dutyCycle: 0.18, papr: 0, spectralEfficiency: null },
-        rx: { sensitivityDbm: -103, noiseFigDb: 4, requiredSnrDb: 13, acrDb: 80, bdrDb: 90 },
-        antenna: { type: "phased-array", gainDbi: 33, pattern: "sectoral", polarization: "linear", heightM: 14, cableLossDb: 1.2, systemLossDb: 4 },
-        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true, nvisEnabled: false, ionoModel: "simple", timeDayEffects: false, solarIndex: null },
+        emitterType,
+        programKey: "default",
+        type: program.type,
+        emitterLabel: entry.label,
+        force: program.force,
+        icon: program.icon,
+        color: program.color,
+        notes: program.notes,
+        rf: { ...program.rf },
+        tx: { ...program.tx },
+        rx: { ...program.rx },
+        antenna: { ...program.antenna },
+        prop: { ...program.prop },
+        network: {
+          isManet: program.net?.isManet,
+          relayCapable: program.net?.relayCapable,
+          maxHops: program.net?.maxHops,
+          latencyMs: program.net?.latencyMs,
+          adaptiveDataRate: program.net?.adaptiveDataRate,
+          satcomEnabled: program.net?.satcomEnabled,
+          satType: program.net?.satType,
+          satUplinkMHz: program.net?.satUplinkMHz,
+          satDownlinkMHz: program.net?.satDownlinkMHz,
+          satGainDbi: program.net?.satGainDbi,
+        },
       },
-    },
-    {
-      id: "starter-radar-vhf-early-warning",
-      name: "VHF Early Warning Radar",
-      profile: {
-        type: "sensor",
-        emitterLabel: "VHF Early Warning Radar",
-        force: "enemy",
-        icon: "sensor",
-        color: "#ef4444",
-        notes: "Low-band long-range surveillance radar emphasizing long detection range and reduced sensitivity to shaping, at the cost of coarser track quality.",
-        rf: { frequencyMHz: 180, bandwidthKHz: 3000, modulation: "Pulse", waveform: "Low-Band Search", duplex: "simplex", channelSpacingKHz: 1000 },
-        tx: { powerW: 600000, dutyCycle: 0.12, papr: 0, spectralEfficiency: null },
-        rx: { sensitivityDbm: -106, noiseFigDb: 3, requiredSnrDb: 10, acrDb: 75, bdrDb: 88 },
-        antenna: { type: "array", gainDbi: 24, pattern: "sectoral", polarization: "horizontal", heightM: 18, cableLossDb: 1.5, systemLossDb: 4.5 },
-        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true, nvisEnabled: false, ionoModel: "simple", timeDayEffects: false, solarIndex: null },
-      },
-    },
-    {
-      id: "starter-radar-3d-acquisition",
-      name: "3D Acquisition Radar",
-      profile: {
-        type: "sensor",
-        emitterLabel: "3D Acquisition Radar",
-        force: "enemy",
-        icon: "sensor",
-        color: "#ef4444",
-        notes: "Altitude-capable surveillance and track-initiation radar for medium-to-long-range air defense batteries.",
-        rf: { frequencyMHz: 2900, bandwidthKHz: 6000, modulation: "Pulse-Doppler", waveform: "3D Search", duplex: "simplex", channelSpacingKHz: 2500 },
-        tx: { powerW: 320000, dutyCycle: 0.16, papr: 0, spectralEfficiency: null },
-        rx: { sensitivityDbm: -102, noiseFigDb: 4, requiredSnrDb: 12, acrDb: 78, bdrDb: 88 },
-        antenna: { type: "phased-array", gainDbi: 31, pattern: "sectoral", polarization: "linear", heightM: 12, cableLossDb: 1, systemLossDb: 3.5 },
-        prop: { model: "itu-p526", clutter: "suburban", terrainEnabled: true, diffractionEnabled: true, nvisEnabled: false, ionoModel: "simple", timeDayEffects: false, solarIndex: null },
-      },
-    },
-    {
-      id: "starter-radar-mobile-sector-search",
-      name: "Mobile Sector Search Radar",
-      profile: {
-        type: "sensor",
-        emitterLabel: "Mobile Sector Search Radar",
-        force: "enemy",
-        icon: "sensor",
-        color: "#ef4444",
-        notes: "Truck-mobile sector search radar for rapid emplacement, gap coverage, and cueing of nearby air-defense elements.",
-        rf: { frequencyMHz: 5600, bandwidthKHz: 4500, modulation: "Pulse-Doppler", waveform: "Sector Search", duplex: "simplex", channelSpacingKHz: 2000 },
-        tx: { powerW: 140000, dutyCycle: 0.14, papr: 0, spectralEfficiency: null },
-        rx: { sensitivityDbm: -100, noiseFigDb: 4.5, requiredSnrDb: 11, acrDb: 72, bdrDb: 84 },
-        antenna: { type: "phased-array", gainDbi: 29, pattern: "directional", polarization: "linear", heightM: 10, cableLossDb: 0.8, systemLossDb: 3.2 },
-        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true, nvisEnabled: false, ionoModel: "simple", timeDayEffects: false, solarIndex: null },
-      },
-    },
-    {
-      id: "starter-radar-long-range-aesa-surveillance",
-      name: "Long-Range AESA Surveillance Radar",
-      profile: {
-        type: "sensor",
-        emitterLabel: "Long-Range AESA Surveillance Radar",
-        force: "enemy",
-        icon: "sensor",
-        color: "#ef4444",
-        notes: "Modern electronically scanned long-range surveillance radar emphasizing rapid revisit rates, target density handling, and all-weather tracking.",
-        rf: { frequencyMHz: 3400, bandwidthKHz: 10000, modulation: "Pulse-Doppler", waveform: "AESA Search", duplex: "simplex", channelSpacingKHz: 5000 },
-        tx: { powerW: 280000, dutyCycle: 0.2, papr: 0, spectralEfficiency: null },
-        rx: { sensitivityDbm: -101, noiseFigDb: 3.5, requiredSnrDb: 12, acrDb: 82, bdrDb: 90 },
-        antenna: { type: "AESA", gainDbi: 35, pattern: "sectoral", polarization: "linear", heightM: 13, cableLossDb: 0.7, systemLossDb: 3.5 },
-        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true, nvisEnabled: false, ionoModel: "simple", timeDayEffects: false, solarIndex: null },
-      },
-    },
-    {
-      id: "starter-radar-sam-target-acquisition",
-      name: "SAM Target Acquisition Radar",
-      profile: {
-        type: "sensor",
-        emitterLabel: "SAM Target Acquisition Radar",
-        force: "enemy",
-        icon: "sensor",
-        color: "#ef4444",
-        notes: "Battery-level target acquisition radar used to search, classify, and hand off tracks to engagement and command elements.",
-        rf: { frequencyMHz: 2700, bandwidthKHz: 5000, modulation: "Pulse-Doppler", waveform: "Acquisition Search", duplex: "simplex", channelSpacingKHz: 2500 },
-        tx: { powerW: 210000, dutyCycle: 0.15, papr: 0, spectralEfficiency: null },
-        rx: { sensitivityDbm: -101, noiseFigDb: 4, requiredSnrDb: 11, acrDb: 76, bdrDb: 86 },
-        antenna: { type: "phased-array", gainDbi: 30, pattern: "sectoral", polarization: "linear", heightM: 11, cableLossDb: 0.9, systemLossDb: 3.4 },
-        prop: { model: "itu-p526", clutter: "suburban", terrainEnabled: true, diffractionEnabled: true, nvisEnabled: false, ionoModel: "simple", timeDayEffects: false, solarIndex: null },
-      },
-    },
-    {
-      id: "starter-radar-sam-engagement",
-      name: "SAM Engagement Radar",
-      profile: {
-        type: "sensor",
-        emitterLabel: "SAM Engagement Radar",
-        force: "enemy",
-        icon: "sensor",
-        color: "#ef4444",
-        notes: "High-gain engagement radar for precision target tracking, missile uplink support, and terminal fire-control tasking.",
-        rf: { frequencyMHz: 9300, bandwidthKHz: 2500, modulation: "Pulse-Doppler", waveform: "Target Track", duplex: "simplex", channelSpacingKHz: 1000 },
-        tx: { powerW: 95000, dutyCycle: 0.1, papr: 0, spectralEfficiency: null },
-        rx: { sensitivityDbm: -98, noiseFigDb: 5, requiredSnrDb: 14, acrDb: 85, bdrDb: 92 },
-        antenna: { type: "phased-array", gainDbi: 38, pattern: "directional", polarization: "linear", heightM: 9, cableLossDb: 0.7, systemLossDb: 3 },
-        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true, nvisEnabled: false, ionoModel: "simple", timeDayEffects: false, solarIndex: null },
-      },
-    },
-    {
-      id: "starter-radar-missile-track-illumination",
-      name: "Missile Track / Illumination Radar",
-      profile: {
-        type: "sensor",
-        emitterLabel: "Missile Track / Illumination Radar",
-        force: "enemy",
-        icon: "sensor",
-        color: "#ef4444",
-        notes: "Narrow-beam fire-control radar for terminal target illumination, missile track support, and high-precision engagement updates.",
-        rf: { frequencyMHz: 10300, bandwidthKHz: 1500, modulation: "CW", waveform: "CW Illumination", duplex: "simplex", channelSpacingKHz: 500 },
-        tx: { powerW: 70000, dutyCycle: 0.35, papr: 0, spectralEfficiency: null },
-        rx: { sensitivityDbm: -96, noiseFigDb: 5, requiredSnrDb: 15, acrDb: 88, bdrDb: 94 },
-        antenna: { type: "dish", gainDbi: 41, pattern: "directional", polarization: "linear", heightM: 8, cableLossDb: 0.9, systemLossDb: 3.3 },
-        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true, nvisEnabled: false, ionoModel: "simple", timeDayEffects: false, solarIndex: null },
-      },
-    },
-    {
-      id: "starter-radar-shorad-fire-control",
-      name: "SHORAD Fire-Control Radar",
-      profile: {
-        type: "sensor",
-        emitterLabel: "SHORAD Fire-Control Radar",
-        force: "enemy",
-        icon: "sensor",
-        color: "#ef4444",
-        notes: "Short-range fire-control radar supporting mobile SHORAD batteries against helicopters, low flyers, and pop-up threats.",
-        rf: { frequencyMHz: 15700, bandwidthKHz: 1800, modulation: "Pulse-Doppler", waveform: "SHORAD Track", duplex: "simplex", channelSpacingKHz: 750 },
-        tx: { powerW: 45000, dutyCycle: 0.12, papr: 0, spectralEfficiency: null },
-        rx: { sensitivityDbm: -97, noiseFigDb: 5.5, requiredSnrDb: 14, acrDb: 84, bdrDb: 90 },
-        antenna: { type: "AESA", gainDbi: 36, pattern: "directional", polarization: "linear", heightM: 6, cableLossDb: 0.6, systemLossDb: 2.8 },
-        prop: { model: "itu-p526", clutter: "urban", terrainEnabled: true, diffractionEnabled: true, nvisEnabled: false, ionoModel: "simple", timeDayEffects: false, solarIndex: null },
-      },
-    },
-    {
-      id: "starter-radar-low-altitude-gap-filler",
-      name: "Low-Altitude Gap-Filler Radar",
-      profile: {
-        type: "sensor",
-        emitterLabel: "Low-Altitude Gap-Filler Radar",
-        force: "enemy",
-        icon: "sensor",
-        color: "#ef4444",
-        notes: "Medium-range low-altitude surveillance radar intended to cover terrain-mask corridors and hand off low-flying targets to nearby batteries.",
-        rf: { frequencyMHz: 5400, bandwidthKHz: 4200, modulation: "Pulse-Doppler", waveform: "Gap Filler Search", duplex: "simplex", channelSpacingKHz: 1800 },
-        tx: { powerW: 90000, dutyCycle: 0.16, papr: 0, spectralEfficiency: null },
-        rx: { sensitivityDbm: -99, noiseFigDb: 4.5, requiredSnrDb: 11, acrDb: 73, bdrDb: 84 },
-        antenna: { type: "phased-array", gainDbi: 28, pattern: "sectoral", polarization: "linear", heightM: 9, cableLossDb: 0.8, systemLossDb: 3.1 },
-        prop: { model: "itu-p526", clutter: "urban", terrainEnabled: true, diffractionEnabled: true, nvisEnabled: false, ionoModel: "simple", timeDayEffects: false, solarIndex: null },
-      },
-    },
-    {
-      id: "starter-radar-counter-uas-surveillance",
-      name: "Counter-UAS Surveillance Radar",
-      profile: {
-        type: "sensor",
-        emitterLabel: "Counter-UAS Surveillance Radar",
-        force: "enemy",
-        icon: "sensor",
-        color: "#ef4444",
-        notes: "Local-area surveillance radar optimized for small, slow, low targets and short revisit times around defended points.",
-        rf: { frequencyMHz: 9500, bandwidthKHz: 12000, modulation: "Pulse-Doppler", waveform: "Counter-UAS Search", duplex: "simplex", channelSpacingKHz: 4000 },
-        tx: { powerW: 18000, dutyCycle: 0.22, papr: 0, spectralEfficiency: null },
-        rx: { sensitivityDbm: -95, noiseFigDb: 5, requiredSnrDb: 10, acrDb: 68, bdrDb: 80 },
-        antenna: { type: "AESA", gainDbi: 30, pattern: "sectoral", polarization: "linear", heightM: 5, cableLossDb: 0.5, systemLossDb: 2.5 },
-        prop: { model: "itu-p526", clutter: "urban", terrainEnabled: true, diffractionEnabled: true, nvisEnabled: false, ionoModel: "simple", timeDayEffects: false, solarIndex: null },
-      },
-    },
-    {
-      id: "starter-radar-passive-air-surveillance",
-      name: "Passive Air-Surveillance Receiver Site",
-      profile: {
-        type: "sensor",
-        emitterLabel: "Passive Air-Surveillance Receiver Site",
-        force: "enemy",
-        icon: "sensor",
-        color: "#ef4444",
-        notes: "Passive DF and ESM-style site that contributes to the air picture without intentional RF transmission; use for bearing-only or emitter-cueing scenarios.",
-        rf: { frequencyMHz: 1200, bandwidthKHz: 25000, modulation: "Passive", waveform: "Passive DF", duplex: "simplex", channelSpacingKHz: 5000 },
-        tx: { powerW: 0, dutyCycle: 0, papr: 0, spectralEfficiency: null },
-        rx: { sensitivityDbm: -112, noiseFigDb: 3, requiredSnrDb: 6, acrDb: 70, bdrDb: 86 },
-        antenna: { type: "interferometer", gainDbi: 18, pattern: "omnidirectional", polarization: "linear", heightM: 7, cableLossDb: 0.6, systemLossDb: 2.2 },
-        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true, nvisEnabled: false, ionoModel: "simple", timeDayEffects: false, solarIndex: null },
-      },
-    },
-  ];
-  return starterProfiles.map((entry) => normalizeEmitterProfileRecord(entry));
+    });
+  });
 }
 
 function persistGuestEmitterProfiles() {
@@ -7478,7 +7542,7 @@ async function onWorkspaceProjectDelete() {
 const emitterModal = {
   // Cached DOM refs set once on first open
   backdrop: null,
-  radioTypeSelect: null,
+  emitterTypeSelect: null,
   programSelect: null,
   libSummary: null,
   savedProfileSearchInput: null,
@@ -7500,7 +7564,7 @@ const emitterModal = {
 
   init() {
     this.backdrop      = document.querySelector("#emitterModal");
-    this.radioTypeSelect = document.querySelector("#emitterRadioType");
+    this.emitterTypeSelect = document.querySelector("#emitterTypeSelect");
     this.programSelect   = document.querySelector("#emitterProgramSelect");
     this.libSummary      = document.querySelector("#emitterLibSummary");
     this.savedProfileSearchInput = document.querySelector("#emitterSavedProfileSearch");
@@ -7543,7 +7607,7 @@ const emitterModal = {
     });
 
     // Radio type → populate programs
-    this.radioTypeSelect.addEventListener("change", () => this.onRadioTypeChange());
+    this.emitterTypeSelect.addEventListener("change", () => this.onEmitterTypeChange());
 
     // Program → load profile
     this.programSelect.addEventListener("change", () => this.onProgramChange());
@@ -7897,12 +7961,12 @@ const emitterModal = {
     if (name === "link") this.updateLinkBudget();
   },
 
-  onRadioTypeChange() {
-    const key = this.radioTypeSelect.value;
-    const radio = RADIO_LIBRARY[key];
+  onEmitterTypeChange() {
+    const key = this.emitterTypeSelect.value;
+    const emitter = EMITTER_LIBRARY[key];
     const sel = this.programSelect;
     sel.innerHTML = "";
-    if (!radio) {
+    if (!emitter) {
       sel.disabled = true;
       sel.innerHTML = '<option value="">— Manual —</option>';
       this.libSummary.innerHTML = "<p>Configure all parameters manually.</p>";
@@ -7910,7 +7974,7 @@ const emitterModal = {
       return;
     }
     sel.disabled = false;
-    Object.entries(radio.programs).forEach(([pKey, prog]) => {
+    Object.entries(emitter.programs).forEach(([pKey, prog]) => {
       const opt = document.createElement("option");
       opt.value = pKey;
       opt.textContent = prog.label;
@@ -7920,15 +7984,15 @@ const emitterModal = {
   },
 
   onProgramChange() {
-    const radioKey = this.radioTypeSelect.value;
+    const emitterType = this.emitterTypeSelect.value;
     const progKey  = this.programSelect.value;
-    const radio    = RADIO_LIBRARY[radioKey];
-    const prog     = radio?.programs[progKey];
+    const emitter  = EMITTER_LIBRARY[emitterType];
+    const prog     = emitter?.programs[progKey];
     if (!prog) return;
-    this.applyPayload(buildEmitterProfilePayloadFromProgram(radioKey, progKey));
+    this.applyPayload(buildEmitterProfilePayloadFromProgram(emitterType, progKey));
     this.currentSavedProfileLink = null;
     this.libSummary.innerHTML = `
-      <strong>${radio.label}</strong><br>
+      <strong>${emitter.label}</strong><br>
       <em>${prog.label}</em><br>
       <span>${prog.rf.frequencyMHz} MHz · ${prog.tx.powerW} W · ${prog.antenna.gainDbi} dBi · ${prog.rf.waveform}</span>
     `;
@@ -7940,12 +8004,12 @@ const emitterModal = {
     const f = this.fields;
     const set = (id, val) => { if (f[id] && val !== undefined && val !== null) f[id].value = val; };
     const setCheck = (id, val) => { if (f[id]) f[id].checked = Boolean(val); };
-    if (this.radioTypeSelect) this.radioTypeSelect.value = profile.radioType || "";
+    if (this.emitterTypeSelect) this.emitterTypeSelect.value = profile.emitterType || "";
     if (this.programSelect) {
-      this.programSelect.disabled = !profile.radioType || !RADIO_LIBRARY[profile.radioType];
-      if (profile.radioType && RADIO_LIBRARY[profile.radioType]) {
+      this.programSelect.disabled = !profile.emitterType || !EMITTER_LIBRARY[profile.emitterType];
+      if (profile.emitterType && EMITTER_LIBRARY[profile.emitterType]) {
         this.programSelect.innerHTML = "";
-        Object.entries(RADIO_LIBRARY[profile.radioType].programs).forEach(([pKey, prog]) => {
+        Object.entries(EMITTER_LIBRARY[profile.emitterType].programs).forEach(([pKey, prog]) => {
           const opt = document.createElement("option");
           opt.value = pKey;
           opt.textContent = prog.label;
@@ -7956,12 +8020,12 @@ const emitterModal = {
         this.programSelect.innerHTML = '<option value="">— Manual —</option>';
       }
     }
-    if (profile.radioType && RADIO_LIBRARY[profile.radioType]) {
-      const radio = RADIO_LIBRARY[profile.radioType];
-      const program = radio.programs?.[profile.programKey];
+    if (profile.emitterType && EMITTER_LIBRARY[profile.emitterType]) {
+      const emitter = EMITTER_LIBRARY[profile.emitterType];
+      const program = emitter.programs?.[profile.programKey];
       this.libSummary.innerHTML = program
-        ? `<strong>${radio.label}</strong><br><em>${program.label}</em><br><span>${program.rf.frequencyMHz} MHz · ${program.tx.powerW} W · ${program.antenna.gainDbi} dBi · ${program.rf.waveform}</span>`
-        : `<strong>${radio.label}</strong><br><span>Saved custom configuration based on this radio family.</span>`;
+        ? `<strong>${emitter.label}</strong><br><em>${program.label}</em><br><span>${program.rf.frequencyMHz} MHz · ${program.tx.powerW} W · ${program.antenna.gainDbi} dBi · ${program.rf.waveform}</span>`
+        : `<strong>${emitter.label}</strong><br><span>Saved custom configuration based on this emitter family.</span>`;
     } else {
       this.libSummary.innerHTML = "<p>Configure all parameters manually.</p>";
     }
@@ -8035,9 +8099,9 @@ const emitterModal = {
   },
 
   resetToDefaults() {
-    this.libSummary.innerHTML = "<p>Select a radio type and program to auto-fill parameters, or configure manually below.</p>";
+    this.libSummary.innerHTML = "<p>Select an emitter type and program to auto-fill parameters, or configure manually below.</p>";
     this.programSelect.disabled = true;
-    this.programSelect.innerHTML = '<option value="">Select a radio type first</option>';
+    this.programSelect.innerHTML = '<option value="">Select an emitter type first</option>';
     this.applyPayload(createDefaultEmitterProfilePayload());
   },
 
@@ -8146,15 +8210,15 @@ const emitterModal = {
     const n = (id) => parseFloat(f[id]?.value);
     const b = (id) => f[id]?.checked ?? false;
     const iconVal = v("emIcon") || "radio";
-    const radioType = this.radioTypeSelect?.value || "";
+    const emitterType = this.emitterTypeSelect?.value || "";
     const programKey = this.programSelect?.value || "";
     return normalizeEmitterProfilePayload({
-      radioType,
+      emitterType,
       programKey,
       type: EMITTER_ICONS[iconVal] ? iconVal : "radio",
-      emitterLabel: radioType
-        ? (RADIO_LIBRARY[radioType]?.label ?? "radio")
-        : ((v("emName") || "").trim() || "radio"),
+      emitterLabel: emitterType
+        ? (EMITTER_LIBRARY[emitterType]?.label ?? "emitter")
+        : ((v("emName") || "").trim() || "emitter"),
       force: v("emForce") || "friendly",
       name: v("emName") || "Emitter",
       unit: v("emUnit") || "",
@@ -13378,7 +13442,7 @@ const SLASH_COMMANDS = [
     cmd: "/rf-jamming-effects",
     label: "Jamming Effects Simulation",
     category: "EW",
-    prompt: "Simulate the effects of jamming on the placed friendly systems. Estimate J/S ratios for each link, identify denied and degraded regions, describe system-specific impacts by radio type, calculate burn-through ranges where applicable, and recommend specific countermeasures including frequency hopping, power increase, and antenna options."
+    prompt: "Simulate the effects of jamming on the placed friendly systems. Estimate J/S ratios for each link, identify denied and degraded regions, describe system-specific impacts by emitter type, calculate burn-through ranges where applicable, and recommend specific countermeasures including frequency hopping, power increase, and antenna options."
   },
   {
     cmd: "/rf-detection-risk",
@@ -18097,7 +18161,7 @@ async function callAiPlanningAssistant(prompt, images = [], files = [], contextI
     "ROUTE ANALYSIS NARRATIVE:",
     "  When given a route (polyline or list of checkpoints), describe terrain challenges for comms along that route.",
     "  Identify: ridge crossings (potential LOS breaks), valley segments (dead zones), urban terrain (multipath), open terrain (good coverage).",
-    "  For each route segment, state: expected comms status (clear/degraded/dead), recommended radio type, relay requirement.",
+    "  For each route segment, state: expected comms status (clear/degraded/dead), recommended emitter type, relay requirement.",
     "  Reference imported items by name (MSR, checkpoints, no-fire areas) that the route passes through.",
     "  Recommend relay/retrans positions on high ground along or adjacent to the route.",
     "",
@@ -35551,7 +35615,7 @@ async function renderTopologyView(options = {}) {
       ? `<div class="topo-unit-subname">${esc(entry.sublabel)}</div>`
       : "";
 
-    // List each emitter sorted lowest→highest freq: radio label + waveform, then frequency
+    // List each emitter sorted lowest→highest freq: emitter label + waveform, then frequency
     const emitterListHtml = entry.emitters.map(em => {
       const radioName = em.emitterLabel || em.name || "Emitter";
       const wf = em.ext?.waveform || "";
@@ -37577,3 +37641,4 @@ init().catch((error) => {
   console.error(error);
   setStatus(`Startup failed: ${error.message}`, true);
 });
+
