@@ -31,7 +31,6 @@ const {
   summarizeEmitterProfilePayload,
   formatEmitterProfileRow,
 } = require("./emitterProfiles");
-const { buildStarterEmitterProfiles } = require("./defaultEmitterProfiles");
 const {
   attemptTakConnection,
   buildTakSocketConfig,
@@ -1315,61 +1314,13 @@ app.put("/api/user/ai-configs", authRequired, async (request, response) => {
 app.get("/api/user/emitter-profiles", authRequired, async (request, response) => {
   const client = await pool.connect();
   try {
-    let result = await client.query(
+    const result = await client.query(
       `select *
        from user_emitter_profile
        where owner_user_id = $1
        order by sort_position asc, updated_at desc`,
       [request.user.sub]
     );
-    if (result.rowCount === 0) {
-      const starterProfiles = buildStarterEmitterProfiles();
-      await client.query("begin");
-      try {
-        for (const [index, starter] of starterProfiles.entries()) {
-          const profileId = `emprof-${crypto.randomUUID()}`;
-          const summary = summarizeEmitterProfilePayload(starter.profile);
-          await client.query(
-            `insert into user_emitter_profile (
-               id, owner_user_id, name, version, sort_position,
-               asset_type, emitter_label, force, icon, color,
-               frequency_mhz, power_w, waveform, profile_json
-             )
-             values (
-               $1, $2, $3, 1, $4,
-               $5, $6, $7, $8, $9,
-               $10, $11, $12, $13::jsonb
-             )`,
-            [
-              profileId,
-              request.user.sub,
-              starter.name,
-              index,
-              summary.assetType,
-              summary.emitterLabel,
-              summary.force,
-              summary.icon,
-              summary.color,
-              summary.frequencyMHz,
-              summary.powerW,
-              summary.waveform,
-              JSON.stringify(starter.profile),
-            ]
-          );
-        }
-        await client.query("commit");
-      } catch (seedError) {
-        await client.query("rollback");
-        throw seedError;
-      }
-      result = await client.query(
-        `select *
-         from user_emitter_profile
-         where owner_user_id = $1
-         order by sort_position asc, updated_at desc`,
-        [request.user.sub]
-      );
-    }
     response.json({ profiles: result.rows.map(formatEmitterProfileRow) });
   } catch (error) {
     if (error.code === "42P01") {

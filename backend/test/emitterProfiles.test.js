@@ -135,17 +135,8 @@ test("formatEmitterProfileRow normalizes stored records for the client", () => {
   assert.equal(formatted.waveform, "SRW");
 });
 
-test("starter radar emitter profiles parse and include passive receiver entry", () => {
+test("starter emitter profile library defaults to empty", () => {
   const starterProfiles = buildStarterEmitterProfiles();
 
-  assert.equal(starterProfiles.length, 12);
-  assert.ok(starterProfiles.every((entry) => entry.profile.type === "sensor"));
-  assert.ok(starterProfiles.every((entry) => entry.profile.icon === "sensor"));
-
-  const passiveProfile = starterProfiles.find((entry) => entry.name === "Passive Air-Surveillance Receiver Site");
-  assert.ok(passiveProfile);
-  assert.equal(passiveProfile.profile.emitterType, "passive-air-surveillance-receiver-site");
-  assert.equal(passiveProfile.profile.programKey, "default");
-  assert.equal(passiveProfile.profile.tx.powerW, 0);
-  assert.equal(passiveProfile.profile.rf.waveform, "Passive DF");
+  assert.deepEqual(starterProfiles, []);
 });
