@@ -4577,16 +4577,6 @@ function initTakContactsOverlay() {
     await sendTakChatMessage(state.takChat.activeUid, text);
   });
 
-  // Close panel when clicking outside
-  radioDeleteBtn?.addEventListener("click", () => {
-    if (!_activeAsset) return;
-    const assetId = _activeAsset.id;
-    const assetName = _activeAsset.name || _activeAsset.emitterLabel || "this emitter";
-    if (!window.confirm(`Delete ${assetName}?`)) return;
-    hideAll();
-    deleteMapContent(`asset:${assetId}`);
-  }, { signal: sig });
-
   document.addEventListener("click", (e) => {
     if (!dom.takContactsOverlay?.contains(e.target)) {
       if (state.takChat.panelOpen) {
@@ -37280,6 +37270,15 @@ function wireTopoNodeContextMenu() {
     hideAll();
     const firstNet = getEmitterNets(_activeAsset)[0] || null;
     openEmittersNetModal(_activeAsset.id, firstNet?.id || "", { createNew: !firstNet });
+  }, { signal: sig });
+
+  radioDeleteBtn?.addEventListener("click", () => {
+    if (!_activeAsset) return;
+    const assetId = _activeAsset.id;
+    const assetName = _activeAsset.name || _activeAsset.emitterLabel || "this emitter";
+    if (!window.confirm(`Delete ${assetName}?`)) return;
+    hideAll();
+    deleteMapContent(`asset:${assetId}`);
   }, { signal: sig });
 
   radioLinkBtn.addEventListener("click", () => {
