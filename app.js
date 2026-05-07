@@ -4209,10 +4209,12 @@ async function handleIncomingTakChatMessage(msg) {
 
   try {
     const systemPrefix = (state.settings.takTriggeredSystemPrompt || "").trim();
-    const mapContext = state.settings.takTriggeredIncludeMapContext ? (buildCompactAiScenarioSummary ? buildCompactAiScenarioSummary([]) : "") : "";
-    const fullPrompt = [systemPrefix, mapContext, prompt].filter(Boolean).join("\n\n");
-
-    const response = await runAiPromptHeadless(fullPrompt);
+    const fullPrompt = [systemPrefix, prompt].filter(Boolean).join("\n\n");
+    const response = await callAiPlanningAssistantOptimized(fullPrompt, [], [], [], {
+      requestClassOverride: AI_REQUEST_CLASS.TAK_TRIGGERED_HEADLESS,
+      includeMapContext: Boolean(state.settings.takTriggeredIncludeMapContext),
+      onToken: () => {},
+    }).then((result) => result?.assistantMessage || "");
     if (!response) throw new Error("No response from AI provider.");
 
     state.takRuntime.triggeredPromptCountReplied++;
@@ -4256,8 +4258,9 @@ async function sendTakChatReply({ toUid, toCallsign, text }) {
 async function runAiPromptHeadless(prompt) {
   if (!getEffectiveAiConfig()) throw new Error("No AI provider configured.");
   let accumulated = "";
-  await callAiPlanningAssistant(prompt, [], [], [], {
+  await callAiPlanningAssistantOptimized(prompt, [], [], [], {
     onToken: (text) => { accumulated = text; },
+    requestClassOverride: AI_REQUEST_CLASS.TAK_TRIGGERED_HEADLESS,
   });
   return accumulated.trim();
 }
@@ -6009,12 +6012,12 @@ const AI_VIEW_PROFILES = {
     systemGuidance: "The user is in MAP view. This is the only view where direct map and simulation actions should be treated as the default path.",
   },
   plan: {
-    label: "PLAN",
+    label: "T/O",
     role: "TO & Organization Assistant",
     purpose: "Ask me about unit hierarchy, force structure, command relationships, or how to organize the formation.",
     placeholder: "Ask about units, hierarchy, force design, or organization changes…",
     emptyMessage: "Describe your scenario and I will help you build out the table of organization, hierarchy, and assignments.",
-    systemGuidance: "The user is in PLAN view. Prioritize advisory answers about unit organization, hierarchy, and force design. Do not invent unsupported TO editing actions.",
+    systemGuidance: "The user is in T/O view. Prioritize advisory answers about unit organization, hierarchy, and force design. Do not invent unsupported TO editing actions.",
   },
   topology: {
     label: "TOPOLOGY",
@@ -6271,12 +6274,36 @@ function getAiAgentProfile(profileId = state.ai?.agentProfileId) {
   return AI_AGENT_PROFILES[profileId] ?? AI_AGENT_PROFILES.general;
 }
 
-function buildCurrentViewAiContext(view = state.ui?.currentView) {
-  if (view === "plan") return buildPlanAiContext();
-  if (view === "topology") return buildTopoAiContext();
-  if (view === "analyze") return buildAnalyzeAiContext();
+function buildCurrentViewAiContext(view = state.ui?.currentView, options = {}) {
+  if (view === "plan") return buildPlanAiContext(options);
+  if (view === "topology") return buildTopoAiContext(options);
+  if (view === "analyze") return buildAnalyzeAiContext(options);
   return "";
 }
+
+const AI_SCENARIO_TIER_LIMITS = {
+  minimal: {
+    assets: 12,
+    importedIndex: 24,
+    mapLookupIndex: 36,
+    viewsheds: 6,
+    planUnits: 20,
+  },
+  standard: {
+    assets: 24,
+    importedIndex: 80,
+    mapLookupIndex: 120,
+    viewsheds: 12,
+    planUnits: 40,
+  },
+  rich: {
+    assets: 40,
+    importedIndex: 200,
+    mapLookupIndex: 300,
+    viewsheds: 20,
+    planUnits: 80,
+  },
+};
 
 function normalizeAgentRoutingText(value) {
   return String(value ?? "").toLowerCase();
@@ -12001,7 +12028,7 @@ async function onAiChatSubmit(event) {
   const safeStopThinking = () => { if (!thinkingStopped) { thinkingStopped = true; stopThinkingIndicator(); } };
 
   try {
-    const response = preResolvedLookup ?? await callAiPlanningAssistant(prompt, images, files, contextIds, {
+    const response = preResolvedLookup ?? await callAiPlanningAssistantOptimized(prompt, images, files, contextIds, {
       onStatus: (statusText) => assistantMessageController.setStatus(statusText),
       onToken: (accumulatedText) => {
         streamedTokenCount++;
@@ -12022,7 +12049,7 @@ async function onAiChatSubmit(event) {
     if (terrainSampleResults.length > 0) {
       assistantMessageController.setStatus("Analyzing terrain data");
       const terrainContext = terrainSampleResults.join("\n\n");
-      const followUp = await callAiPlanningAssistant(
+      const followUp = await callAiPlanningAssistantOptimized(
         `TERRAIN DATA (from sample-terrain action you just requested):\n${terrainContext}\n\nUsing only this data, answer the user's original question: "${prompt}"`,
         [], [], contextIds,
         { onStatus: (s) => assistantMessageController.setStatus(s) }
@@ -12360,7 +12387,7 @@ const SETTINGS_DOCUMENTATION_MD = `
 
 RF SIM is organized around a deliberate operational flow:
 
-1. **PLAN VIEW** is where you build the Table of Organization, define command relationships, and link emitters to units.
+1. **T/O VIEW** is where you build the Table of Organization, define command relationships, and link emitters to units.
 2. **MAP VIEW** is where you place assets, import terrain and overlays, edit emitters, and inspect the physical battlespace.
 3. **TOPOLOGY** is where RF-capable assets are grouped into unit cards or shown as individual emitters so you can inspect link relationships.
 4. **ANALYZE** is where terrain, geometry, weather, and emitter parameters are combined into RF study outputs.
@@ -12387,13 +12414,13 @@ If you use the site in that order, the rest of the workflow becomes much easier 
 
 ---
 
-## PLAN VIEW
+## T/O VIEW
 
-## What PLAN VIEW is for
+## What T/O VIEW is for
 
-PLAN VIEW is where you define force structure before you worry about the exact map placement of every RF asset.
+T/O VIEW is where you define force structure before you worry about the exact map placement of every RF asset.
 
-Use PLAN VIEW to:
+Use T/O VIEW to:
 
 - create units
 - assign unit type, size, and label
@@ -12401,7 +12428,7 @@ Use PLAN VIEW to:
 - auto-layout the formation tree
 - link emitters to the correct units
 
-## Recommended sequence in PLAN VIEW
+## Recommended sequence in T/O VIEW
 
 ### 1. Build the hierarchy first
 
@@ -12659,7 +12686,7 @@ Typical uses include:
 
 The quality of analysis depends on the quality of inputs. A good sequence is:
 
-1. Build the TO in PLAN VIEW.
+1. Build the TO in T/O VIEW.
 2. Link emitters to the correct units.
 3. Place emitters accurately in MAP VIEW.
 4. Load terrain and import operational overlays.
@@ -12788,7 +12815,7 @@ If the default stream toggle is enabled, new RF SIM items can be sent to TAK by 
 
 ## Phase 1: Structure the force
 
-- Build the TO in PLAN VIEW.
+- Build the TO in T/O VIEW.
 - Create a hierarchy that mirrors how the formation actually operates.
 - Name units clearly.
 
@@ -15699,14 +15726,24 @@ function buildUnifiedLookupRecords() {
   return merged;
 }
 
-function buildCompactAiScenarioSummary(contextIds = []) {
+function buildCompactAiScenarioSummary(contextIds = [], options = {}) {
+  const tier = AI_SCENARIO_TIER_LIMITS[options.tier] ? options.tier : "standard";
+  const limits = AI_SCENARIO_TIER_LIMITS[tier];
+  const includeAssets = options.includeAssets !== false;
+  const includeImportedItems = options.includeImportedItems !== false;
+  const includeLookupIndex = options.includeLookupIndex !== false;
+  const includeViewsheds = options.includeViewsheds !== false;
+  const includePlanUnits = options.includePlanUnits !== false;
+  const includeTerrain = options.includeTerrain !== false;
+  const includeActiveContext = options.includeActiveContext !== false;
+  const includeExplicitContext = options.includeExplicitContext !== false;
   const center = state.map.getCenter();
   const terrain = getActiveTerrain();
-  const activeContext = serializeMapContentForAi(state.ai.activeContextId);
-  const explicitContext = contextIds
+  const activeContext = includeActiveContext ? serializeMapContentForAi(state.ai.activeContextId) : null;
+  const explicitContext = includeExplicitContext ? contextIds
     .map((contentId) => serializeMapContentForAi(contentId))
     .filter(Boolean)
-    .slice(0, 8);
+    .slice(0, 8) : [];
 
   return JSON.stringify({
     map: {
@@ -15724,7 +15761,7 @@ function buildCompactAiScenarioSummary(contextIds = []) {
       terrains: state.terrains.length,
       planUnits: _toState.units.length,
     },
-    assets: state.assets.slice(0, 40).map((asset) => {
+    assets: includeAssets ? state.assets.slice(0, limits.assets).map((asset) => {
       const toUnit = asset.toUnitId ? _toState.units.find(u => u.id === asset.toUnitId) : null;
       return {
         id: asset.id,
@@ -15738,11 +15775,11 @@ function buildCompactAiScenarioSummary(contextIds = []) {
         powerW: roundAiNumber(asset.powerW, 3),
         toUnit: toUnit ? { label: toUnit.label, size: toUnit.size, affiliation: toUnit.affiliation, type: toUnit.type } : null,
       };
-    }),
+    }) : [],
     // importedItems: two tiers to keep token count bounded.
     // Tier 1: explicitly linked context items — full geometry + properties.
     // Tier 2: everything else — lean name/type/folder index (no geometry/properties), capped at 400.
-    importedItems: (() => {
+    importedItems: includeImportedItems ? (() => {
       const linkedIds = new Set(contextIds);
       const full = [];
       const index = [];
@@ -15761,7 +15798,7 @@ function buildCompactAiScenarioSummary(contextIds = []) {
             geometry,
             bounds: typeof item.layer?.getBounds === "function" ? serializeBoundsForAi(item.layer.getBounds()) : null,
           });
-        } else if (index.length < 200) {
+        } else if (index.length < limits.importedIndex) {
           index.push({
             contentId: cid,
             name: item.name,
@@ -15771,9 +15808,9 @@ function buildCompactAiScenarioSummary(contextIds = []) {
         }
       }
       return [...full, ...index];
-    })(),
-    mapLookupIndex: buildUnifiedLookupRecords()
-      .slice(0, 300)
+    })() : [],
+    mapLookupIndex: includeLookupIndex ? buildUnifiedLookupRecords()
+      .slice(0, limits.mapLookupIndex)
       .map((record) => ({
         contentId: record.contentId ?? record.id ?? null,
         name: record.name,
@@ -15784,16 +15821,16 @@ function buildCompactAiScenarioSummary(contextIds = []) {
         lon: roundAiNumber(record.lon),
         bounds: record.bounds ?? null,
         source: record.source ?? "map-content",
-      })),
-    viewsheds: state.viewsheds.slice(0, 20).map((viewshed) => ({
+      })) : [],
+    viewsheds: includeViewsheds ? state.viewsheds.slice(0, limits.viewsheds).map((viewshed) => ({
       id: viewshed.id,
       name: viewshed.name ?? `${viewshed.asset.name} Coverage`,
       assetId: viewshed.asset.id,
       propagationModel: viewshed.propagationModel,
       radiusMeters: roundAiNumber(viewshed.radiusMeters, 1),
-    })),
-    planUnits: _toState.units.slice(0, 80).map((unit) => serializePlanUnitForAi(unit)),
-    terrain: terrain ? {
+    })) : [],
+    planUnits: includePlanUnits ? _toState.units.slice(0, limits.planUnits).map((unit) => serializePlanUnitForAi(unit)) : [],
+    terrain: includeTerrain && terrain ? {
       id: terrain.id,
       name: terrain.name,
       rows: terrain.rows,
@@ -17521,6 +17558,197 @@ async function testAiProviderConnection({ openPanelOnSuccess = true } = {}) {
   syncAiUi();
 }
 
+const AI_REQUEST_CLASS = {
+  DETERMINISTIC_LOOKUP: "deterministic_lookup",
+  TAK_TRIGGERED_HEADLESS: "tak_triggered_headless",
+  VIEW_ADVISORY: "view_advisory",
+  PLANNER_ACTIONABLE: "planner_actionable",
+  ANALYSIS_REPORT: "analysis_report",
+};
+
+function normalizeAiRequestPrompt(prompt = "") {
+  return String(prompt ?? "").trim();
+}
+
+function shouldAiRequestUseAnalysisReport(prompt = "") {
+  return /\b(report|analysis|assessment|study|brief|pace|soi|ceoi|aar|route narrative|coa|spectrum plan|generate document)\b/i.test(
+    normalizeAiRequestPrompt(prompt)
+  );
+}
+
+function shouldAiRequestNeedLos(prompt = "", requestClass = AI_REQUEST_CLASS.PLANNER_ACTIONABLE) {
+  if (requestClass === AI_REQUEST_CLASS.TAK_TRIGGERED_HEADLESS || requestClass === AI_REQUEST_CLASS.VIEW_ADVISORY) {
+    return /\b(los|line of sight|blocked link|relay|retrans|terrain|ridgeline|elevation|coverage|site|candidate)\b/i.test(prompt);
+  }
+  return /\b(los|line of sight|blocked link|relay|retrans|terrain|ridgeline|elevation|coverage|site|candidate|link|radio horizon|obstruction)\b/i.test(prompt);
+}
+
+function buildAiRequestSpec({
+  prompt = "",
+  images = [],
+  files = [],
+  contextIds = [],
+  requestClassOverride = "",
+  includeMapContext = false,
+  currentView = state.ui?.currentView,
+} = {}) {
+  const normalizedPrompt = normalizeAiRequestPrompt(prompt);
+  let requestClass = requestClassOverride || "";
+  if (!requestClass) {
+    if (!images.length && !files.length && isLookupPrompt(normalizedPrompt)) {
+      requestClass = AI_REQUEST_CLASS.DETERMINISTIC_LOOKUP;
+    } else if (shouldAiRequestUseAnalysisReport(normalizedPrompt)) {
+      requestClass = AI_REQUEST_CLASS.ANALYSIS_REPORT;
+    } else {
+      requestClass = AI_REQUEST_CLASS.PLANNER_ACTIONABLE;
+    }
+  }
+
+  const includeLosMatrix = shouldAiRequestNeedLos(normalizedPrompt, requestClass) && state.assets.length > 0 && state.assets.length <= 10;
+  return {
+    requestClass,
+    currentView,
+    contextTier: requestClass === AI_REQUEST_CLASS.ANALYSIS_REPORT
+      ? "rich"
+      : requestClass === AI_REQUEST_CLASS.TAK_TRIGGERED_HEADLESS || requestClass === AI_REQUEST_CLASS.VIEW_ADVISORY
+        ? "minimal"
+        : "standard",
+    includeScenarioSummary: includeMapContext || requestClass !== AI_REQUEST_CLASS.TAK_TRIGGERED_HEADLESS,
+    includeCurrentViewContext: requestClass !== AI_REQUEST_CLASS.TAK_TRIGGERED_HEADLESS,
+    includeContextDetail: contextIds.length > 0 && requestClass !== AI_REQUEST_CLASS.TAK_TRIGGERED_HEADLESS,
+    includeFileDetail: files.length > 0,
+    includeLosMatrix,
+    includeDocumentRules: requestClass === AI_REQUEST_CLASS.ANALYSIS_REPORT,
+    includeActionSchema: requestClass === AI_REQUEST_CLASS.PLANNER_ACTIONABLE || requestClass === AI_REQUEST_CLASS.ANALYSIS_REPORT,
+    includeImportedItems: requestClass !== AI_REQUEST_CLASS.TAK_TRIGGERED_HEADLESS,
+    includeLookupIndex: requestClass !== AI_REQUEST_CLASS.ANALYSIS_REPORT,
+    includeViewsheds: requestClass !== AI_REQUEST_CLASS.TAK_TRIGGERED_HEADLESS,
+    includePlanUnits: requestClass !== AI_REQUEST_CLASS.TAK_TRIGGERED_HEADLESS,
+    includeTerrain: includeMapContext || requestClass !== AI_REQUEST_CLASS.TAK_TRIGGERED_HEADLESS,
+    maxTokens: requestClass === AI_REQUEST_CLASS.ANALYSIS_REPORT ? 12000
+      : requestClass === AI_REQUEST_CLASS.PLANNER_ACTIONABLE ? 6000
+        : requestClass === AI_REQUEST_CLASS.VIEW_ADVISORY ? 700
+          : 450,
+    temperature: requestClass === AI_REQUEST_CLASS.TAK_TRIGGERED_HEADLESS ? 0.1 : 0.2,
+    prompt: normalizedPrompt,
+    imageCount: images.length,
+    fileCount: files.length,
+  };
+}
+
+function buildAiSystemPrompt(spec, { activeViewProfile, activeAgentProfile, localModel = false, hasLinkedContext = false } = {}) {
+  const coordinateGuidance = `Use the user's active coordinate system only: ${state.settings.coordinateSystem.toUpperCase()}.`;
+  if (spec.requestClass === AI_REQUEST_CLASS.TAK_TRIGGERED_HEADLESS) {
+    return [
+      "You are a concise RF planning assistant replying through TAK GeoChat.",
+      "Reply with short, technical, actionable text only.",
+      "Do not return JSON, markdown tables, or long reports.",
+      "Do not assume you can edit the map or run actions.",
+      coordinateGuidance,
+    ].join("\n");
+  }
+
+  if (spec.requestClass === AI_REQUEST_CLASS.VIEW_ADVISORY) {
+    return [
+      "You are an expert military RF communications and operations planning assistant embedded in RF Planner.",
+      `The user is currently working in the ${activeViewProfile.label} view. Your active role is ${activeViewProfile.role}.`,
+      activeViewProfile.systemGuidance,
+      "Give concise, technical, actionable answers.",
+      "Do not emit JSON actions unless the user explicitly asks to change the scenario.",
+      coordinateGuidance,
+    ].filter(Boolean).join("\n");
+  }
+
+  const lines = [
+    "You are an expert RF planning assistant and electronic warfare analyst embedded in a live terrain-aware RF propagation simulator.",
+    `The user is currently working in the ${activeViewProfile.label} view. Your active role is ${activeViewProfile.role}.`,
+    activeViewProfile.systemGuidance,
+    `The inferred specialist agent mode is ${activeAgentProfile.label}.`,
+    activeAgentProfile.systemGuidance,
+    "Keep responses terse by default.",
+    "For map-item location questions, answer in a complete sentence rather than a naked coordinate.",
+    coordinateGuidance,
+  ];
+
+  if (spec.includeActionSchema) {
+    lines.push(
+      "If map or simulation changes are needed, return JSON only with {\"assistantMessage\":\"string\",\"actions\":[...]}.",
+      "If no changes are needed, you may answer in plain text.",
+      "Supported actions: set-map-view, focus-map-content, set-settings, set-weather, set-imagery, set-emitter-form, add-asset, update-asset, remove-asset, place-plan-unit, place-marker, draw-shape, update-shape, remove-shape, update-unit, remove-unit, set-planning-parameters, set-planning-region, run-simulation, run-planning, set-site-study, run-site-study, inspect-site-candidate, promote-site-candidate, toggle-3d, check-los, sample-terrain, generate-document.",
+      "Use exact ids from the scenario summary. For newly added assets in the same reply, use placedIndex for run-simulation instead of assetId.",
+      "Use place-marker for points, pins, and markers; use draw-shape for circles, polygons, and lines.",
+      "Use sample-terrain for elevation or terrain-height questions."
+    );
+  }
+  if (spec.includeLosMatrix) {
+    lines.push("If terrainLosMatrix is present, use it when discussing LOS, blocked links, site selection, or relay placement.");
+  }
+  if (hasLinkedContext) {
+    lines.push("When linked context items are present, use their explicit geometry from the provided detail before answering or placing assets.");
+  }
+  if (spec.includeDocumentRules) {
+    lines.push(
+      "Analysis, assessment, PACE, SOI, CEOI, AAR, COA, and similar document requests should use generate-document instead of stuffing long report content into assistantMessage.",
+      "For analysis reports, be thorough and structured with quantified findings."
+    );
+  }
+  if (localModel && spec.includeActionSchema) {
+    lines.push(
+      "For local models: keep the JSON response minimal and valid.",
+      "Example: {\"assistantMessage\":\"Placed and simulated.\",\"actions\":[{\"type\":\"add-asset\",\"contentRef\":\"Capital Lawn\",\"placementMode\":\"inside\",\"name\":\"Radio 1\",\"emitterType\":\"radio\",\"force\":\"friendly\",\"frequencyMHz\":150,\"powerW\":5,\"antennaHeightM\":2,\"antennaGainDbi\":2.15,\"receiverSensitivityDbm\":-107,\"systemLossDb\":3},{\"type\":\"run-simulation\",\"placedIndex\":0,\"propagationModel\":\"itu-p526\",\"radiusKm\":5}]}"
+    );
+  }
+  return lines.filter(Boolean).join("\n\n");
+}
+
+function buildAiConversationMessages({
+  systemText,
+  prompt,
+  spec,
+  scenarioSummary = "",
+  currentViewContext = "",
+  contextDetail = "",
+  fileDetail = "",
+  images = [],
+  provider = "",
+} = {}) {
+  const messages = [];
+  const useAnthropicImageBlocks = provider === "anthropic" && images.length > 0;
+  if (provider !== "anthropic") {
+    messages.push({ role: "system", content: systemText });
+  }
+  if (scenarioSummary) {
+    messages.push({ role: "user", content: `SCENARIO SUMMARY JSON:\n${scenarioSummary}` });
+  }
+  if (currentViewContext) {
+    messages.push({ role: "user", content: `CURRENT VIEW CONTEXT JSON:\n${currentViewContext}` });
+  }
+  if (contextDetail) {
+    messages.push({ role: "user", content: `LINKED MAP CONTENT DETAIL JSON:\n${contextDetail}` });
+  }
+  if (fileDetail) {
+    messages.push({ role: "user", content: `UPLOADED FILE DETAIL:\n${fileDetail}` });
+  }
+
+  const requestText = spec.requestClass === AI_REQUEST_CLASS.TAK_TRIGGERED_HEADLESS
+    ? (prompt || "(no prompt)")
+    : `USER REQUEST:\n${prompt || "(no prompt)"}`;
+
+  if (useAnthropicImageBlocks) {
+    const contentBlocks = images.map(({ dataUrl, mediaType }) => ({
+      type: "image",
+      source: { type: "base64", media_type: mediaType, data: dataUrl.split(",")[1] }
+    }));
+    contentBlocks.push({ type: "text", text: requestText });
+    messages.push({ role: "user", content: contentBlocks });
+    return messages;
+  }
+
+  const imageNote = images.length ? `\n[User attached ${images.length} image(s) — not supported by this provider, ignoring.]` : "";
+  messages.push({ role: "user", content: `${requestText}${imageNote}` });
+  return messages;
+}
+
 async function callAiPlanningAssistant(prompt, images = [], files = [], contextIds = [], { onStatus, onToken } = {}) {
   const localLookup = images.length === 0 && files.length === 0
     ? await tryResolveAiMapLookup(prompt)
@@ -17572,7 +17800,7 @@ async function callAiPlanningAssistant(prompt, images = [], files = [], contextI
     `The inferred specialist agent mode is ${activeAgentProfile.label}.`,
     activeAgentProfile.systemGuidance,
     "Each asset in the scenario may have a 'toUnit' field linking it to a unit in the Table of Organization (TO). When answering questions about why specific units can or cannot communicate, cross-reference their linked emitter's frequencyMHz, waveform, power, elevation, and distance. The TO also contains parent-child hierarchy via toLinks. Use this to answer questions like 'why can't Kilo 1st Platoon talk to Kilo 3rd Platoon' by finding their linked emitters and diagnosing the RF path.",
-    "The scenario summary also includes planUnits from the PLAN/TO view. Each planUnit carries its name, designator, affiliation, unit type, size, hierarchy, and TAK/CoT schema. When the user asks to place or plot units from the PLAN view onto the map, use those planUnits as your source of truth.",
+    "The scenario summary also includes planUnits from the T/O view. Each planUnit carries its name, designator, affiliation, unit type, size, hierarchy, and TAK/CoT schema. When the user asks to place or plot units from the T/O view onto the map, use those planUnits as your source of truth.",
     "For map-item location questions ('where is X', 'what grid is X', 'find X'), always answer in a complete sentence: '<name> is located at <coordinate>.' — never return just a raw coordinate with no context.",
     "Keep responses terse by default. Do not preface answers with setup text like 'Map lookup results' or 'Based on the scenario'.",
     "For a single location answer, one sentence is enough. For ambiguous lookups, list at most 3 short candidates each on its own line with name and coordinate.",
@@ -17595,7 +17823,7 @@ async function callAiPlanningAssistant(prompt, images = [], files = [], contextI
     "  add-asset             → lat, lon OR contentId/contentRef/inside/nameRef + placementMode + distanceMeters, emitterType, name, force?, unit?, frequencyMHz, powerW, antennaHeightM, antennaGainDbi, receiverSensitivityDbm, systemLossDb, notes?",
     "  update-asset          → assetId (exact id), lat?, lon?, emitterType?, name?, force?, unit?, frequencyMHz?, powerW?, antennaHeightM?, antennaGainDbi?, receiverSensitivityDbm?, systemLossDb?",
     "  remove-asset          → assetId (exact id)",
-    "  place-plan-unit       → planUnitId or unitId/name/designator + lat, lon OR contentId/contentRef/inside/nameRef + placementMode + distanceMeters, optional name/designator/remarks. Use this when plotting units that already exist in the PLAN view so the tactical marker inherits the correct icon, affiliation, type, and size.",
+    "  place-plan-unit       → planUnitId or unitId/name/designator + lat, lon OR contentId/contentRef/inside/nameRef + placementMode + distanceMeters, optional name/designator/remarks. Use this when plotting units that already exist in the T/O view so the tactical marker inherits the correct icon, affiliation, type, and size.",
     "  place-marker          → lat, lon, name?, color? (#hex), size? (pt, default 24, range 8–64), outlineColor? (#hex), outlineWidth? (px) — drops a styled point marker on the map. USE THIS (not draw-shape) whenever the user asks to mark a city, location, landmark, or place a point/pin/marker.",
     "  draw-shape            → shapeType (circle|rectangle|polyline|polygon), name?, color?, coordinates [{lat,lon}], radiusM? (circle only), fillOpacity?, weight?",
     "  update-shape          → shapeId or name (use exact item name or id), newName?, color?, fillOpacity?, weight?, lineStyle?, radiusM? (resize circle by regenerating from its center), coordinates?, lat?, lon?, size?, icon?, outlineColor?, outlineWidth? — also updates point markers",
@@ -18039,6 +18267,125 @@ async function callAiPlanningAssistant(prompt, images = [], files = [], contextI
   };
 }
 
+async function callAiPlanningAssistantOptimized(
+  prompt,
+  images = [],
+  files = [],
+  contextIds = [],
+  { onStatus, onToken, requestClassOverride = "", includeMapContext = false } = {}
+) {
+  const localLookup = images.length === 0 && files.length === 0
+    ? await tryResolveAiMapLookup(prompt)
+    : null;
+  if (localLookup) {
+    onStatus?.("Searching map contents");
+    return localLookup;
+  }
+
+  await wait(0);
+
+  const effectiveConfig = getEffectiveAiConfig();
+  const activeProvider = effectiveConfig?.provider || state.ai.provider;
+  const activeModel = effectiveConfig?.model || state.ai.model;
+  const spec = buildAiRequestSpec({
+    prompt,
+    images,
+    files,
+    contextIds,
+    requestClassOverride,
+    includeMapContext,
+  });
+  const activeViewProfile = getAiViewProfile();
+  const activeAgentProfile = getAiAgentProfile();
+  const currentViewContext = spec.includeCurrentViewContext
+    ? buildCurrentViewAiContext(spec.currentView, { compact: spec.contextTier !== "rich" })
+    : "";
+  const scenarioSummary = spec.includeScenarioSummary
+    ? buildCompactAiScenarioSummary(contextIds, {
+        tier: spec.contextTier,
+        includeImportedItems: spec.includeImportedItems,
+        includeLookupIndex: spec.includeLookupIndex,
+        includeViewsheds: spec.includeViewsheds,
+        includePlanUnits: spec.includePlanUnits,
+        includeTerrain: spec.includeTerrain,
+      })
+    : "";
+
+  await wait(0);
+
+  let scenarioSummaryFinal = scenarioSummary;
+  if (spec.includeLosMatrix && scenarioSummary) {
+    try {
+      const losMatrix = buildLosMatrix(state.assets);
+      if (losMatrix.length > 0) {
+        const parsed = JSON.parse(scenarioSummary);
+        parsed.terrainLosMatrix = losMatrix;
+        scenarioSummaryFinal = JSON.stringify(parsed);
+      }
+    } catch {}
+  }
+
+  const contextDetail = spec.includeContextDetail ? buildContextDetail(contextIds) : "";
+  const fileDetail = spec.includeFileDetail ? buildFileContextDetail(files) : "";
+  const localModel = activeProvider === "local-model";
+  const systemText = buildAiSystemPrompt(spec, {
+    activeViewProfile,
+    activeAgentProfile,
+    localModel,
+    hasLinkedContext: contextIds.length > 0,
+  });
+  const messages = buildAiConversationMessages({
+    systemText,
+    prompt: spec.prompt,
+    spec,
+    scenarioSummary: localModel && scenarioSummaryFinal.length > 6000
+      ? `${scenarioSummaryFinal.slice(0, 6000)}\n...[truncated]`
+      : scenarioSummaryFinal,
+    currentViewContext,
+    contextDetail,
+    fileDetail,
+    images,
+    provider: activeProvider,
+  });
+
+  onStatus?.("Contacting provider");
+  const providerResponse = activeProvider === "anthropic"
+    ? await callAnthropic(messages, spec.maxTokens, spec.temperature, onToken, systemText)
+    : activeProvider === "local-model"
+      ? await callLocalModel(messages, Math.max(spec.maxTokens, 1200), 0.1, onToken)
+      : await callGenAiMil(messages, spec.maxTokens, spec.temperature, onToken);
+  const raw = providerResponse.text;
+  onStatus?.("Parsing response");
+  const parsed = parseAiAssistantResponse(raw, prompt);
+  fireAnalyticsEvent({
+    event_type: "ai_request",
+    provider: activeProvider,
+    model: activeModel,
+    input_tokens: providerResponse.inputTokens,
+    output_tokens: providerResponse.outputTokens,
+    meta: buildAiAnalyticsMeta({
+      prompt,
+      rawResponse: raw,
+      parsedResponse: parsed,
+      images,
+      files,
+      contextIds,
+      providerResponse,
+      requestSpec: spec,
+      scenarioSummaryLength: scenarioSummaryFinal.length,
+      currentViewContextLength: currentViewContext.length,
+      contextDetailLength: contextDetail.length,
+      fileDetailLength: fileDetail.length,
+    }),
+  });
+  return {
+    assistantMessage: typeof parsed.assistantMessage === "string" && parsed.assistantMessage.trim()
+      ? parsed.assistantMessage.trim()
+      : "I reviewed the scenario.",
+    actions: Array.isArray(parsed.actions) ? parsed.actions : [],
+  };
+}
+
 async function callGenAiMil(messages, maxTokens = 256, temperature = 0, onToken) {
   const effectiveConfig = getEffectiveAiConfig();
   const selectedModel = await ensureGenAiMilModelsLoaded();
@@ -18064,7 +18411,7 @@ async function callGenAiMil(messages, maxTokens = 256, temperature = 0, onToken)
   throw summarizeGenAiMilTransportFailures("chat completion", errors);
 }
 
-async function callAnthropic(messages, maxTokens = 256, temperature = 0, onToken) {
+async function callAnthropic(messages, maxTokens = 256, temperature = 0, onToken, systemText = "") {
   const effectiveConfig = getEffectiveAiConfig();
   const streaming = Boolean(onToken);
   const response = await fetch("https://api.anthropic.com/v1/messages", {
@@ -18077,6 +18424,7 @@ async function callAnthropic(messages, maxTokens = 256, temperature = 0, onToken
     },
     body: JSON.stringify({
       model: ensureAiModelForProvider("anthropic", effectiveConfig?.model || state.ai.model),
+      system: systemText || undefined,
       max_tokens: maxTokens,
       temperature,
       stream: streaming,
@@ -19551,7 +19899,7 @@ async function executeAiAction(action, { placedAssetIds = [], touchedObjects = [
     const unitReference = action.planUnitId ?? action.unitId ?? action.name ?? action.label ?? action.designator;
     const unit = resolveToUnitReference(unitReference);
     if (!unit) {
-      return `I couldn't place the plan unit${unitReference ? ` "${unitReference}"` : ""} because it was not found in the Plan view.`;
+      return `I couldn't place the plan unit${unitReference ? ` "${unitReference}"` : ""} because it was not found in the T/O view.`;
     }
     const placement = resolveAiPlacementCoordinates(action);
     if (!placement) {
@@ -32451,7 +32799,20 @@ function inferAnalyticsIntent(text = "") {
   return "general_assistant";
 }
 
-function buildAiAnalyticsMeta({ prompt, rawResponse, parsedResponse, images, files, contextIds, providerResponse }) {
+function buildAiAnalyticsMeta({
+  prompt,
+  rawResponse,
+  parsedResponse,
+  images,
+  files,
+  contextIds,
+  providerResponse,
+  requestSpec = null,
+  scenarioSummaryLength = 0,
+  currentViewContextLength = 0,
+  contextDetailLength = 0,
+  fileDetailLength = 0,
+}) {
   const assistantText = parsedResponse?.assistantMessage ?? rawResponse ?? "";
   const actions = Array.isArray(parsedResponse?.actions) ? parsedResponse.actions : [];
   return {
@@ -32466,6 +32827,17 @@ function buildAiAnalyticsMeta({ prompt, rawResponse, parsedResponse, images, fil
     attachment_count: files.length,
     context_count: contextIds.length,
     transport_id: providerResponse?.transportId ?? "",
+    request_class: requestSpec?.requestClass || "",
+    context_tier: requestSpec?.contextTier || "",
+    include_los_matrix: Boolean(requestSpec?.includeLosMatrix),
+    include_context_detail: Boolean(requestSpec?.includeContextDetail),
+    include_file_detail: Boolean(requestSpec?.includeFileDetail),
+    include_lookup_index: Boolean(requestSpec?.includeLookupIndex),
+    include_imported_items: Boolean(requestSpec?.includeImportedItems),
+    scenario_summary_chars: Number(scenarioSummaryLength) || 0,
+    current_view_context_chars: Number(currentViewContextLength) || 0,
+    context_detail_chars: Number(contextDetailLength) || 0,
+    file_detail_chars: Number(fileDetailLength) || 0,
   };
 }
 
@@ -33661,7 +34033,7 @@ function refreshLinkedViews() {
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   PLAN VIEW — Military Table of Organization Builder
+   T/O VIEW — Military Table of Organization Builder
 ═══════════════════════════════════════════════════════════════ */
 const _toState = {
   units: [],       // { id, label, designator, affiliation, type, size, x, y }
@@ -34756,11 +35128,14 @@ function toFitView() {
   applyToTransform();
 }
 
-function buildPlanAiContext() {
+function buildPlanAiContext(options = {}) {
+  const compact = options.compact !== false;
+  const unitLimit = compact ? 24 : _toState.units.length;
+  const linkLimit = compact ? 40 : _toState.links.length;
   return JSON.stringify({
     view: "plan",
-    units: _toState.units.map((unit) => serializePlanUnitForAi(unit)),
-    links: _toState.links.map((link) => ({
+    units: _toState.units.slice(0, unitLimit).map((unit) => serializePlanUnitForAi(unit)),
+    links: _toState.links.slice(0, linkLimit).map((link) => ({
       parentId: link.parentId,
       childId: link.childId,
       parentName: getPlanUnitById(link.parentId)?.label || getPlanUnitById(link.parentId)?.designator || "",
@@ -36702,12 +37077,16 @@ function wireTopoCanvasPanZoom() {
   }, { signal: sig });
 }
 
-function buildTopoAiContext() {
+function buildTopoAiContext(options = {}) {
+  const compact = options.compact !== false;
+  const emitterLimit = compact ? 18 : 30;
+  const unitLimit = compact ? 24 : _toState.units.length;
+  const linkLimit = compact ? 40 : _toState.links.length;
   const emitters = getAnalyzeEmitters();
   return JSON.stringify({
     view: "topology",
     emitterCount: emitters.length,
-    emitters: emitters.slice(0, 30).map(e => {
+    emitters: emitters.slice(0, emitterLimit).map(e => {
       return {
         id: e.id,
         name: e.name,
@@ -36720,8 +37099,8 @@ function buildTopoAiContext() {
         toUnit: e.toUnit ? { id: e.toUnit.id, label: e.toUnit.label, size: e.toUnit.size, affiliation: e.toUnit.affiliation, type: e.toUnit.type } : null,
       };
     }),
-    toUnits: _toState.units.map(u => ({ id: u.id, label: u.label, size: u.size, affiliation: u.affiliation, type: u.type })),
-    toLinks: _toState.links,
+    toUnits: _toState.units.slice(0, unitLimit).map(u => ({ id: u.id, label: u.label, size: u.size, affiliation: u.affiliation, type: u.type })),
+    toLinks: _toState.links.slice(0, linkLimit),
   });
 }
 
@@ -36994,12 +37373,16 @@ function renderAnalyzeWaveform(emitters, assessments = []) {
   `;
 }
 
-function buildAnalyzeAiContext() {
+function buildAnalyzeAiContext(options = {}) {
+  const compact = options.compact !== false;
+  const emitterLimit = compact ? 20 : 40;
+  const unitLimit = compact ? 24 : _toState.units.length;
+  const linkLimit = compact ? 40 : _toState.links.length;
   const emitters = getAnalyzeEmitters();
   return JSON.stringify({
     view: "analyze",
     emitterCount: emitters.length,
-    emitters: emitters.slice(0, 40).map(e => {
+    emitters: emitters.slice(0, emitterLimit).map(e => {
       return {
         id: e.id,
         name: e.name,
@@ -37014,8 +37397,8 @@ function buildAnalyzeAiContext() {
         toUnit: e.toUnit ? { label: e.toUnit.label, size: e.toUnit.size, affiliation: e.toUnit.affiliation, type: e.toUnit.type } : null,
       };
     }),
-    toUnits: _toState.units.map(u => ({ id: u.id, label: u.label, size: u.size, affiliation: u.affiliation, type: u.type })),
-    toLinks: _toState.links,
+    toUnits: _toState.units.slice(0, unitLimit).map(u => ({ id: u.id, label: u.label, size: u.size, affiliation: u.affiliation, type: u.type })),
+    toLinks: _toState.links.slice(0, linkLimit),
   });
 }
 
@@ -37087,17 +37470,20 @@ async function callViewAi(userMessage, contextJson) {
   const apiKey      = effectiveConfig?.apiKey || state.ui?.aiApiKey || localStorage.getItem("ai_api_key") || "";
   const model       = effectiveConfig?.model || state.ui?.aiModel || localStorage.getItem("ai_model") || "claude-sonnet-4-6";
 
-  const systemPrompt = `You are an expert military RF communications and operations planning assistant embedded in RF Planner.
-The user is working in a specialized view. Here is the current scenario context (JSON):
-${contextJson}
-Be concise, technical, and actionable. Format responses with markdown where helpful.`;
+  const systemPrompt = [
+    "You are an expert military RF communications and operations planning assistant embedded in RF Planner.",
+    "The user is working in a specialized view.",
+    "Be concise, technical, and actionable.",
+    "Do not emit JSON actions unless the user explicitly asks to change the scenario.",
+  ].join("\n");
+  const userContext = `CURRENT VIEW CONTEXT JSON:\n${contextJson}\n\nUSER REQUEST:\n${userMessage}`;
 
   if (providerUrl.includes("anthropic") || providerUrl.includes("claude") || model.includes("claude")) {
     const payload = {
       model,
-      max_tokens: 1024,
+      max_tokens: 512,
       system: systemPrompt,
-      messages: [{ role: "user", content: userMessage }],
+      messages: [{ role: "user", content: userContext }],
     };
     const resp = await fetch(providerUrl || "https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -37116,10 +37502,10 @@ Be concise, technical, and actionable. Format responses with markdown where help
   // Generic OpenAI-compatible endpoint
   const payload = {
     model,
-    max_tokens: 1024,
+    max_tokens: 512,
     messages: [
       { role: "system", content: systemPrompt },
-      { role: "user",   content: userMessage },
+      { role: "user", content: userContext },
     ],
   };
   const resp = await fetch(providerUrl, {
