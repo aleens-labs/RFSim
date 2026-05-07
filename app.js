@@ -8673,6 +8673,7 @@ const emitterModal = {
     }
     const profileRef = this.resolveProfileRefForPayload(payload);
     const data = buildEmitterAssetFromProfilePayload(payload, { profileRef });
+    const isEmittersWorkspaceView = state.ui?.currentView === "emitters";
 
     let resolvedLocation = null;
     try {
@@ -8695,15 +8696,22 @@ const emitterModal = {
           else asset.toUnitId = window._pendingToUnitId;
           clearPendingToLink();
         }
-        if (resolvedLocation) {
+        const keepWorkspaceOnly = isEmittersWorkspaceView && !state.assetMarkers.has(asset.id);
+        if (resolvedLocation && !keepWorkspaceOnly) {
           asset.lat = resolvedLocation.lat;
           asset.lon = resolvedLocation.lng;
           const marker = state.assetMarkers.get(asset.id);
           if (marker) {
             marker.setLatLng([asset.lat, asset.lon]);
           }
+        } else if (keepWorkspaceOnly) {
+          asset.lat = null;
+          asset.lon = null;
+          asset.groundElevationM = null;
         }
-        asset.groundElevationM = sampleTerrainElevation(asset.lat, asset.lon);
+        asset.groundElevationM = hasAssetMapLocation(asset)
+          ? sampleTerrainElevation(asset.lat, asset.lon)
+          : null;
         asset.version = (asset.version ?? 1) + 1;
         asset.lastModified = nowIso();
         updateAssetMarker(asset);
@@ -8724,19 +8732,19 @@ const emitterModal = {
       return;
     }
 
+    if (isEmittersWorkspaceView) {
+      addAssetToWorkspace(data);
+      this.close();
+      setStatus("Emitter added to the workspace.");
+      return;
+    }
+
     if (resolvedLocation) {
       state.pendingEmitterData = data;
       setAssetPlacementMode(false);
       addAsset(resolvedLocation);
       this.close();
       setStatus(`Emitter placed at ${resolvedLocation.description}.`);
-      return;
-    }
-
-    if (state.ui?.currentView === "emitters") {
-      addAssetToWorkspace(data);
-      this.close();
-      setStatus("Emitter added to the workspace.");
       return;
     }
 
@@ -22242,6 +22250,10 @@ function renderAssetPopup(asset) {
   `;
 }
 
+function hasAssetMapLocation(asset) {
+  return Number.isFinite(Number(asset?.lat)) && Number.isFinite(Number(asset?.lon));
+}
+
 function renderEmittersView() {
   initEmittersViewIfNeeded();
   renderAssets();
@@ -22553,7 +22565,9 @@ function renderEmittersWorkspace() {
     const linkedLabel = linkedUnit
       ? (linkedUnit.label || linkedUnit.designator || `Unit ${linkedUnit.id}`)
       : "Unlinked";
-    const visibilityLabel = isContentEffectivelyHidden(`asset:${asset.id}`) ? "Hidden on map" : "Visible on map";
+    const visibilityLabel = hasAssetMapLocation(asset)
+      ? (isContentEffectivelyHidden(`asset:${asset.id}`) ? "Hidden on map" : "Visible on map")
+      : "Not on map";
     const graphicPath = resolveEmitterGraphicPath(asset);
     const markerColor = asset.color || FORCE_COLORS[asset.force] || FORCE_COLORS.friendly;
     const type = EMITTER_ICONS[asset.type] ? asset.type : "radio";
@@ -22757,6 +22771,11 @@ function initEmittersViewIfNeeded() {
     const assetId = _emittersWorkspaceState.contextAssetId;
     hideEmittersContextMenu();
     if (!assetId) return;
+    const asset = state.assets.find((entry) => entry.id === assetId);
+    if (!hasAssetMapLocation(asset) || !state.assetMarkers.has(assetId)) {
+      setStatus("This emitter is only in the workspace. Use Place / Relocate from the map workflow if you want it on the map.");
+      return;
+    }
     switchView("map");
     focusMapContent(`asset:${assetId}`);
   });
@@ -26133,7 +26152,7 @@ function getMapContentEntries() {
     });
   });
 
-  state.assets.forEach((asset) => {
+  state.assets.filter((asset) => hasAssetMapLocation(asset)).forEach((asset) => {
     const radioName = asset.emitterLabel || asset.name || "Radio";
     let displayName;
     if (asset.toUnitId) {
