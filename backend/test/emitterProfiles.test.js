@@ -7,6 +7,7 @@ const {
   formatEmitterProfileRow,
   summarizeEmitterProfilePayload,
 } = require("../src/emitterProfiles");
+const { buildStarterEmitterProfiles } = require("../src/defaultEmitterProfiles");
 
 test("emitterProfileCreateSchema accepts a full normalized emitter profile", () => {
   const parsed = emitterProfileCreateSchema.safeParse({
@@ -132,4 +133,17 @@ test("formatEmitterProfileRow normalizes stored records for the client", () => {
   assert.equal(formatted.version, 3);
   assert.equal(formatted.profile.rf.frequencyMHz, 2400);
   assert.equal(formatted.waveform, "SRW");
+});
+
+test("starter radar emitter profiles parse and include passive receiver entry", () => {
+  const starterProfiles = buildStarterEmitterProfiles();
+
+  assert.equal(starterProfiles.length, 12);
+  assert.ok(starterProfiles.every((entry) => entry.profile.type === "sensor"));
+  assert.ok(starterProfiles.every((entry) => entry.profile.icon === "sensor"));
+
+  const passiveProfile = starterProfiles.find((entry) => entry.name === "Passive Air-Surveillance Receiver Site");
+  assert.ok(passiveProfile);
+  assert.equal(passiveProfile.profile.tx.powerW, 0);
+  assert.equal(passiveProfile.profile.rf.waveform, "Passive DF");
 });

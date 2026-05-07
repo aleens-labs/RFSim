@@ -845,48 +845,6 @@ const RADIO_LIBRARY = {
       },
     },
   },
-  "prc-77": {
-    label: "AN/PRC-77",
-    programs: {
-      "vhf-analog": {
-        label: "VHF Analog — Legacy",
-        rf: { frequencyMHz: 60, bandwidthKHz: 50, modulation: "FM", waveform: "analog", duplex: "simplex", channelSpacingKHz: 50 },
-        tx: { powerW: 4, dutyCycle: 0.5, papr: 0, spectralEfficiency: 1 },
-        rx: { sensitivityDbm: -105, noiseFigDb: 8, requiredSnrDb: 15, acrDb: 55, bdrDb: 75 },
-        antenna: { type: "whip", gainDbi: 2, pattern: "omnidirectional", polarization: "vertical", heightM: 2, cableLossDb: 0.5, systemLossDb: 3 },
-        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true },
-        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 0, adaptiveDataRate: false },
-      },
-    },
-  },
-  "vrc-90": {
-    label: "AN/VRC-90 SINCGARS",
-    programs: {
-      "sincgars-fh": {
-        label: "SINCGARS Frequency Hop",
-        rf: { frequencyMHz: 50, bandwidthKHz: 25, modulation: "FHSS", waveform: "SINCGARS", duplex: "half-duplex", channelSpacingKHz: 25 },
-        tx: { powerW: 50, dutyCycle: 0.5, papr: 0, spectralEfficiency: 4.8 },
-        rx: { sensitivityDbm: -107, noiseFigDb: 5, requiredSnrDb: 12, acrDb: 70, bdrDb: 90 },
-        antenna: { type: "whip", gainDbi: 2.15, pattern: "omnidirectional", polarization: "vertical", heightM: 3, cableLossDb: 1, systemLossDb: 2 },
-        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true },
-        net: { isManet: false, relayCapable: true, maxHops: 1, latencyMs: 200, adaptiveDataRate: false },
-      },
-    },
-  },
-  "prc-119": {
-    label: "AN/PRC-119 SINCGARS",
-    programs: {
-      "sincgars-fh": {
-        label: "SINCGARS Frequency Hop",
-        rf: { frequencyMHz: 50, bandwidthKHz: 25, modulation: "FHSS", waveform: "SINCGARS", duplex: "half-duplex", channelSpacingKHz: 25 },
-        tx: { powerW: 5, dutyCycle: 0.5, papr: 0, spectralEfficiency: 4.8 },
-        rx: { sensitivityDbm: -107, noiseFigDb: 6, requiredSnrDb: 12, acrDb: 70, bdrDb: 90 },
-        antenna: { type: "whip", gainDbi: 2.15, pattern: "omnidirectional", polarization: "vertical", heightM: 2, cableLossDb: 0.5, systemLossDb: 3 },
-        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true },
-        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 200, adaptiveDataRate: false },
-      },
-    },
-  },
   "mbitr": {
     label: "AN/PRC-148 MBITR",
     programs: {
@@ -901,21 +859,6 @@ const RADIO_LIBRARY = {
       },
     },
   },
-  "prc-154": {
-    label: "AN/PRC-154 Rifleman Radio",
-    programs: {
-      "srw": {
-        label: "Soldier Radio Waveform",
-        rf: { frequencyMHz: 2400, bandwidthKHz: 5000, modulation: "OFDM", waveform: "SRW", duplex: "full-duplex", channelSpacingKHz: 5000 },
-        tx: { powerW: 0.4, dutyCycle: 1, papr: 8, spectralEfficiency: 1.5 },
-        rx: { sensitivityDbm: -95, noiseFigDb: 8, requiredSnrDb: 10, acrDb: 30, bdrDb: 60 },
-        antenna: { type: "blade", gainDbi: 0, pattern: "omnidirectional", polarization: "vertical", heightM: 1.5, cableLossDb: 0.3, systemLossDb: 2 },
-        prop: { model: "itu-p526", clutter: "urban", terrainEnabled: true, diffractionEnabled: true },
-        net: { isManet: true, relayCapable: true, maxHops: 8, latencyMs: 50, adaptiveDataRate: true },
-      },
-    },
-  },
-  // ── Commercial P25 ───────────────────────────────────────────────────────────
   "p25-portable": {
     label: "P25 Portable (generic)",
     programs: {
@@ -1181,22 +1124,20 @@ const RADIO_LIBRARY = {
     },
   },
 
-  "broadband-lte": {
-    label: "Broadband LTE (FirstNet)",
+  "trellisware-tw950": {
+    label: "TrellisWare TW-950",
     programs: {
-      "firstnet-700": {
-        label: "FirstNet Band 14 (700 MHz)",
-        rf: { frequencyMHz: 758, bandwidthKHz: 10000, modulation: "OFDM", waveform: "LTE", duplex: "full-duplex", channelSpacingKHz: 10000 },
-        tx: { powerW: 0.2, dutyCycle: 1, papr: 10, spectralEfficiency: 6 },
-        rx: { sensitivityDbm: -97, noiseFigDb: 7, requiredSnrDb: 8, acrDb: 45, bdrDb: 70 },
-        antenna: { type: "panel", gainDbi: 0, pattern: "omnidirectional", polarization: "vertical", heightM: 1.5, cableLossDb: 0.2, systemLossDb: 2 },
-        prop: { model: "itu-p526", clutter: "suburban", terrainEnabled: true, diffractionEnabled: true },
-        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 20, adaptiveDataRate: true },
+      "tsm-x-manet": {
+        label: "TSM-X MANET",
+        rf: { frequencyMHz: 2400, bandwidthKHz: 5000, modulation: "OFDM", waveform: "TSM-X", duplex: "full-duplex", channelSpacingKHz: 5000 },
+        tx: { powerW: 1, dutyCycle: 1, papr: 8, spectralEfficiency: 2.2 },
+        rx: { sensitivityDbm: -97, noiseFigDb: 7, requiredSnrDb: 9, acrDb: 34, bdrDb: 62 },
+        antenna: { type: "blade", gainDbi: 1, pattern: "omnidirectional", polarization: "vertical", heightM: 1.5, cableLossDb: 0.3, systemLossDb: 1.8 },
+        prop: { model: "itu-p526", clutter: "urban", terrainEnabled: true, diffractionEnabled: true },
+        net: { isManet: true, relayCapable: true, maxHops: 10, latencyMs: 20, adaptiveDataRate: true, dataRateMbps: 12, meshProtocol: "TSM-X" },
       },
     },
   },
-
-  // ── Battalion CP / High-Tier Systems ────────────────────────────────────────
 
   "starlink-military": {
     label: "Starlink / Starshield LEO SATCOM",
@@ -1218,30 +1159,6 @@ const RADIO_LIBRARY = {
         antenna: { type: "phased_array", gainDbi: 42, pattern: "steerable", polarization: "circular", heightM: 0.6, cableLossDb: 0.5, systemLossDb: 2 },
         prop: { model: "itu-p618", clutter: "open", terrainEnabled: false, diffractionEnabled: false },
         net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 20, adaptiveDataRate: true, satcomEnabled: true, satType: "LEO", satUplinkMHz: 29500, satDownlinkMHz: 19700, satGainDbi: 42, dataRateMbps: 500, encrypted: true, milStandard: "Starshield" },
-      },
-    },
-  },
-
-  "muos-terminal": {
-    label: "MUOS Terminal (AN/USC-61)",
-    programs: {
-      "muos-wcdma": {
-        label: "MUOS WCDMA — Narrowband",
-        rf: { frequencyMHz: 310, bandwidthKHz: 5000, modulation: "QPSK", waveform: "MUOS-WCDMA", duplex: "full-duplex", channelSpacingKHz: 5000 },
-        tx: { powerW: 20, dutyCycle: 1, papr: 6, spectralEfficiency: 2.4 },
-        rx: { sensitivityDbm: -107, noiseFigDb: 4, requiredSnrDb: 8, acrDb: 60, bdrDb: 80 },
-        antenna: { type: "helix", gainDbi: 10, pattern: "directional", polarization: "circular-right", heightM: 1.8, cableLossDb: 1, systemLossDb: 3 },
-        prop: { model: "itu-p528", clutter: "open", terrainEnabled: false, diffractionEnabled: false },
-        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 350, adaptiveDataRate: true, satcomEnabled: true, satType: "GEO", satUplinkMHz: 292, satDownlinkMHz: 243, satGainDbi: 10, dataRateMbps: 0.384, milStandard: "MIL-STD-188-183A" },
-      },
-      "muos-legacy-udr": {
-        label: "MUOS Legacy UHF DAMA",
-        rf: { frequencyMHz: 305, bandwidthKHz: 25, modulation: "PSK", waveform: "DAMA-TDMA", duplex: "full-duplex", channelSpacingKHz: 25 },
-        tx: { powerW: 20, dutyCycle: 1, papr: 3, spectralEfficiency: 1.2 },
-        rx: { sensitivityDbm: -107, noiseFigDb: 4, requiredSnrDb: 8, acrDb: 60, bdrDb: 80 },
-        antenna: { type: "helix", gainDbi: 10, pattern: "directional", polarization: "circular-right", heightM: 1.8, cableLossDb: 1, systemLossDb: 4 },
-        prop: { model: "itu-p528", clutter: "open", terrainEnabled: false, diffractionEnabled: false },
-        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 600, adaptiveDataRate: false, satcomEnabled: true, satType: "GEO", satUplinkMHz: 305, satDownlinkMHz: 255, satGainDbi: 10 },
       },
     },
   },
@@ -1279,101 +1196,6 @@ const RADIO_LIBRARY = {
     },
   },
 
-  "jtrs-wint": {
-    label: "WIN-T Increment 2 (JTRS/Ku)",
-    programs: {
-      "wint-tropos": {
-        label: "Tropos MANET — Point of Presence",
-        rf: { frequencyMHz: 4900, bandwidthKHz: 20000, modulation: "OFDM", waveform: "WIN-T-Tropos", duplex: "full-duplex", channelSpacingKHz: 20000 },
-        tx: { powerW: 5, dutyCycle: 1, papr: 8, spectralEfficiency: 4 },
-        rx: { sensitivityDbm: -90, noiseFigDb: 7, requiredSnrDb: 10, acrDb: 35, bdrDb: 60 },
-        antenna: { type: "panel", gainDbi: 12, pattern: "directional", polarization: "vertical", heightM: 4, cableLossDb: 1, systemLossDb: 2 },
-        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true },
-        net: { isManet: true, relayCapable: true, maxHops: 4, latencyMs: 30, adaptiveDataRate: true, dataRateMbps: 20 },
-      },
-      "wint-ku-satcom": {
-        label: "WIN-T Ku-band SATCOM",
-        rf: { frequencyMHz: 14000, bandwidthKHz: 72000, modulation: "QPSK", waveform: "WIN-T-SATCOM", duplex: "full-duplex", channelSpacingKHz: 72000 },
-        tx: { powerW: 100, dutyCycle: 1, papr: 4, spectralEfficiency: 2 },
-        rx: { sensitivityDbm: -95, noiseFigDb: 3, requiredSnrDb: 8, acrDb: 50, bdrDb: 75 },
-        antenna: { type: "dish", gainDbi: 37, pattern: "directional", polarization: "linear", heightM: 1.2, cableLossDb: 2, systemLossDb: 3 },
-        prop: { model: "itu-p618", clutter: "open", terrainEnabled: false, diffractionEnabled: false },
-        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 600, adaptiveDataRate: true, satcomEnabled: true, satType: "GEO", satUplinkMHz: 14000, satDownlinkMHz: 11200, satGainDbi: 37, dataRateMbps: 10 },
-      },
-    },
-  },
-
-  "cpm-200": {
-    label: "CPM-200 Manpack (HF/VHF/UHF)",
-    programs: {
-      "hf-voice": {
-        label: "HF Voice — NVIS",
-        rf: { frequencyMHz: 8, bandwidthKHz: 3, modulation: "USB", waveform: "ALE", duplex: "half-duplex", channelSpacingKHz: 3 },
-        tx: { powerW: 20, dutyCycle: 0.5, papr: 0, spectralEfficiency: 0.4 },
-        rx: { sensitivityDbm: -113, noiseFigDb: 10, requiredSnrDb: 6, acrDb: 60, bdrDb: 88 },
-        antenna: { type: "whip_hf", gainDbi: 2, pattern: "omnidirectional", polarization: "vertical", heightM: 5, cableLossDb: 0.5, systemLossDb: 2 },
-        prop: { model: "hf-skywave", clutter: "open", terrainEnabled: false, diffractionEnabled: false, nvisEnabled: true, ionoModel: "itu-r", timeDayEffects: true, solarIndex: 80 },
-        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 500, adaptiveDataRate: false },
-      },
-      "vhf-sincgars": {
-        label: "VHF SINCGARS",
-        rf: { frequencyMHz: 50, bandwidthKHz: 25, modulation: "FHSS", waveform: "SINCGARS", duplex: "half-duplex", channelSpacingKHz: 25 },
-        tx: { powerW: 5, dutyCycle: 0.5, papr: 0, spectralEfficiency: 4.8 },
-        rx: { sensitivityDbm: -107, noiseFigDb: 6, requiredSnrDb: 12, acrDb: 70, bdrDb: 90 },
-        antenna: { type: "whip", gainDbi: 2.15, pattern: "omnidirectional", polarization: "vertical", heightM: 2, cableLossDb: 0.5, systemLossDb: 3 },
-        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true },
-        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 200, adaptiveDataRate: false },
-      },
-    },
-  },
-
-  "pse-5": {
-    label: "PSE-5 HF Pack Set (Long-Haul)",
-    programs: {
-      "hf-nvis-100w": {
-        label: "HF NVIS — 100 W",
-        rf: { frequencyMHz: 6, bandwidthKHz: 3, modulation: "USB", waveform: "ALE", duplex: "half-duplex", channelSpacingKHz: 3 },
-        tx: { powerW: 100, dutyCycle: 0.5, papr: 0, spectralEfficiency: 0.4 },
-        rx: { sensitivityDbm: -115, noiseFigDb: 9, requiredSnrDb: 6, acrDb: 65, bdrDb: 92 },
-        antenna: { type: "dipole_hf", gainDbi: 2.15, pattern: "omnidirectional", polarization: "horizontal", heightM: 8, cableLossDb: 1, systemLossDb: 2 },
-        prop: { model: "hf-skywave", clutter: "open", terrainEnabled: false, diffractionEnabled: false, nvisEnabled: true, ionoModel: "itu-r", timeDayEffects: true, solarIndex: 80 },
-        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 500, adaptiveDataRate: false },
-      },
-      "hf-longhaul-100w": {
-        label: "HF Long-Haul — 100 W",
-        rf: { frequencyMHz: 16, bandwidthKHz: 3, modulation: "USB", waveform: "ALE", duplex: "half-duplex", channelSpacingKHz: 3 },
-        tx: { powerW: 100, dutyCycle: 0.5, papr: 0, spectralEfficiency: 0.4 },
-        rx: { sensitivityDbm: -115, noiseFigDb: 9, requiredSnrDb: 6, acrDb: 65, bdrDb: 92 },
-        antenna: { type: "dipole_hf", gainDbi: 4, pattern: "directional", polarization: "horizontal", heightM: 10, cableLossDb: 1.5, systemLossDb: 3 },
-        prop: { model: "hf-skywave", clutter: "open", terrainEnabled: false, diffractionEnabled: false, nvisEnabled: false, ionoModel: "itu-r", timeDayEffects: true, solarIndex: 80 },
-        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 800, adaptiveDataRate: false },
-      },
-    },
-  },
-
-  "cp-node": {
-    label: "Command Post Node (CP Node)",
-    programs: {
-      "cp-wideband": {
-        label: "Wideband IP Backbone",
-        rf: { frequencyMHz: 4900, bandwidthKHz: 40000, modulation: "OFDM", waveform: "CP-Node-WB", duplex: "full-duplex", channelSpacingKHz: 40000 },
-        tx: { powerW: 10, dutyCycle: 1, papr: 8, spectralEfficiency: 5 },
-        rx: { sensitivityDbm: -88, noiseFigDb: 6, requiredSnrDb: 10, acrDb: 38, bdrDb: 62 },
-        antenna: { type: "panel", gainDbi: 14, pattern: "directional", polarization: "vertical", heightM: 6, cableLossDb: 1.5, systemLossDb: 3 },
-        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true },
-        net: { isManet: true, relayCapable: true, maxHops: 6, latencyMs: 25, adaptiveDataRate: true, dataRateMbps: 50 },
-      },
-      "cp-sincgars-retrans": {
-        label: "SINCGARS Retransmit",
-        rf: { frequencyMHz: 50, bandwidthKHz: 25, modulation: "FHSS", waveform: "SINCGARS", duplex: "half-duplex", channelSpacingKHz: 25 },
-        tx: { powerW: 50, dutyCycle: 0.5, papr: 0, spectralEfficiency: 4.8 },
-        rx: { sensitivityDbm: -107, noiseFigDb: 5, requiredSnrDb: 12, acrDb: 70, bdrDb: 90 },
-        antenna: { type: "whip", gainDbi: 6, pattern: "omnidirectional", polarization: "vertical", heightM: 10, cableLossDb: 2, systemLossDb: 2 },
-        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true },
-        net: { isManet: false, relayCapable: true, maxHops: 2, latencyMs: 200, adaptiveDataRate: false },
-      },
-    },
-  },
 };
 
 // ─── Link budget helpers ──────────────────────────────────────────────────────
@@ -1401,6 +1223,8 @@ function computeLinkBudget(profile) {
 
 const EMITTER_PROFILE_LEGACY_STORAGE_KEY = "ew-sim-emitter-profiles";
 const EMITTER_PROFILE_STORAGE_KEY = "ew-sim-emitter-profiles-library";
+const EMITTER_PROFILE_LIBRARY_VERSION_KEY = "ew-sim-emitter-profiles-library-version";
+const EMITTER_PROFILE_LIBRARY_VERSION = 1;
 const PROFILE_STORAGE_KEY = EMITTER_PROFILE_STORAGE_KEY;
 const SETTINGS_STORAGE_KEY = "ew-sim-map-settings";
 const CESIUM_ION_TOKEN_STORAGE_KEY = "ew-sim-cesium-ion-token";
@@ -3016,6 +2840,216 @@ function buildGuestEmitterProfilesFromLegacyRecords() {
   }
 }
 
+function buildStarterGuestEmitterProfiles() {
+  const starterProfiles = [
+    {
+      id: "starter-radar-long-range-early-warning",
+      name: "Long-Range Early Warning Radar",
+      profile: {
+        type: "sensor",
+        emitterLabel: "Long-Range Early Warning Radar",
+        force: "enemy",
+        icon: "sensor",
+        color: "#ef4444",
+        notes: "Broad-area long-range surveillance radar optimized for wide azimuth coverage and early warning against aircraft and cruise-missile sized targets.",
+        rf: { frequencyMHz: 1250, bandwidthKHz: 8000, modulation: "Pulse", waveform: "Volume Search", duplex: "simplex", channelSpacingKHz: 5000 },
+        tx: { powerW: 850000, dutyCycle: 0.18, papr: 0, spectralEfficiency: null },
+        rx: { sensitivityDbm: -103, noiseFigDb: 4, requiredSnrDb: 13, acrDb: 80, bdrDb: 90 },
+        antenna: { type: "phased-array", gainDbi: 33, pattern: "sectoral", polarization: "linear", heightM: 14, cableLossDb: 1.2, systemLossDb: 4 },
+        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true, nvisEnabled: false, ionoModel: "simple", timeDayEffects: false, solarIndex: null },
+      },
+    },
+    {
+      id: "starter-radar-vhf-early-warning",
+      name: "VHF Early Warning Radar",
+      profile: {
+        type: "sensor",
+        emitterLabel: "VHF Early Warning Radar",
+        force: "enemy",
+        icon: "sensor",
+        color: "#ef4444",
+        notes: "Low-band long-range surveillance radar emphasizing long detection range and reduced sensitivity to shaping, at the cost of coarser track quality.",
+        rf: { frequencyMHz: 180, bandwidthKHz: 3000, modulation: "Pulse", waveform: "Low-Band Search", duplex: "simplex", channelSpacingKHz: 1000 },
+        tx: { powerW: 600000, dutyCycle: 0.12, papr: 0, spectralEfficiency: null },
+        rx: { sensitivityDbm: -106, noiseFigDb: 3, requiredSnrDb: 10, acrDb: 75, bdrDb: 88 },
+        antenna: { type: "array", gainDbi: 24, pattern: "sectoral", polarization: "horizontal", heightM: 18, cableLossDb: 1.5, systemLossDb: 4.5 },
+        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true, nvisEnabled: false, ionoModel: "simple", timeDayEffects: false, solarIndex: null },
+      },
+    },
+    {
+      id: "starter-radar-3d-acquisition",
+      name: "3D Acquisition Radar",
+      profile: {
+        type: "sensor",
+        emitterLabel: "3D Acquisition Radar",
+        force: "enemy",
+        icon: "sensor",
+        color: "#ef4444",
+        notes: "Altitude-capable surveillance and track-initiation radar for medium-to-long-range air defense batteries.",
+        rf: { frequencyMHz: 2900, bandwidthKHz: 6000, modulation: "Pulse-Doppler", waveform: "3D Search", duplex: "simplex", channelSpacingKHz: 2500 },
+        tx: { powerW: 320000, dutyCycle: 0.16, papr: 0, spectralEfficiency: null },
+        rx: { sensitivityDbm: -102, noiseFigDb: 4, requiredSnrDb: 12, acrDb: 78, bdrDb: 88 },
+        antenna: { type: "phased-array", gainDbi: 31, pattern: "sectoral", polarization: "linear", heightM: 12, cableLossDb: 1, systemLossDb: 3.5 },
+        prop: { model: "itu-p526", clutter: "suburban", terrainEnabled: true, diffractionEnabled: true, nvisEnabled: false, ionoModel: "simple", timeDayEffects: false, solarIndex: null },
+      },
+    },
+    {
+      id: "starter-radar-mobile-sector-search",
+      name: "Mobile Sector Search Radar",
+      profile: {
+        type: "sensor",
+        emitterLabel: "Mobile Sector Search Radar",
+        force: "enemy",
+        icon: "sensor",
+        color: "#ef4444",
+        notes: "Truck-mobile sector search radar for rapid emplacement, gap coverage, and cueing of nearby air-defense elements.",
+        rf: { frequencyMHz: 5600, bandwidthKHz: 4500, modulation: "Pulse-Doppler", waveform: "Sector Search", duplex: "simplex", channelSpacingKHz: 2000 },
+        tx: { powerW: 140000, dutyCycle: 0.14, papr: 0, spectralEfficiency: null },
+        rx: { sensitivityDbm: -100, noiseFigDb: 4.5, requiredSnrDb: 11, acrDb: 72, bdrDb: 84 },
+        antenna: { type: "phased-array", gainDbi: 29, pattern: "directional", polarization: "linear", heightM: 10, cableLossDb: 0.8, systemLossDb: 3.2 },
+        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true, nvisEnabled: false, ionoModel: "simple", timeDayEffects: false, solarIndex: null },
+      },
+    },
+    {
+      id: "starter-radar-long-range-aesa-surveillance",
+      name: "Long-Range AESA Surveillance Radar",
+      profile: {
+        type: "sensor",
+        emitterLabel: "Long-Range AESA Surveillance Radar",
+        force: "enemy",
+        icon: "sensor",
+        color: "#ef4444",
+        notes: "Modern electronically scanned long-range surveillance radar emphasizing rapid revisit rates, target density handling, and all-weather tracking.",
+        rf: { frequencyMHz: 3400, bandwidthKHz: 10000, modulation: "Pulse-Doppler", waveform: "AESA Search", duplex: "simplex", channelSpacingKHz: 5000 },
+        tx: { powerW: 280000, dutyCycle: 0.2, papr: 0, spectralEfficiency: null },
+        rx: { sensitivityDbm: -101, noiseFigDb: 3.5, requiredSnrDb: 12, acrDb: 82, bdrDb: 90 },
+        antenna: { type: "AESA", gainDbi: 35, pattern: "sectoral", polarization: "linear", heightM: 13, cableLossDb: 0.7, systemLossDb: 3.5 },
+        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true, nvisEnabled: false, ionoModel: "simple", timeDayEffects: false, solarIndex: null },
+      },
+    },
+    {
+      id: "starter-radar-sam-target-acquisition",
+      name: "SAM Target Acquisition Radar",
+      profile: {
+        type: "sensor",
+        emitterLabel: "SAM Target Acquisition Radar",
+        force: "enemy",
+        icon: "sensor",
+        color: "#ef4444",
+        notes: "Battery-level target acquisition radar used to search, classify, and hand off tracks to engagement and command elements.",
+        rf: { frequencyMHz: 2700, bandwidthKHz: 5000, modulation: "Pulse-Doppler", waveform: "Acquisition Search", duplex: "simplex", channelSpacingKHz: 2500 },
+        tx: { powerW: 210000, dutyCycle: 0.15, papr: 0, spectralEfficiency: null },
+        rx: { sensitivityDbm: -101, noiseFigDb: 4, requiredSnrDb: 11, acrDb: 76, bdrDb: 86 },
+        antenna: { type: "phased-array", gainDbi: 30, pattern: "sectoral", polarization: "linear", heightM: 11, cableLossDb: 0.9, systemLossDb: 3.4 },
+        prop: { model: "itu-p526", clutter: "suburban", terrainEnabled: true, diffractionEnabled: true, nvisEnabled: false, ionoModel: "simple", timeDayEffects: false, solarIndex: null },
+      },
+    },
+    {
+      id: "starter-radar-sam-engagement",
+      name: "SAM Engagement Radar",
+      profile: {
+        type: "sensor",
+        emitterLabel: "SAM Engagement Radar",
+        force: "enemy",
+        icon: "sensor",
+        color: "#ef4444",
+        notes: "High-gain engagement radar for precision target tracking, missile uplink support, and terminal fire-control tasking.",
+        rf: { frequencyMHz: 9300, bandwidthKHz: 2500, modulation: "Pulse-Doppler", waveform: "Target Track", duplex: "simplex", channelSpacingKHz: 1000 },
+        tx: { powerW: 95000, dutyCycle: 0.1, papr: 0, spectralEfficiency: null },
+        rx: { sensitivityDbm: -98, noiseFigDb: 5, requiredSnrDb: 14, acrDb: 85, bdrDb: 92 },
+        antenna: { type: "phased-array", gainDbi: 38, pattern: "directional", polarization: "linear", heightM: 9, cableLossDb: 0.7, systemLossDb: 3 },
+        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true, nvisEnabled: false, ionoModel: "simple", timeDayEffects: false, solarIndex: null },
+      },
+    },
+    {
+      id: "starter-radar-missile-track-illumination",
+      name: "Missile Track / Illumination Radar",
+      profile: {
+        type: "sensor",
+        emitterLabel: "Missile Track / Illumination Radar",
+        force: "enemy",
+        icon: "sensor",
+        color: "#ef4444",
+        notes: "Narrow-beam fire-control radar for terminal target illumination, missile track support, and high-precision engagement updates.",
+        rf: { frequencyMHz: 10300, bandwidthKHz: 1500, modulation: "CW", waveform: "CW Illumination", duplex: "simplex", channelSpacingKHz: 500 },
+        tx: { powerW: 70000, dutyCycle: 0.35, papr: 0, spectralEfficiency: null },
+        rx: { sensitivityDbm: -96, noiseFigDb: 5, requiredSnrDb: 15, acrDb: 88, bdrDb: 94 },
+        antenna: { type: "dish", gainDbi: 41, pattern: "directional", polarization: "linear", heightM: 8, cableLossDb: 0.9, systemLossDb: 3.3 },
+        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true, nvisEnabled: false, ionoModel: "simple", timeDayEffects: false, solarIndex: null },
+      },
+    },
+    {
+      id: "starter-radar-shorad-fire-control",
+      name: "SHORAD Fire-Control Radar",
+      profile: {
+        type: "sensor",
+        emitterLabel: "SHORAD Fire-Control Radar",
+        force: "enemy",
+        icon: "sensor",
+        color: "#ef4444",
+        notes: "Short-range fire-control radar supporting mobile SHORAD batteries against helicopters, low flyers, and pop-up threats.",
+        rf: { frequencyMHz: 15700, bandwidthKHz: 1800, modulation: "Pulse-Doppler", waveform: "SHORAD Track", duplex: "simplex", channelSpacingKHz: 750 },
+        tx: { powerW: 45000, dutyCycle: 0.12, papr: 0, spectralEfficiency: null },
+        rx: { sensitivityDbm: -97, noiseFigDb: 5.5, requiredSnrDb: 14, acrDb: 84, bdrDb: 90 },
+        antenna: { type: "AESA", gainDbi: 36, pattern: "directional", polarization: "linear", heightM: 6, cableLossDb: 0.6, systemLossDb: 2.8 },
+        prop: { model: "itu-p526", clutter: "urban", terrainEnabled: true, diffractionEnabled: true, nvisEnabled: false, ionoModel: "simple", timeDayEffects: false, solarIndex: null },
+      },
+    },
+    {
+      id: "starter-radar-low-altitude-gap-filler",
+      name: "Low-Altitude Gap-Filler Radar",
+      profile: {
+        type: "sensor",
+        emitterLabel: "Low-Altitude Gap-Filler Radar",
+        force: "enemy",
+        icon: "sensor",
+        color: "#ef4444",
+        notes: "Medium-range low-altitude surveillance radar intended to cover terrain-mask corridors and hand off low-flying targets to nearby batteries.",
+        rf: { frequencyMHz: 5400, bandwidthKHz: 4200, modulation: "Pulse-Doppler", waveform: "Gap Filler Search", duplex: "simplex", channelSpacingKHz: 1800 },
+        tx: { powerW: 90000, dutyCycle: 0.16, papr: 0, spectralEfficiency: null },
+        rx: { sensitivityDbm: -99, noiseFigDb: 4.5, requiredSnrDb: 11, acrDb: 73, bdrDb: 84 },
+        antenna: { type: "phased-array", gainDbi: 28, pattern: "sectoral", polarization: "linear", heightM: 9, cableLossDb: 0.8, systemLossDb: 3.1 },
+        prop: { model: "itu-p526", clutter: "urban", terrainEnabled: true, diffractionEnabled: true, nvisEnabled: false, ionoModel: "simple", timeDayEffects: false, solarIndex: null },
+      },
+    },
+    {
+      id: "starter-radar-counter-uas-surveillance",
+      name: "Counter-UAS Surveillance Radar",
+      profile: {
+        type: "sensor",
+        emitterLabel: "Counter-UAS Surveillance Radar",
+        force: "enemy",
+        icon: "sensor",
+        color: "#ef4444",
+        notes: "Local-area surveillance radar optimized for small, slow, low targets and short revisit times around defended points.",
+        rf: { frequencyMHz: 9500, bandwidthKHz: 12000, modulation: "Pulse-Doppler", waveform: "Counter-UAS Search", duplex: "simplex", channelSpacingKHz: 4000 },
+        tx: { powerW: 18000, dutyCycle: 0.22, papr: 0, spectralEfficiency: null },
+        rx: { sensitivityDbm: -95, noiseFigDb: 5, requiredSnrDb: 10, acrDb: 68, bdrDb: 80 },
+        antenna: { type: "AESA", gainDbi: 30, pattern: "sectoral", polarization: "linear", heightM: 5, cableLossDb: 0.5, systemLossDb: 2.5 },
+        prop: { model: "itu-p526", clutter: "urban", terrainEnabled: true, diffractionEnabled: true, nvisEnabled: false, ionoModel: "simple", timeDayEffects: false, solarIndex: null },
+      },
+    },
+    {
+      id: "starter-radar-passive-air-surveillance",
+      name: "Passive Air-Surveillance Receiver Site",
+      profile: {
+        type: "sensor",
+        emitterLabel: "Passive Air-Surveillance Receiver Site",
+        force: "enemy",
+        icon: "sensor",
+        color: "#ef4444",
+        notes: "Passive DF and ESM-style site that contributes to the air picture without intentional RF transmission; use for bearing-only or emitter-cueing scenarios.",
+        rf: { frequencyMHz: 1200, bandwidthKHz: 25000, modulation: "Passive", waveform: "Passive DF", duplex: "simplex", channelSpacingKHz: 5000 },
+        tx: { powerW: 0, dutyCycle: 0, papr: 0, spectralEfficiency: null },
+        rx: { sensitivityDbm: -112, noiseFigDb: 3, requiredSnrDb: 6, acrDb: 70, bdrDb: 86 },
+        antenna: { type: "interferometer", gainDbi: 18, pattern: "omnidirectional", polarization: "linear", heightM: 7, cableLossDb: 0.6, systemLossDb: 2.2 },
+        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true, nvisEnabled: false, ionoModel: "simple", timeDayEffects: false, solarIndex: null },
+      },
+    },
+  ];
+  return starterProfiles.map((entry) => normalizeEmitterProfileRecord(entry));
+}
+
 function persistGuestEmitterProfiles() {
   if (!canUseEmitterProfileStorage()) {
     return;
@@ -3059,6 +3093,7 @@ async function loadEmitterProfileLibrary() {
     }
     let profiles = [];
     let importedLegacy = false;
+    let seededStarterLibrary = false;
     try {
       const raw = window.localStorage.getItem(EMITTER_PROFILE_STORAGE_KEY);
       if (raw) {
@@ -3071,14 +3106,24 @@ async function loadEmitterProfileLibrary() {
     if (!profiles.length) {
       profiles = buildGuestEmitterProfilesFromLegacyRecords();
       importedLegacy = profiles.length > 0;
+      if (!profiles.length) {
+        const storedLibraryVersion = Number(window.localStorage.getItem(EMITTER_PROFILE_LIBRARY_VERSION_KEY) || 0);
+        if (storedLibraryVersion < EMITTER_PROFILE_LIBRARY_VERSION) {
+          profiles = buildStarterGuestEmitterProfiles();
+          seededStarterLibrary = profiles.length > 0;
+        }
+      }
       if (profiles.length) {
         window.localStorage.setItem(EMITTER_PROFILE_STORAGE_KEY, JSON.stringify(profiles));
+        window.localStorage.setItem(EMITTER_PROFILE_LIBRARY_VERSION_KEY, String(EMITTER_PROFILE_LIBRARY_VERSION));
       }
     }
     setEmitterProfileLibrary(profiles, {
       usingServer: false,
       statusMessage: importedLegacy
         ? "Imported legacy browser-saved emitter profiles into the new library."
+        : seededStarterLibrary
+          ? "Loaded the starter radar emitter profile library for guest mode."
         : "Saved profiles live in this browser while guest mode is active.",
     });
   } catch (error) {
@@ -17864,18 +17909,13 @@ async function callAiPlanningAssistant(prompt, images = [], files = [], contextI
     "  PRC-163 (Harris Falcon IV multiband):   frequencyMHz=46, powerW=5, antennaHeightM=2, antennaGainDbi=2.15, receiverSensitivityDbm=-107, systemLossDb=3",
     "  PRC-152A (Harris Falcon III):           frequencyMHz=60, powerW=5, antennaHeightM=2, antennaGainDbi=2.15, receiverSensitivityDbm=-107, systemLossDb=3",
     "  PRC-117G (SATCOM/VHF/UHF):              frequencyMHz=50, powerW=20, antennaHeightM=2, antennaGainDbi=2.15, receiverSensitivityDbm=-107, systemLossDb=3",
-    "  AN/PRC-77 (legacy VHF):                 frequencyMHz=60, powerW=4, antennaHeightM=2, antennaGainDbi=2.0, receiverSensitivityDbm=-105, systemLossDb=3",
-    "  SINCGARS / VRC-90:                      frequencyMHz=50, powerW=50, antennaHeightM=3, antennaGainDbi=2.15, receiverSensitivityDbm=-107, systemLossDb=2",
+    "  SINCGARS (vehicle relay profile):       frequencyMHz=50, powerW=50, antennaHeightM=3, antennaGainDbi=2.15, receiverSensitivityDbm=-107, systemLossDb=2",
     "  Motorola XTS 2500 (P25 UHF):           frequencyMHz=460, powerW=5, antennaHeightM=1.8, antennaGainDbi=2.15, receiverSensitivityDbm=-116, systemLossDb=2  (P25 Phase 1 C4FM, also supports analog conventional, UHF or VHF band)",
     "  ── Battalion CP / High-Tier ──",
     "  AN/PRC-160 HF ALE (NVIS):               frequencyMHz=7, powerW=20, antennaHeightM=5.5, antennaGainDbi=2.0, receiverSensitivityDbm=-115, systemLossDb=2  (HF 2–30 MHz, NVIS 50–500 km, long-haul beyond NVIS skip zone)",
     "  AN/PRC-160 HF ALE (long-haul):          frequencyMHz=18, powerW=20, antennaHeightM=8, antennaGainDbi=2.15, receiverSensitivityDbm=-115, systemLossDb=3",
-    "  MUOS Terminal (AN/USC-61):              frequencyMHz=310, powerW=20, antennaHeightM=1.8, antennaGainDbi=10, receiverSensitivityDbm=-107, systemLossDb=3  (GEO SATCOM, ~384 Kbps, 350 ms RTT, helix antenna)",
     "  Starlink / Starshield (Ku-band):        frequencyMHz=13500, powerW=40, antennaHeightM=0.6, antennaGainDbi=38, receiverSensitivityDbm=-90, systemLossDb=2  (LEO SATCOM, ~200 Mbps, 25 ms RTT, flat phased-array dish)",
     "  Starshield (Ka-band / Mil):             frequencyMHz=29500, powerW=60, antennaHeightM=0.6, antennaGainDbi=42, receiverSensitivityDbm=-88, systemLossDb=2  (LEO SATCOM, ~500 Mbps, 20 ms RTT, encrypted gov/mil)",
-    "  WIN-T Inc 2 Tropos MANET:              frequencyMHz=4900, powerW=5, antennaHeightM=4, antennaGainDbi=12, receiverSensitivityDbm=-90, systemLossDb=2  (IP backbone, 20 Mbps, up to 4-hop mesh)",
-    "  WIN-T Inc 2 Ku SATCOM:                 frequencyMHz=14000, powerW=100, antennaHeightM=1.2, antennaGainDbi=37, receiverSensitivityDbm=-95, systemLossDb=3  (GEO SATCOM, 10 Mbps, dish antenna)",
-    "  CP Node (Command Post Node):           frequencyMHz=4900, powerW=10, antennaHeightM=6, antennaGainDbi=14, receiverSensitivityDbm=-88, systemLossDb=3  (wideband IP, 50 Mbps, relay capable)",
     "  ── MANET / Mesh Radios ──",
     "  Silvus StreamCaster 4200 (2.4 GHz):    frequencyMHz=2400, powerW=1, antennaHeightM=1.5, antennaGainDbi=3, receiverSensitivityDbm=-95, systemLossDb=1  (MIMO 2×2, 60 Mbps, up to 10-hop mesh)",
     "  Silvus StreamCaster 4200 (4.9 GHz):    frequencyMHz=4940, powerW=1, antennaHeightM=1.5, antennaGainDbi=5, receiverSensitivityDbm=-93, systemLossDb=1",
@@ -17884,10 +17924,10 @@ async function callAiPlanningAssistant(prompt, images = [], files = [], contextI
     "  Wave Relay MPU-5 (2.4 GHz):            frequencyMHz=2400, powerW=1, antennaHeightM=1.5, antennaGainDbi=2, receiverSensitivityDbm=-96, systemLossDb=1.5  (Wave Relay MANET, 50 Mbps, up to 15-hop mesh)",
     "  Wave Relay MPU-5 (4.9 GHz):            frequencyMHz=4940, powerW=1, antennaHeightM=1.5, antennaGainDbi=3, receiverSensitivityDbm=-93, systemLossDb=1.5",
     "  Wave Relay MPU-5 (5.8 GHz):            frequencyMHz=5800, powerW=1, antennaHeightM=1.5, antennaGainDbi=4, receiverSensitivityDbm=-94, systemLossDb=1.5  (80 Mbps)",
-    "  NOTE on MANET radios: Silvus 4200/4400 and Wave Relay MPU-5 are mesh-capable (isManet=true). They are used for dismounted ISR, UAV datalinks, vehicle-mounted CP backhaul, and last-mile connectivity. Silvus uses MN-MIMO waveform; Wave Relay uses its proprietary Wave Relay MANET protocol. Both support multi-hop routing, so terrain-blocked direct links can route through intermediate nodes. Place mesh nodes on elevated terrain for maximum hop coverage.",
-    "  NOTE on Starlink/Starshield: Flat phased-array dish, requires sky view (no terrain or building obstruction overhead). Starshield is the classified/government variant with enhanced encryption and prioritized capacity. Both are LEO (~550 km orbit), so latency is ~20–25 ms vs ~600 ms for GEO (MUOS/WIN-T). Neither requires a specific pointing angle — the phased array steers electronically.",
+    "  TrellisWare TW-950 (TSM-X):            frequencyMHz=2400, powerW=1, antennaHeightM=1.5, antennaGainDbi=1, receiverSensitivityDbm=-97, systemLossDb=1.8  (compact MANET radio, ~12 Mbps, up to 10-hop mesh)",
+    "  NOTE on MANET radios: Silvus 4200/4400, Wave Relay MPU-5, and TrellisWare TW-950 are mesh-capable (isManet=true). They are used for dismounted ISR, UAV datalinks, vehicle-mounted CP backhaul, and last-mile connectivity. Silvus uses MN-MIMO waveform; Wave Relay uses its proprietary Wave Relay MANET protocol; TrellisWare uses TSM-X. These radios support multi-hop routing, so terrain-blocked direct links can route through intermediate nodes. Place mesh nodes on elevated terrain for maximum hop coverage.",
+    "  NOTE on Starlink/Starshield: Flat phased-array dish, requires sky view (no terrain or building obstruction overhead). Starshield is the classified/government variant with enhanced encryption and prioritized capacity. Both are LEO (~550 km orbit), so latency is ~20?25 ms, much lower than GEO SATCOM systems. Neither requires a specific pointing angle ? the phased array steers electronically.",
     "  NOTE on PRC-160 HF: Uses ALE (Automatic Link Establishment, MIL-STD-188-141B) to select best frequency automatically. NVIS (Near-Vertical Incidence Skywave) at 2–12 MHz provides 50–500 km coverage independent of terrain but requires quiet ionospheric conditions. Long-haul skywave at 12–30 MHz reaches 500–3000 km. The whip antenna for NVIS is ~5.5 m deployed; a horizontal dipole is preferred for long-haul.",
-    "  NOTE on MUOS: Helix antenna must have unobstructed view of the GEO satellite arc (south-facing in CONUS). Data rate ~384 Kbps. Supports voice, data, chat. Backward compatible with legacy UHF SATCOM DAMA nets.",
     "",
     "═══════════════════════════════════════",
     "MULTI-ASSET PLACEMENT + SIMULATION PATTERN:",

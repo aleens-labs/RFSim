@@ -26,7 +26,7 @@ const emitterProfilePayloadSchema = z.object({
     channelSpacingKHz: optionalNumber(0, 1000000),
   }).default({}),
   tx: z.object({
-    powerW: boundedNumber(0.0001, 1000000).optional().default(5),
+    powerW: boundedNumber(0, 1000000).optional().default(5),
     dutyCycle: optionalNumber(0, 1),
     papr: optionalNumber(0, 1000),
     spectralEfficiency: optionalNumber(0, 100000),
