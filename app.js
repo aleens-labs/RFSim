@@ -208,7 +208,7 @@ function loadExternalStylesheet(href) {
 // Bump this integer whenever the serialized state shape changes in a way that
 // requires a migration. applySavedMapState() runs migrateStatePayload() first
 // so old saves are always upgraded before being applied.
-const STATE_SCHEMA_VERSION = 4;
+const STATE_SCHEMA_VERSION = 5;
 
 function nowIso() {
   return new Date().toISOString();
@@ -299,6 +299,16 @@ function migrateStatePayload(payload) {
               : !Boolean(object?.readOnly),
           }))
         : payload.tacticalObjects,
+    };
+  }
+
+  if (from < 5) {
+    payload = {
+      ...payload,
+      schemaVersion: 5,
+      hiddenLabelContentIds: Array.isArray(payload.hiddenLabelContentIds)
+        ? payload.hiddenLabelContentIds
+        : [],
     };
   }
 
@@ -1806,6 +1816,7 @@ const dom = {
   viewModeThumb: document.querySelector("#viewModeThumb"),
   workspaceShell: document.querySelector(".workspace-shell"),
   planView: document.querySelector("#planView"),
+  emittersView: document.querySelector("#emittersView"),
   topologyView: document.querySelector("#topologyView"),
   topoFilterFreqBtn: document.querySelector("#topoFilterFreqBtn"),
   topoFilterFreqMenu: document.querySelector("#topoFilterFreqMenu"),
@@ -1818,6 +1829,12 @@ const dom = {
   topoDisplayEmittersBtn: document.querySelector("#topoDisplayEmittersBtn"),
   topoTerrainStatus: document.querySelector("#topoTerrainStatus"),
   analyzeView: document.querySelector("#analyzeView"),
+  emittersAddBtn: document.querySelector("#emittersAddBtn"),
+  emittersRefreshBtn: document.querySelector("#emittersRefreshBtn"),
+  emittersOpenMapBtn: document.querySelector("#emittersOpenMapBtn"),
+  emittersCountValue: document.querySelector("#emittersCountValue"),
+  emittersLinkedValue: document.querySelector("#emittersLinkedValue"),
+  emittersVisibleValue: document.querySelector("#emittersVisibleValue"),
   aiPanelDivider: document.querySelector("#aiPanelDivider"),
   imageryMenuBtn: document.querySelector("#imageryMenuBtn"),
   imageryMenu: document.querySelector("#imageryMenu"),
@@ -2424,6 +2441,7 @@ const state = {
   mapContentFolders: [],
   mapContentAssignments: new Map(),
   hiddenContentIds: new Set(),
+  hiddenLabelContentIds: new Set(),
   mcSelectMode: false,
   mcSelectedIds: new Set(),
   mcLastClickedId: null,
@@ -3683,7 +3701,12 @@ function renderTacticalPopup(object, { live = false } = {}) {
 function applyTacticalLabel(object, layer) {
   if (!layer?.bindTooltip) return;
   layer.unbindTooltip?.();
-  if (!object?.showLabel || !object?.name) return;
+  const contentId = object?.uid && object?.source === "tak-live"
+    ? buildTakLiveContentId(object.uid)
+    : object?.id
+      ? buildTacticalContentId(object.id)
+      : null;
+  if (!object?.showLabel || !object?.name || (contentId && isContentLabelEffectivelyHidden(contentId))) return;
   layer.bindTooltip(object.name, {
     permanent: true,
     direction: isTacticalPointGeometry(object.geometryType) ? "top" : "center",
@@ -3691,6 +3714,27 @@ function applyTacticalLabel(object, layer) {
     offset: isTacticalPointGeometry(object.geometryType) ? [0, -(getTacticalMarkerSize() / 2 + 8)] : [0, 0],
     interactive: false,
   });
+}
+
+function applyAssetLabel(asset) {
+  const marker = state.assetMarkers.get(asset?.id);
+  if (!marker?.bindTooltip) return;
+  marker.unbindTooltip?.();
+  if (!asset?.name || isContentLabelEffectivelyHidden(`asset:${asset.id}`)) return;
+  marker.bindTooltip(asset.name, {
+    permanent: true,
+    direction: "top",
+    className: "shape-map-label shape-map-label--point",
+    offset: [0, -16],
+    interactive: false,
+  });
+}
+
+function openMapContentMenuForLeafletEvent(event, contentId) {
+  const nativeEvent = event?.originalEvent || event;
+  if (!nativeEvent) return;
+  L.DomEvent.stopPropagation(event);
+  openMapContentsMenu(nativeEvent, contentId);
 }
 
 function createTacticalLeafletLayer(object, contentId, { live = false } = {}) {
@@ -3705,10 +3749,7 @@ function createTacticalLeafletLayer(object, contentId, { live = false } = {}) {
     layer.bindPopup(renderTacticalPopup(tactical, { live }));
     layer.on("click", () => focusMapContent(contentId));
     if (!live) {
-      layer.on("contextmenu", (event) => {
-        L.DomEvent.stopPropagation(event);
-        editMapContent(contentId);
-      });
+      layer.on("contextmenu", (event) => openMapContentMenuForLeafletEvent(event, contentId));
     }
     applyTacticalLabel(tactical, layer);
     return layer;
@@ -3724,10 +3765,7 @@ function createTacticalLeafletLayer(object, contentId, { live = false } = {}) {
   layer.bindPopup(renderTacticalPopup(tactical, { live }));
   layer.on("click", () => focusMapContent(contentId));
   if (!live) {
-    layer.on("contextmenu", (event) => {
-      L.DomEvent.stopPropagation(event);
-      editMapContent(contentId);
-    });
+    layer.on("contextmenu", (event) => openMapContentMenuForLeafletEvent(event, contentId));
   }
   applyTacticalLabel(tactical, layer);
   return layer;
@@ -3790,6 +3828,7 @@ function removeTakLiveRuntimeObject(uid) {
   state.mapContentAssignments.delete(contentId);
   state.mapContentOrder = state.mapContentOrder.filter((entryId) => entryId !== contentId);
   state.hiddenContentIds.delete(contentId);
+  state.hiddenLabelContentIds.delete(contentId);
 }
 
 function buildTakLiveObject(contact, profile) {
@@ -4181,21 +4220,39 @@ function openTakChatFromMap(uid) {
 function showTakContactContextMenu(nativeEvent, uid, callsign) {
   // Remove any existing TAK contact context menu
   document.getElementById("_takContactCtxMenu")?.remove();
+  const contentId = buildTakLiveContentId(uid);
+  const hiddenBySelf = state.hiddenLabelContentIds.has(contentId);
+  const hiddenByAncestorFolderId = getContentLabelHiddenAncestorFolderId(contentId);
+  const labelDisabled = Boolean(hiddenByAncestorFolderId) && !hiddenBySelf;
+  const labelActionText = hiddenByAncestorFolderId && !hiddenBySelf
+    ? "Label Hidden by Folder"
+    : hiddenBySelf
+      ? "Show Label"
+      : "Hide Label";
   const menu = document.createElement("div");
   menu.id = "_takContactCtxMenu";
   menu.className = "tak-contact-ctx-menu";
-  menu.innerHTML = `<button class="tak-contact-ctx-item" type="button">
+  menu.innerHTML = `<button class="tak-contact-ctx-item" type="button" data-tak-contact-action="message">
     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
     Message <strong>${callsign}</strong>
+  </button>
+  <button class="tak-contact-ctx-item" type="button" data-tak-contact-action="labels"${labelDisabled ? " disabled" : ""}>
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M4 12h11"/><path d="M4 17h8"/></svg>
+    ${escapeHtml(labelActionText)}
   </button>`;
   const x = nativeEvent?.clientX ?? 0;
   const y = nativeEvent?.clientY ?? 0;
   menu.style.cssText = `position:fixed;left:${x}px;top:${y}px;z-index:9999`;
   document.body.appendChild(menu);
-  menu.querySelector("button").addEventListener("click", (e) => {
+  menu.querySelector('[data-tak-contact-action="message"]').addEventListener("click", (e) => {
     e.stopPropagation();
     menu.remove();
     openTakChatFromMap(uid);
+  });
+  menu.querySelector('[data-tak-contact-action="labels"]')?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    menu.remove();
+    toggleMapContentLabels(contentId);
   });
   // Dismiss on any outside click
   const dismiss = (e) => { if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener("click", dismiss, true); } };
@@ -5179,6 +5236,7 @@ function syncAllTacticalObjectsFromPlan() {
       removeTacticalObjectLayer(object.id);
       state.mapContentAssignments.delete(buildTacticalContentId(object.id));
       state.mapContentOrder = state.mapContentOrder.filter((entryId) => entryId !== buildTacticalContentId(object.id));
+      state.hiddenLabelContentIds.delete(buildTacticalContentId(object.id));
       return false;
     }
     return true;
@@ -5228,6 +5286,7 @@ function deleteTacticalObject(objectId, { silent = false } = {}) {
   state.mapContentAssignments.delete(contentId);
   state.mapContentOrder = state.mapContentOrder.filter((entryId) => entryId !== contentId);
   state.hiddenContentIds.delete(contentId);
+  state.hiddenLabelContentIds.delete(contentId);
   renderMapContents();
   syncCesiumEntities();
   saveMapState();
@@ -6224,6 +6283,14 @@ const AI_VIEW_PROFILES = {
     emptyMessage: "Describe your scenario and I will help you build out the table of organization, hierarchy, and assignments.",
     systemGuidance: "The user is in T/O view. Prioritize advisory answers about unit organization, hierarchy, and force design. Do not invent unsupported TO editing actions.",
   },
+  emitters: {
+    label: "EMITTERS",
+    role: "Emitter Management Assistant",
+    purpose: "Ask me about placed emitters, RF loadout cleanup, linking emitters to units, or configuration consistency.",
+    placeholder: "Ask about placed emitters, linked units, cleanup, or quick RF edits...",
+    emptyMessage: "Ask me to review placed emitters, link them to units, clean up naming, or check RF configuration consistency.",
+    systemGuidance: "The user is in EMITTERS view. Prioritize placed emitter management, emitter-to-unit linkage, configuration review, and inventory cleanup guidance.",
+  },
   topology: {
     label: "TOPOLOGY",
     role: "Link Quality Analyst",
@@ -6481,6 +6548,7 @@ function getAiAgentProfile(profileId = state.ai?.agentProfileId) {
 
 function buildCurrentViewAiContext(view = state.ui?.currentView, options = {}) {
   if (view === "plan") return buildPlanAiContext(options);
+  if (view === "emitters") return buildEmittersAiContext(options);
   if (view === "topology") return buildTopoAiContext(options);
   if (view === "analyze") return buildAnalyzeAiContext(options);
   return "";
@@ -9060,6 +9128,17 @@ function wireEvents() {
     updateModalBodyState();
     emitterModal.open();
   });
+  dom.emittersAddBtn?.addEventListener("click", () => {
+    switchView("map");
+    emitterModal.open();
+  });
+  dom.emittersRefreshBtn?.addEventListener("click", () => {
+    renderEmittersView();
+    setStatus("Emitter view refreshed.");
+  });
+  dom.emittersOpenMapBtn?.addEventListener("click", () => {
+    switchView("map");
+  });
 
   const importFileInput = document.querySelector("#importFileInput");
   if (importFileInput) {
@@ -9678,6 +9757,8 @@ function serializeCurrentMapState(options = {}) {
     .filter(([contentId]) => !String(contentId || "").startsWith("taklive:"));
   const serializedHiddenIds = [...state.hiddenContentIds]
     .filter((contentId) => !String(contentId || "").startsWith("taklive:"));
+  const serializedHiddenLabelIds = [...state.hiddenLabelContentIds]
+    .filter((contentId) => !String(contentId || "").startsWith("taklive:"));
 
   return {
     schemaVersion: STATE_SCHEMA_VERSION,
@@ -9693,6 +9774,7 @@ function serializeCurrentMapState(options = {}) {
     mapContentOrder: serializedOrder,
     mapContentAssignments: serializedAssignments,
     hiddenContentIds: serializedHiddenIds,
+    hiddenLabelContentIds: serializedHiddenLabelIds,
     activeTerrainId: state.activeTerrainId,
     activeProjectId: state.session.activeProjectId ?? null,
   };
@@ -9753,6 +9835,7 @@ function persistMapStateNow() {
         mapContentOrder: compactPayload.mapContentOrder,
         mapContentAssignments: compactPayload.mapContentAssignments,
         hiddenContentIds: compactPayload.hiddenContentIds,
+        hiddenLabelContentIds: compactPayload.hiddenLabelContentIds,
         activeTerrainId: compactPayload.activeTerrainId,
         activeProjectId: compactPayload.activeProjectId,
         importedItems: [],
@@ -9803,6 +9886,9 @@ function applySavedMapState(rawSaved) {
   }
   if (Array.isArray(saved.hiddenContentIds)) {
     state.hiddenContentIds = new Set(saved.hiddenContentIds);
+  }
+  if (Array.isArray(saved.hiddenLabelContentIds)) {
+    state.hiddenLabelContentIds = new Set(saved.hiddenLabelContentIds);
   }
   if (saved.weather) {
     state.weather = { ...state.weather, ...saved.weather };
@@ -9867,7 +9953,8 @@ function applySavedMapState(rawSaved) {
         pane: getMapContentPaneName(`asset:${asset.id}`),
       }).addTo(state.map);
       marker.bindPopup(renderAssetPopup(asset));
-      marker.on("contextmenu", (e) => { L.DomEvent.stopPropagation(e); editMapContent(`asset:${asset.id}`); });
+      marker.on("contextmenu", (e) => openMapContentMenuForLeafletEvent(e, `asset:${asset.id}`));
+      applyAssetLabel(asset);
       state.assetMarkers.set(asset.id, marker);
     });
   }
@@ -9923,7 +10010,7 @@ function applySavedMapState(rawSaved) {
         item.layer.addTo(state.map);
         item.layer.bindPopup(renderImportedItemPopup(item));
         item.layer.on?.("click", () => focusMapContent(contentId));
-        item.layer.on?.("contextmenu", (e) => { L.DomEvent.stopPropagation(e); editMapContent(contentId); });
+        item.layer.on?.("contextmenu", (e) => openMapContentMenuForLeafletEvent(e, contentId));
         attachImportedLayerEditUndo(item);
         applyItemLabel(item);
         state.importedItems.push(item);
@@ -11201,11 +11288,12 @@ function applyPanelMode() {
 }
 
 /* â”€â”€â”€ Multi-view switching â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-const VIEW_ORDER = ["plan", "map", "topology", "analyze"];
+const VIEW_ORDER = ["plan", "emitters", "map", "topology", "analyze"];
 
 function getViewEl(view) {
   if (view === "map") return dom.workspaceShell;
   if (view === "plan") return dom.planView;
+  if (view === "emitters") return dom.emittersView;
   if (view === "topology") return dom.topologyView;
   if (view === "analyze") return dom.analyzeView;
   return null;
@@ -11281,6 +11369,7 @@ function switchView(view, skipAnimation) {
 
 function afterSwitchView(view) {
   document.body.dataset.currentView = view;
+  if (view === "emitters") renderEmittersView();
   if (view === "topology") renderTopologyView();
   if (view === "analyze")  renderAnalyzeView();
   if (view === "plan")     initPlanViewIfNeeded();
@@ -11300,6 +11389,7 @@ function initViewModeToggle() {
   state.ui.currentView = "map";
   if (dom.workspaceShell) dom.workspaceShell.classList.remove("hidden");
   if (dom.planView)     dom.planView.classList.add("hidden");
+  if (dom.emittersView) dom.emittersView.classList.add("hidden");
   if (dom.topologyView) dom.topologyView.classList.add("hidden");
   if (dom.analyzeView)  dom.analyzeView.classList.add("hidden");
   if (dom.viewModeToggle) {
@@ -13848,6 +13938,98 @@ function isContentHiddenByAncestorFolder(contentId) {
 
 function isContentEffectivelyHidden(contentId) {
   return state.hiddenContentIds.has(contentId) || isContentHiddenByAncestorFolder(contentId);
+}
+
+function getContentLabelHiddenAncestorFolderId(contentId) {
+  let folderId = contentId.startsWith("folder:")
+    ? getFolderParentContentId(contentId)
+    : getMapContentFolderId(contentId);
+  while (folderId) {
+    if (state.hiddenLabelContentIds.has(folderId)) {
+      return folderId;
+    }
+    folderId = getFolderParentContentId(folderId);
+  }
+  return null;
+}
+
+function isContentLabelEffectivelyHidden(contentId) {
+  return state.hiddenLabelContentIds.has(contentId) || Boolean(getContentLabelHiddenAncestorFolderId(contentId));
+}
+
+function supportsMapContentLabelToggle(contentId) {
+  return contentId.startsWith("folder:")
+    || contentId.startsWith("asset:")
+    || contentId.startsWith("imported:")
+    || contentId.startsWith("tactical:")
+    || contentId.startsWith("taklive:");
+}
+
+function refreshMapContentLabels(contentId = null) {
+  if (!contentId) {
+    state.assets.forEach((asset) => applyAssetLabel(asset));
+    state.importedItems.forEach((item) => applyItemLabel(item));
+    state.tacticalObjects.forEach((object) => {
+      const layer = state.tacticalLayers.get(object.id);
+      if (layer) applyTacticalLabel(object, layer);
+    });
+    state.takRuntime.objectsByUid.forEach((object, uid) => {
+      const layer = state.takRuntime.layersByUid.get(uid);
+      if (layer) applyTacticalLabel(object, layer);
+    });
+    return;
+  }
+
+  if (contentId.startsWith("folder:")) {
+    const { itemIds } = collectFolderDescendants(contentId);
+    itemIds.forEach((childId) => refreshMapContentLabels(childId));
+    return;
+  }
+  if (contentId.startsWith("asset:")) {
+    const asset = state.assets.find((entry) => `asset:${entry.id}` === contentId);
+    if (asset) applyAssetLabel(asset);
+    return;
+  }
+  if (contentId.startsWith("imported:")) {
+    const item = state.importedItems.find((entry) => `imported:${entry.id}` === contentId);
+    if (item) applyItemLabel(item);
+    return;
+  }
+  if (contentId.startsWith("tactical:")) {
+    const object = getTacticalObjectById(contentId.slice("tactical:".length));
+    const layer = object ? state.tacticalLayers.get(object.id) : null;
+    if (object && layer) applyTacticalLabel(object, layer);
+    return;
+  }
+  if (contentId.startsWith("taklive:")) {
+    const uid = contentId.slice("taklive:".length);
+    const object = getTakLiveObjectByUid(uid);
+    const layer = state.takRuntime.layersByUid.get(uid);
+    if (object && layer) applyTacticalLabel(object, layer);
+  }
+}
+
+function setMapContentLabelsHidden(contentId, hidden) {
+  if (!supportsMapContentLabelToggle(contentId)) {
+    return;
+  }
+  if (hidden) {
+    state.hiddenLabelContentIds.add(contentId);
+  } else {
+    state.hiddenLabelContentIds.delete(contentId);
+  }
+  refreshMapContentLabels(contentId);
+  renderMapContents();
+  syncCesiumEntities();
+  saveMapState();
+}
+
+function toggleMapContentLabels(contentId) {
+  if (!supportsMapContentLabelToggle(contentId)) {
+    return;
+  }
+  const hidden = state.hiddenLabelContentIds.has(contentId);
+  setMapContentLabelsHidden(contentId, !hidden);
 }
 
 function updateRssiLegendVisibility() {
@@ -19759,7 +19941,8 @@ async function executeAiAction(action, { placedAssetIds = [], touchedObjects = [
       pane: getMapContentPaneName(`asset:${newAsset.id}`),
     }).addTo(state.map);
     marker.bindPopup(renderAssetPopup(newAsset));
-    marker.on("contextmenu", (e) => { L.DomEvent.stopPropagation(e); editMapContent(`asset:${newAsset.id}`); });
+    marker.on("contextmenu", (e) => openMapContentMenuForLeafletEvent(e, `asset:${newAsset.id}`));
+    applyAssetLabel(newAsset);
     state.assetMarkers.set(newAsset.id, marker);
     ensureTakMetadataForAsset(newAsset);
     state.assets.push(newAsset);
@@ -20035,7 +20218,8 @@ async function executeAiAction(action, { placedAssetIds = [], touchedObjects = [
       pane: getMapContentPaneName(`asset:${asset.id}`),
     }).addTo(state.map);
     marker.bindPopup(renderAssetPopup(asset));
-    marker.on("contextmenu", (e) => { L.DomEvent.stopPropagation(e); editMapContent(`asset:${asset.id}`); });
+    marker.on("contextmenu", (e) => openMapContentMenuForLeafletEvent(e, `asset:${asset.id}`));
+    applyAssetLabel(asset);
     state.assetMarkers.set(asset.id, marker);
     ensureTakMetadataForAsset(asset);
     state.assets.push(asset);
@@ -21629,7 +21813,8 @@ function addAsset(latlng) {
   }).addTo(state.map);
 
   marker.bindPopup(renderAssetPopup(asset));
-  marker.on("contextmenu", (e) => { L.DomEvent.stopPropagation(e); editMapContent(`asset:${asset.id}`); });
+  marker.on("contextmenu", (e) => openMapContentMenuForLeafletEvent(e, `asset:${asset.id}`));
+  applyAssetLabel(asset);
   state.assetMarkers.set(asset.id, marker);
   ensureTakMetadataForAsset(asset);
   state.assets.push(asset);
@@ -21719,6 +21904,7 @@ function updateAssetMarker(asset) {
 
   marker.setIcon(createEmitterIcon(asset));
   marker.setPopupContent(renderAssetPopup(asset));
+  applyAssetLabel(asset);
 }
 
 function saveAssetEdits() {
@@ -21771,14 +21957,29 @@ function renderAssetPopup(asset) {
   `;
 }
 
+function renderEmittersView() {
+  renderAssets();
+}
+
 function renderAssets() {
   if (dom.assetList) dom.assetList.innerHTML = "";
   dom.assetSelect.innerHTML = "";
   if (dom.planningTxAsset) dom.planningTxAsset.innerHTML = "";
   if (dom.planningRxAsset) dom.planningRxAsset.innerHTML = "";
+  if (dom.emittersCountValue) dom.emittersCountValue.textContent = String(state.assets.length);
+  if (dom.emittersLinkedValue) {
+    dom.emittersLinkedValue.textContent = String(
+      state.assets.filter((asset) => Number.isFinite(Number(asset.toUnitId))).length
+    );
+  }
+  if (dom.emittersVisibleValue) {
+    dom.emittersVisibleValue.textContent = String(
+      state.assets.filter((asset) => !isContentEffectivelyHidden(`asset:${asset.id}`)).length
+    );
+  }
 
   if (!state.assets.length) {
-    if (dom.assetList) dom.assetList.innerHTML = `<div class="asset-item">No systems placed yet.</div>`;
+    if (dom.assetList) dom.assetList.innerHTML = `<div class="asset-item emitters-asset-item">No systems placed yet.</div>`;
     dom.assetSelect.innerHTML = `<option value="">No emitters available</option>`;
     if (dom.planningTxAsset) dom.planningTxAsset.innerHTML = `<option value="">No assets</option>`;
     if (dom.planningRxAsset) dom.planningRxAsset.innerHTML = `<option value="">No assets</option>`;
@@ -21789,8 +21990,15 @@ function renderAssets() {
 
   state.assets.forEach((asset, index) => {
     if (dom.assetList) {
+      const linkedUnit = Number.isFinite(Number(asset.toUnitId))
+        ? _toState.units.find((unit) => Number(unit.id) === Number(asset.toUnitId))
+        : null;
+      const linkedLabel = linkedUnit
+        ? (linkedUnit.label || linkedUnit.designator || `Unit ${linkedUnit.id}`)
+        : "Unlinked";
+      const visibilityLabel = isContentEffectivelyHidden(`asset:${asset.id}`) ? "Hidden on map" : "Visible on map";
       const row = document.createElement("article");
-      row.className = "asset-item";
+      row.className = "asset-item emitters-asset-item";
       row.innerHTML = `
         <header>
           <strong>${escapeHtml(asset.name)}</strong>
@@ -21804,7 +22012,28 @@ function renderAssets() {
           <span>${asset.antennaGainDbi} dBi</span>
           <span>${asset.antennaHeightM} m</span>
         </div>
+        <div class="emitters-asset-footer">
+          <span class="fine-print">${escapeHtml(linkedLabel)} | ${visibilityLabel}</span>
+          <div class="emitters-asset-actions">
+            <button class="ghost-button small" type="button" data-emitter-action="focus">Show on Map</button>
+            <button class="ghost-button small" type="button" data-emitter-action="edit">Edit</button>
+          </div>
+        </div>
       `;
+      row.querySelector('[data-emitter-action="focus"]')?.addEventListener("click", (event) => {
+        event.stopPropagation();
+        switchView("map");
+        focusMapContent(`asset:${asset.id}`);
+      });
+      row.querySelector('[data-emitter-action="edit"]')?.addEventListener("click", (event) => {
+        event.stopPropagation();
+        switchView("map");
+        editMapContent(`asset:${asset.id}`);
+      });
+      row.addEventListener("click", () => {
+        switchView("map");
+        focusMapContent(`asset:${asset.id}`);
+      });
       dom.assetList.appendChild(row);
     }
 
@@ -26459,6 +26688,21 @@ function openMapContentsMenu(event, contentId) {
       takStreamButton.textContent = `Toggle TAK Stream ${isTakStreamingEnabledForContent(contentId) ? "Off" : "On"}`;
     }
   }
+  const labelButton = dom.mapContentsMenu.querySelector('[data-map-content-action="toggle-labels"]');
+  if (labelButton) {
+    const supported = supportsMapContentLabelToggle(contentId);
+    const hiddenBySelf = state.hiddenLabelContentIds.has(contentId);
+    const hiddenByAncestorFolderId = getContentLabelHiddenAncestorFolderId(contentId);
+    labelButton.classList.toggle("hidden", !supported);
+    labelButton.disabled = Boolean(hiddenByAncestorFolderId) && !hiddenBySelf;
+    if (hiddenByAncestorFolderId && !hiddenBySelf) {
+      labelButton.textContent = isFolder ? "Labels Hidden by Parent Folder" : "Label Hidden by Folder";
+    } else if (hiddenBySelf) {
+      labelButton.textContent = isFolder ? "Show Labels in Folder" : "Show Label";
+    } else {
+      labelButton.textContent = isFolder ? "Hide Labels in Folder" : "Hide Label";
+    }
+  }
   const deleteButton = dom.mapContentsMenu.querySelector('[data-map-content-action="delete"]');
   if (deleteButton) {
     deleteButton.classList.toggle("hidden", isTakLive);
@@ -26523,6 +26767,11 @@ function onMapContentsMenuAction(event) {
 
   if (action === "toggle-tak-stream") {
     toggleTakStreamingForContent(contentId);
+    return;
+  }
+
+  if (action === "toggle-labels") {
+    toggleMapContentLabels(contentId);
     return;
   }
 
@@ -27207,6 +27456,11 @@ function deleteMapContent(contentId, options = {}) {
         (id) => !allFolderIds.has(id) && !itemIds.has(id)
       )
     );
+    state.hiddenLabelContentIds = new Set(
+      [...state.hiddenLabelContentIds].filter(
+        (id) => !allFolderIds.has(id) && !itemIds.has(id)
+      )
+    );
 
     if (!options.deferFinalize) {
       renderMapContents();
@@ -27289,6 +27543,7 @@ function removeAsset(assetId, options = {}) {
     .map((entry) => entry.id)
     .forEach((viewshedId) => removeViewshed(viewshedId, options));
   state.mapContentAssignments.delete(`asset:${assetId}`);
+  state.hiddenLabelContentIds.delete(`asset:${assetId}`);
   if (state.editingAssetId === assetId) {
     state.editingAssetId = null;
     if (!options.deferFinalize) {
@@ -27881,12 +28136,12 @@ function addDrawnFeature(feature, folderId = null) {
   item.layer.addTo(state.map);
   item.layer.bindPopup(renderImportedItemPopup(item));
   item.layer.on("click", () => focusMapContent(contentId));
-  item.layer.on("contextmenu", (e) => { L.DomEvent.stopPropagation(e); editMapContent(contentId); });
+  item.layer.on("contextmenu", (e) => openMapContentMenuForLeafletEvent(e, contentId));
   attachImportedLayerEditUndo(item);
-  applyItemLabel(item);
   ensureTakMetadataForImportedItem(item);
   state.importedItems.push(item);
   setMapContentFolderId(contentId, folderId ?? null);
+  applyItemLabel(item);
   state.mapContentOrder.push(contentId);
   renderMapContents();
   syncCesiumEntities();
@@ -28343,7 +28598,7 @@ function applyShapeStyleToLayer(item) {
 function applyItemLabel(item) {
   if (!item?.layer) return;
   item.layer.unbindTooltip();
-  if (!item.showLabel || !item.name) return;
+  if (!item.showLabel || !item.name || isContentLabelEffectivelyHidden(`imported:${item.id}`)) return;
   const isPoint = item.geometryType === "Point";
   item.layer.bindTooltip(item.name, {
     permanent: true,
@@ -28452,6 +28707,7 @@ function removeImportedItem(itemId, options = {}) {
   state.importedItems = state.importedItems.filter((entry) => entry.id !== itemId);
   state.mapContentAssignments.delete(`imported:${itemId}`);
   state.mapContentOrder = state.mapContentOrder.filter((entryId) => entryId !== `imported:${itemId}`);
+  state.hiddenLabelContentIds.delete(`imported:${itemId}`);
   if (!options.deferFinalize) {
     renderMapContents();
     syncCesiumEntities();
@@ -28704,7 +28960,7 @@ function addImportedFeature(feature, folderId, index, options = {}) {
   item.layer.addTo(state.map);
   item.layer.bindPopup(renderImportedItemPopup(item));
   item.layer.on?.("click", () => focusMapContent(contentId));
-  item.layer.on?.("contextmenu", (e) => { L.DomEvent.stopPropagation(e); editMapContent(contentId); });
+  item.layer.on?.("contextmenu", (e) => openMapContentMenuForLeafletEvent(e, contentId));
   attachImportedLayerEditUndo(item);
   state.importedItems.push(item);
   setMapContentFolderId(contentId, folderId);
@@ -29741,6 +29997,7 @@ function _syncCesiumEntitiesImmediate() {
   state.assets.filter((asset) => isVisible(`asset:${asset.id}`)).forEach((asset) => {
     const assetHeight = resolveAbsoluteHeight(asset);
     const heightRef = assetHeight.useRelativeToGround ? C.HeightReference.RELATIVE_TO_GROUND : C.HeightReference.NONE;
+    const showLabel = Boolean(asset.name) && !isContentLabelEffectivelyHidden(`asset:${asset.id}`);
     safeAddEntity({
       id: `managed:asset:${asset.id}`,
       position: C.Cartesian3.fromDegrees(asset.lon, asset.lat, assetHeight.absoluteHeightM),
@@ -29752,15 +30009,17 @@ function _syncCesiumEntitiesImmediate() {
         heightReference: heightRef,
         disableDepthTestDistance: 0,
       },
-      label: buildCesiumLabelOptions({
-        lat: asset.lat,
-        lon: asset.lon,
-        text: asset.name,
-        font: "14px Bahnschrift",
-        heightReference: heightRef,
-        anchorMode: "above",
-        markerPixelSize: 10,
-      }),
+      ...(showLabel ? {
+        label: buildCesiumLabelOptions({
+          lat: asset.lat,
+          lon: asset.lon,
+          text: asset.name,
+          font: "14px Bahnschrift",
+          heightReference: heightRef,
+          anchorMode: "above",
+          markerPixelSize: 10,
+        }),
+      } : {}),
     });
   });
 
@@ -30076,7 +30335,7 @@ function _syncCesiumEntitiesImmediate() {
             _sw: shapeStyle?.weight ?? 2,
             _fc: shapeStyle?.fillColor ?? shapeStyle?.color ?? "#3388ff",
             _fo: shapeStyle?.fillOpacity ?? 0.2,
-            _showLabel: item.showLabel === true ? 1 : 0,
+            _showLabel: item.showLabel === true && !isContentLabelEffectivelyHidden(`imported:${item.id}`) ? 1 : 0,
           },
         });
       } catch (_) { /* skip malformed item */ }
@@ -30242,23 +30501,25 @@ function _syncCesiumEntitiesImmediate() {
     return promise;
   };
 
-  const addCesiumTacticalObject = (object, idPrefix, zIndexBase = 18) => {
+  const addCesiumTacticalObject = (object, contentId, idPrefix, zIndexBase = 18) => {
     if (object.geometryType === "Point" && Array.isArray(object.coordinates) && object.coordinates.length >= 2) {
       const lat = Number(object.coordinates[0]);
       const lon = Number(object.coordinates[1]);
       const iconSize = object.readOnly ? 40 : 48;
       const entityId = `${idPrefix}:${object.uid || object.id}`;
-      const labelOpts = buildCesiumLabelOptions({
-        lat, lon,
-        text: object.name || object.designator || object.uid || "Track",
-        font: "bold 13px Bahnschrift",
-        fillColor: C.Color.WHITE,
-        outlineColor: C.Color.BLACK,
-        outlineWidth: 5,
-        heightReference: C.HeightReference.CLAMP_TO_GROUND,
-        anchorMode: "right",
-        markerPixelSize: iconSize,
-      });
+      const labelOpts = object.showLabel && !isContentLabelEffectivelyHidden(contentId)
+        ? buildCesiumLabelOptions({
+            lat, lon,
+            text: object.name || object.designator || object.uid || "Track",
+            font: "bold 13px Bahnschrift",
+            fillColor: C.Color.WHITE,
+            outlineColor: C.Color.BLACK,
+            outlineWidth: 5,
+            heightReference: C.HeightReference.CLAMP_TO_GROUND,
+            anchorMode: "right",
+            markerPixelSize: iconSize,
+          })
+        : null;
       buildTacticalBillboardUrl(object).then((iconUrl) => {
         if (!state.cesiumViewer) return;
         const existing = state.cesiumViewer.entities.getById(entityId);
@@ -30277,7 +30538,7 @@ function _syncCesiumEntitiesImmediate() {
             scaleByDistance: new C.NearFarScalar(500, 1.0, 50000, 0.5),
             distanceDisplayCondition: new C.DistanceDisplayCondition(0, 200000),
           },
-          label: { ...labelOpts },
+          ...(labelOpts ? { label: { ...labelOpts } } : {}),
         });
       }).catch(() => {
         // Fallback: plain colored point if image load fails
@@ -30296,7 +30557,7 @@ function _syncCesiumEntitiesImmediate() {
             heightReference: C.HeightReference.CLAMP_TO_GROUND,
             disableDepthTestDistance: Number.POSITIVE_INFINITY,
           },
-          label: { ...labelOpts },
+          ...(labelOpts ? { label: { ...labelOpts } } : {}),
         });
       });
       return;
@@ -30332,11 +30593,11 @@ function _syncCesiumEntitiesImmediate() {
 
   state.tacticalObjects
     .filter((object) => isVisible(buildTacticalContentId(object.id)))
-    .forEach((object) => addCesiumTacticalObject(object, "managed:tactical", 18));
+    .forEach((object) => addCesiumTacticalObject(object, buildTacticalContentId(object.id), "managed:tactical", 18));
 
   getTakLiveRenderableObjects()
     .filter((object) => isVisible(buildTakLiveContentId(object.uid)))
-    .forEach((object) => addCesiumTacticalObject(object, "managed:taklive", 20));
+    .forEach((object) => addCesiumTacticalObject(object, buildTakLiveContentId(object.uid), "managed:taklive", 20));
 
   // --- PLANNING REGION ---
   if (state.planning.regionLayer) {
@@ -33064,16 +33325,40 @@ function getEmptyAnalyticsPayload() {
 }
 
 function formatAnalyticsDate(value) {
-  return value ? new Date(value).toLocaleDateString() : "â€”";
+  return value ? new Date(value).toLocaleDateString() : "-";
 }
 
 function formatAnalyticsDateTime(value) {
-  return value ? new Date(value).toLocaleString() : "â€”";
+  return value ? new Date(value).toLocaleString() : "-";
 }
 
 function formatAnalyticsCompactNumber(value) {
   const numeric = Number(value ?? 0) || 0;
   return numeric >= 1000 ? `${(numeric / 1000).toFixed(1)}k` : String(numeric);
+}
+
+const ANALYTICS_EMPTY_LABEL = "-";
+
+function cleanAnalyticsDisplayValue(value = "") {
+  const text = String(value ?? "").trim();
+  if (!text) return "";
+  if (text === "â€”" || text === "Ã¢â‚¬â€" || text === "â€" || text === "Ã¢â‚¬") return "";
+  return text;
+}
+
+function formatAnalyticsIntentLabel(value = "") {
+  const cleaned = cleanAnalyticsDisplayValue(value);
+  if (!cleaned) return ANALYTICS_EMPTY_LABEL;
+  return cleaned
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function formatAnalyticsDisplayLabel(value = "", fallback = ANALYTICS_EMPTY_LABEL) {
+  const cleaned = cleanAnalyticsDisplayValue(value);
+  return cleaned || fallback;
 }
 
 function buildSearchBlob(row) {
@@ -33231,7 +33516,7 @@ function renderAnalyticsUserDetail() {
   }
 
   if (dom.analyticsUserDetailSubtitle) {
-    dom.analyticsUserDetailSubtitle.textContent = `${summary.username || summary.full_name || summary.email} â€¢ ${summary.email}`;
+    dom.analyticsUserDetailSubtitle.textContent = `${summary.username || summary.full_name || summary.email} - ${summary.email}`;
   }
   if (dom.analyticsUserServerKeyStatus) {
     dom.analyticsUserServerKeyStatus.textContent = summary.server_key_enabled
@@ -33250,8 +33535,8 @@ function renderAnalyticsUserDetail() {
       ["Snapshots", formatAnalyticsCompactNumber(summary.snapshot_count)],
       ["AI Requests", formatAnalyticsCompactNumber(summary.ai_request_count)],
       ["Total Tokens", formatAnalyticsCompactNumber(summary.total_tokens)],
-      ["Top Provider", summary.favorite_provider || "â€”"],
-      ["Top Intent", summary.top_intent || "â€”"],
+      ["Top Provider", formatAnalyticsDisplayLabel(summary.favorite_provider)],
+      ["Top Intent", formatAnalyticsIntentLabel(summary.top_intent)],
       ["Last Seen", formatAnalyticsDateTime(summary.last_seen)],
     ];
     dom.analyticsUserDetailSummary.innerHTML = items.map(([label, value]) => `
@@ -33264,8 +33549,8 @@ function renderAnalyticsUserDetail() {
   if (dom.analyticsUserDetailAiUsage) {
     dom.analyticsUserDetailAiUsage.innerHTML = formatAnalyticsDetailList(payload.aiUsage, (entry) => `
       <div class="analytics-user-detail-item">
-        <strong>${escapeHtml(entry.provider || "Unknown provider")} â€¢ ${escapeHtml(entry.model || "default")}</strong>
-        <span>${escapeHtml(entry.intent_category || "uncategorized")} â€¢ ${formatAnalyticsCompactNumber(entry.request_count)} requests â€¢ ${formatAnalyticsCompactNumber(entry.total_tokens)} tokens</span>
+        <strong>${escapeHtml(formatAnalyticsDisplayLabel(entry.provider, "Unknown provider"))} - ${escapeHtml(formatAnalyticsDisplayLabel(entry.model, "default"))}</strong>
+        <span>${escapeHtml(formatAnalyticsIntentLabel(entry.intent_category))} - ${formatAnalyticsCompactNumber(entry.request_count)} requests - ${formatAnalyticsCompactNumber(entry.total_tokens)} tokens</span>
       </div>
     `);
   }
@@ -33273,7 +33558,7 @@ function renderAnalyticsUserDetail() {
     dom.analyticsUserDetailProjects.innerHTML = formatAnalyticsDetailList(payload.projects, (project) => `
       <div class="analytics-user-detail-item">
         <strong>${escapeHtml(project.name || "Untitled project")}</strong>
-        <span>${escapeHtml(clampText(project.description || "", 90) || "No description")} â€¢ Updated ${escapeHtml(formatAnalyticsDateTime(project.updated_at))}</span>
+        <span>${escapeHtml(clampText(project.description || "", 90) || "No description")} - Updated ${escapeHtml(formatAnalyticsDateTime(project.updated_at))}</span>
       </div>
     `);
   }
@@ -33281,7 +33566,7 @@ function renderAnalyticsUserDetail() {
     dom.analyticsUserDetailEvents.innerHTML = formatAnalyticsDetailList(payload.events, (event) => `
       <div class="analytics-user-detail-item">
         <strong>${escapeHtml(event.event_type || "event")}</strong>
-        <span>${escapeHtml(formatAnalyticsDateTime(event.created_at))} â€¢ ${escapeHtml(event.provider || "â€”")} â€¢ ${escapeHtml(event.project_name || event.intent_category || "â€”")} â€¢ ${formatAnalyticsCompactNumber(event.total_tokens)} tokens</span>
+        <span>${escapeHtml(formatAnalyticsDateTime(event.created_at))} - ${escapeHtml(formatAnalyticsDisplayLabel(event.provider))} - ${escapeHtml(formatAnalyticsDisplayLabel(event.project_name || formatAnalyticsIntentLabel(event.intent_category)))} - ${formatAnalyticsCompactNumber(event.total_tokens)} tokens</span>
       </div>
     `);
   }
@@ -33546,7 +33831,7 @@ function renderAnalyticsOverview() {
 
   const intents = sortRows(
     filterAnalyticsRows((_analytics.data?.intents ?? []).map((row) => ({
-      intent_category: row.intent_category ?? "",
+      intent_category: formatAnalyticsIntentLabel(row.intent_category),
       ai_requests: row.ai_requests ?? 0,
       user_count: row.user_count ?? 0,
       total_tokens: row.total_tokens ?? 0,
@@ -33564,7 +33849,7 @@ function renderAnalyticsOverview() {
       login_count: row.login_count ?? 0,
       ai_request_count: row.ai_request_count ?? 0,
       total_tokens: row.total_tokens ?? 0,
-      top_intent: row.top_intent ?? "â€”",
+      top_intent: formatAnalyticsIntentLabel(row.top_intent),
     }))),
     _analytics.sortCol || "total_tokens",
     _analytics.sortDir
@@ -33603,8 +33888,8 @@ function renderAnalyticsUsers() {
       project_count: u.project_count ?? 0,
       ai_request_count: u.ai_request_count ?? 0,
       total_tokens: u.total_tokens ?? 0,
-      favorite_provider: u.favorite_provider ?? "â€”",
-      top_intent: u.top_intent ?? "â€”",
+      favorite_provider: formatAnalyticsDisplayLabel(u.favorite_provider),
+      top_intent: formatAnalyticsIntentLabel(u.top_intent),
       last_seen: { text: formatAnalyticsDateTime(u.last_seen), sortValue: u.last_seen || "" },
       _serverKeyEnabled: Boolean(u.server_key_enabled),
     }))),
@@ -33663,9 +33948,9 @@ function renderAnalyticsAiUsage() {
   const rows = sortRows(
     filterAnalyticsRows((_analytics.data?.aiUsage ?? []).map((r) => ({
       username: r.username ?? "",
-      provider: r.provider ?? "",
-      model: r.model ?? "",
-      intent_category: r.intent_category ?? "â€”",
+      provider: formatAnalyticsDisplayLabel(r.provider),
+      model: formatAnalyticsDisplayLabel(r.model),
+      intent_category: formatAnalyticsIntentLabel(r.intent_category),
       request_count: r.request_count ?? 0,
       total_input_tokens: r.total_input_tokens ?? 0,
       total_output_tokens: r.total_output_tokens ?? 0,
@@ -33691,7 +33976,7 @@ function renderAnalyticsProjects() {
       save_count: p.save_count ?? 0,
       snapshot_count: p.snapshot_count ?? 0,
       last_snapshot_at: { text: formatAnalyticsDateTime(p.last_snapshot_at), sortValue: p.last_snapshot_at || "" },
-      latest_intent: p.latest_intent ?? "â€”",
+      latest_intent: formatAnalyticsIntentLabel(p.latest_intent),
     }))),
     _analytics.sortCol || "updated_at",
     _analytics.sortDir
@@ -33704,14 +33989,14 @@ function renderAnalyticsEvents() {
   const rows = sortRows(
     filterAnalyticsRows((_analytics.data?.events ?? []).map((e) => ({
       created_at: { text: formatAnalyticsDateTime(e.created_at), sortValue: e.created_at || "" },
-      username: e.username ?? "",
-      event_type: e.event_type ?? "",
-      provider: e.provider ?? "",
-      model: e.model ?? "",
-      project_name: e.project_name ?? "â€”",
-      intent_category: e.intent_category ?? "â€”",
+      username: formatAnalyticsDisplayLabel(e.username),
+      event_type: formatAnalyticsDisplayLabel(e.event_type),
+      provider: formatAnalyticsDisplayLabel(e.provider),
+      model: formatAnalyticsDisplayLabel(e.model),
+      project_name: formatAnalyticsDisplayLabel(e.project_name),
+      intent_category: formatAnalyticsIntentLabel(e.intent_category),
       total_tokens: e.total_tokens ?? 0,
-      outcome: e.outcome ?? "â€”",
+      outcome: formatAnalyticsDisplayLabel(e.outcome),
       prompt_excerpt: { text: clampText(e.prompt_excerpt ?? "", 110), title: e.prompt_excerpt ?? "" },
     }))),
     _analytics.sortCol || "created_at",
@@ -35424,6 +35709,19 @@ function buildPlanAiContext(options = {}) {
 /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    TOPOLOGY VIEW â€” Network Link Quality
 â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+
+function buildEmittersAiContext(options = {}) {
+  const compact = options.compact !== false;
+  const emitterLimit = compact ? 28 : state.assets.length;
+  const linkedCount = state.assets.filter((asset) => Number.isFinite(Number(asset.toUnitId))).length;
+  return JSON.stringify({
+    view: "emitters",
+    emitterCount: state.assets.length,
+    linkedCount,
+    visibleCount: state.assets.filter((asset) => !isContentEffectivelyHidden(`asset:${asset.id}`)).length,
+    emitters: state.assets.slice(0, emitterLimit).map((asset) => serializeAssetForAi(asset)),
+  });
+}
 
 let _topoRefreshTimer = null;
 function scheduleTopoRefresh(delayMs = 800) {
@@ -37814,6 +38112,8 @@ init().catch((error) => {
   console.error(error);
   setStatus(`Startup failed: ${error.message}`, true);
 });
+
+
 
 
 

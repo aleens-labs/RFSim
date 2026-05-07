@@ -79,6 +79,7 @@
           <div id="viewModeToggle" class="view-mode-toggle" data-active="map" role="tablist" aria-label="Select view">
             <span class="view-mode-thumb" id="viewModeThumb" aria-hidden="true"></span>
             <button class="view-mode-tab" data-view="plan" role="tab" aria-selected="false" type="button">T/O</button>
+            <button class="view-mode-tab" data-view="emitters" role="tab" aria-selected="false" type="button">EMITTERS</button>
             <button class="view-mode-tab active" data-view="map" role="tab" aria-selected="true" type="button">MAP</button>
             <button class="view-mode-tab" data-view="topology" role="tab" aria-selected="false" type="button">TOPOLOGY</button>
             <button class="view-mode-tab" data-view="analyze" role="tab" aria-selected="false" type="button">ANALYZE</button>
@@ -1181,6 +1182,47 @@
     <!-- ═══════════════════════════════════════════════════════
          ANALYZE VIEW — RF Analytics Dashboard
     ═══════════════════════════════════════════════════════ -->
+    <div id="emittersView" class="view-panel hidden">
+      <div class="emitters-shell">
+        <div class="emitters-toolbar">
+          <div class="to-toolbar-section">
+            <span class="to-toolbar-label">Emitter Workspace</span>
+            <span class="fine-print">Review placed RF emitters, linked units, and quick actions.</span>
+          </div>
+          <div class="to-toolbar-section to-toolbar-section-right emitters-toolbar-actions">
+            <button id="emittersAddBtn" class="primary-button small" type="button">Add Emitter</button>
+            <button id="emittersRefreshBtn" class="ghost-button small" type="button">Refresh</button>
+            <button id="emittersOpenMapBtn" class="ghost-button small" type="button">Open Map</button>
+          </div>
+        </div>
+        <div class="emitters-main">
+          <div class="emitters-summary-grid">
+            <article class="emitters-summary-card">
+              <span class="eyebrow">Placed</span>
+              <strong id="emittersCountValue">0</strong>
+              <span class="fine-print">Total emitters in the scenario</span>
+            </article>
+            <article class="emitters-summary-card">
+              <span class="eyebrow">Linked</span>
+              <strong id="emittersLinkedValue">0</strong>
+              <span class="fine-print">Attached to T/O units</span>
+            </article>
+            <article class="emitters-summary-card">
+              <span class="eyebrow">Visible</span>
+              <strong id="emittersVisibleValue">0</strong>
+              <span class="fine-print">Currently visible on the map</span>
+            </article>
+          </div>
+          <div class="list-shell emitters-list-shell">
+            <div class="list-header">
+              <span>Placed Emitters</span>
+            </div>
+            <div id="assetList" class="asset-list emitters-list"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div id="analyzeView" class="view-panel hidden">
       <div class="analyze-shell">
         <div class="analyze-toolbar">
@@ -1331,6 +1373,7 @@
     <button type="button" class="ghost-button small" data-map-content-action="simulate">Simulate</button>
     <button type="button" class="ghost-button small" data-map-content-action="relocate">Relocate</button>
     <button type="button" class="ghost-button small hidden" data-map-content-action="toggle-tak-stream">Toggle TAK Stream</button>
+    <button type="button" class="ghost-button small hidden" data-map-content-action="toggle-labels" id="mcMenuToggleLabels">Hide Label</button>
     <button type="button" class="ghost-button small" data-map-content-action="rename">Rename</button>
     <button type="button" class="ghost-button small" data-map-content-action="delete">Delete</button>
   </div>
