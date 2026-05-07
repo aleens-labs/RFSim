@@ -802,6 +802,7 @@
             </select>
             <input id="toUnitDesignator" type="text" class="to-input" placeholder="Unit Name (e.g. V34 CMD)" maxlength="32">
             <button id="toAddUnitBtn" class="primary-button small" type="button">+ Add Unit</button>
+            <button id="toPlaceUnitBtn" class="ghost-button small" type="button">Place / Relocate</button>
           </div>
           <div class="to-toolbar-section to-toolbar-section-right">
             <button id="toAutoLayoutBtn" class="ghost-button small" type="button" title="Auto-arrange linked units">Auto Layout</button>
@@ -826,6 +827,7 @@
             <button class="to-ctx-item" id="toCtxLinkChild" type="button">Link/Unlink Child</button>
             <hr class="to-ctx-divider">
             <button class="to-ctx-item" id="toCtxEdit" type="button">Edit Unit</button>
+            <button class="to-ctx-item" id="toCtxPlace" type="button">Place / Relocate on Map</button>
             <button class="to-ctx-item" id="toCtxDuplicate" type="button">Duplicate Unit</button>
             <button class="to-ctx-item to-ctx-danger" id="toCtxDelete" type="button">Delete Unit</button>
           </div>
@@ -908,6 +910,11 @@
 
           <!-- Step 1: Affiliation -->
           <div id="tpalStep1" class="tpal-step-pane active">
+            <div class="tpal-divider">T/O-owned Tactical Units</div>
+            <div class="tpal-draw-grid">
+              <button id="tpalPlaceToUnitBtn" class="tpal-draw-btn tpal-draw-btn--primary" type="button">Place Existing T/O Unit</button>
+            </div>
+            <div class="tpal-divider">Generic Tracks</div>
             <div class="tpal-affil-grid">
               <button class="tpal-affil-btn" type="button" data-affiliation="unknown">
                 <svg width="56" height="56" viewBox="0 0 56 56"><polygon points="28,4 52,28 28,52 4,28" fill="#FFFF80" stroke="#000" stroke-width="2.5"/></svg>

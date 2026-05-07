@@ -8390,7 +8390,8 @@ body.emitter-modal-open {
   display: flex;
   gap: 2px;
 }
-#toAddUnitBtn {
+#toAddUnitBtn,
+#toPlaceUnitBtn {
   white-space: nowrap;
   height: 24px;
   padding: 0 10px;
@@ -8517,6 +8518,22 @@ body.emitter-modal-open {
   padding: 0 6px;
   position: relative;
   z-index: 1;
+}
+.to-unit-placement-badge {
+  margin-top: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(16, 185, 129, 0.14);
+  color: #065f46;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+.to-unit-placement-badge--pending {
+  background: rgba(148, 163, 184, 0.16);
+  color: #334155;
 }
 .to-unit-size-badge {
   font-size: 0.6rem;
@@ -8702,6 +8719,17 @@ body.emitter-modal-open {
 .tpal-draw-btn:focus-visible {
   border-color: rgba(56, 189, 248, 0.5);
   color: var(--text);
+}
+.tpal-draw-btn--primary {
+  border-color: rgba(16, 185, 129, 0.45);
+  background: rgba(16, 185, 129, 0.08);
+  color: color-mix(in srgb, var(--text) 88%, #065f46 12%);
+  font-weight: 700;
+}
+.tpal-draw-btn--primary:hover,
+.tpal-draw-btn--primary:focus-visible {
+  border-color: rgba(16, 185, 129, 0.62);
+  background: rgba(16, 185, 129, 0.16);
 }
 
 /* Step 2 – Domain grid */
