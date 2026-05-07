@@ -1990,6 +1990,8 @@ const dom = {
   emittersCtxLinkUnit: document.querySelector("#emittersCtxLinkUnit"),
   emittersCtxShowMap: document.querySelector("#emittersCtxShowMap"),
   emittersCtxEdit: document.querySelector("#emittersCtxEdit"),
+  emittersCtxDuplicate: document.querySelector("#emittersCtxDuplicate"),
+  emittersCtxDelete: document.querySelector("#emittersCtxDelete"),
   emittersNetModal: document.querySelector("#emittersNetModal"),
   emittersNetModalTitle: document.querySelector("#emittersNetModalTitle"),
   emittersNetModalSubtitle: document.querySelector("#emittersNetModalSubtitle"),
@@ -22895,6 +22897,44 @@ function initEmittersViewIfNeeded() {
     emitterModal.open(state.assets.find((entry) => entry.id === assetId) || null);
   });
 
+  dom.emittersCtxDuplicate?.addEventListener("click", () => {
+    const assetId = _emittersWorkspaceState.contextAssetId;
+    hideEmittersContextMenu();
+    if (!assetId) return;
+    const original = state.assets.find((entry) => entry.id === assetId);
+    if (!original) return;
+    const layout = ensureEmitterWorkspaceLayout(original);
+    const dupe = stampContentRecord({
+      ...JSON.parse(JSON.stringify(original)),
+      id: generateId(),
+      name: `${original.name || "Emitter"} (copy)`,
+      workspaceLayout: { x: layout.x + 40, y: layout.y + 40 },
+    });
+    ensureTakMetadataForAsset(dupe);
+    state.assets.push(dupe);
+    _emittersWorkspaceState.selectedAssetId = dupe.id;
+    renderAssets();
+    saveMapState();
+    setStatus(`Duplicated ${original.name || "Emitter"}.`);
+  });
+
+  dom.emittersCtxDelete?.addEventListener("click", () => {
+    const assetId = _emittersWorkspaceState.contextAssetId;
+    hideEmittersContextMenu();
+    if (!assetId) return;
+    const asset = state.assets.find((entry) => entry.id === assetId);
+    const name = asset?.name || "Emitter";
+    state.assets = state.assets.filter((entry) => entry.id !== assetId);
+    const marker = state.assetMarkers.get(assetId);
+    if (marker) { marker.remove(); state.assetMarkers.delete(assetId); }
+    if (_emittersWorkspaceState.selectedAssetId === assetId) {
+      _emittersWorkspaceState.selectedAssetId = "";
+    }
+    renderAssets();
+    saveMapState();
+    setStatus(`Deleted ${name}.`);
+  });
+
   dom.emittersNetModalCloseBtn?.addEventListener("click", closeEmittersNetModal);
   dom.emittersNetModalCancelBtn?.addEventListener("click", closeEmittersNetModal);
   dom.emittersNetModalSaveBtn?.addEventListener("click", saveEmittersNetModal);
@@ -37098,9 +37138,16 @@ async function renderTopologyView(options = {}) {
     nd.style.left = pos.x + "px";
     nd.style.top  = pos.y + "px";
 
-    const iconHtml = entry.kind === "unit"
-      ? `<div class="topo-unit-icon-wrap">${renderToUnitIcon(unit)}</div>`
-      : `<div class="topo-generic-icon">${EMITTER_ICONS[entry.emitters[0].icon] || EMITTER_ICONS.radio}</div>`;
+    let iconHtml;
+    if (entry.kind === "unit") {
+      iconHtml = `<div class="topo-unit-icon-wrap">${renderToUnitIcon(unit)}</div>`;
+    } else {
+      const primaryAsset = entry.emitters[0];
+      const graphicPath = resolveEmitterGraphicPath(primaryAsset);
+      iconHtml = graphicPath
+        ? `<div class="topo-generic-icon topo-graphic-icon"><img src="${graphicPath}" alt="${esc(primaryAsset.emitterLabel || primaryAsset.name || "Emitter")}"></div>`
+        : `<div class="topo-generic-icon">${EMITTER_ICONS[primaryAsset.icon] || EMITTER_ICONS.radio}</div>`;
+    }
 
     const unitNameHtml = `<div class="topo-unit-name">${esc(entry.label || unit?.label || unit?.designator || "Unit")}</div>`;
     const subLabelHtml = entry.kind === "emitter" && entry.sublabel

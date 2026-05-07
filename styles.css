@@ -8979,8 +8979,11 @@ body.emitter-modal-open {
   cursor: pointer;
 }
 .to-ctx-item:hover { background: var(--bg-hover); }
+.to-ctx-item--danger { color: #f87171; }
+.to-ctx-item--danger:hover { background: rgba(248, 113, 113, 0.1); }
 .to-ctx-danger { color: #f87171; }
 .to-ctx-divider { border: none; border-top: 1px solid var(--border); margin: 4px 0; }
+.to-ctx-separator { border: none; border-top: 1px solid var(--border); margin: 4px 2px; }
 /* Link pending banner */
 .to-link-banner {
   position: absolute;
@@ -10186,6 +10189,16 @@ body.map-tak-debug-resizing {
 .topo-generic-icon svg {
   width: 100% !important;
   height: 100% !important;
+}
+.topo-graphic-icon {
+  width: 80px;
+  height: 80px;
+}
+.topo-graphic-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
 }
 /* Dragging state — merged with rule above */
 /* Legacy icon style kept for backward compat */
