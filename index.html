@@ -79,9 +79,8 @@
           <div id="viewModeToggle" class="view-mode-toggle" data-active="map" role="tablist" aria-label="Select view">
             <span class="view-mode-thumb" id="viewModeThumb" aria-hidden="true"></span>
             <button class="view-mode-tab" data-view="plan" role="tab" aria-selected="false" type="button">T/O</button>
-            <button class="view-mode-tab" data-view="emitters" role="tab" aria-selected="false" type="button">EMITTERS</button>
+            <button class="view-mode-tab" data-view="topology" role="tab" aria-selected="false" type="button">EMITTERS</button>
             <button class="view-mode-tab active" data-view="map" role="tab" aria-selected="true" type="button">MAP</button>
-            <button class="view-mode-tab" data-view="topology" role="tab" aria-selected="false" type="button">TOPOLOGY</button>
             <button class="view-mode-tab" data-view="analyze" role="tab" aria-selected="false" type="button">ANALYZE</button>
           </div>
         </div>
@@ -1103,6 +1102,7 @@
               <span class="topo-quality-legend-item"><span class="topo-quality-swatch topo-quality-swatch-excellent"></span>Excellent</span>
             </div>
             <div class="to-toolbar-section to-toolbar-section-right">
+              <button id="topoAddEmitterBtn" class="primary-button small" type="button">Add Emitter</button>
               <button id="topoAutoLayoutBtn" class="ghost-button small" type="button">Auto Layout</button>
               <button id="topoRefreshBtn" class="ghost-button small" type="button">Refresh</button>
               <button id="topoFitBtn" class="ghost-button small" type="button">Fit View</button>
@@ -1153,12 +1153,15 @@
             <!-- Radio action popup (edit / link-to-unit) -->
             <div id="topoRadioPopup" class="topo-radio-popup hidden">
               <div class="topo-radio-popup-header">
-                <strong id="topoRadioPopupTitle">Radio Options</strong>
+                <strong id="topoRadioPopupTitle">Emitter Options</strong>
                 <button id="topoRadioPopupClose" class="icon-button" type="button">&#10005;</button>
               </div>
               <div class="topo-radio-popup-actions">
-                <button id="topoRadioEditBtn" class="primary-button small" type="button">Edit Radio</button>
+                <button id="topoRadioEditBtn" class="primary-button small" type="button">Edit Emitter</button>
+                <button id="topoRadioAddNetBtn" class="ghost-button small" type="button">Add Net</button>
+                <button id="topoRadioConfigureNetBtn" class="ghost-button small" type="button">Configure Nets</button>
                 <button id="topoRadioLinkBtn" class="secondary-button small" type="button">Link to Unit Radio</button>
+                <button id="topoRadioDeleteBtn" class="ghost-button small danger-button" type="button">Delete Emitter</button>
               </div>
               <!-- Link-to-unit panel (shown after clicking Link to Unit Radio) -->
               <div id="topoRadioLinkPanel" class="topo-radio-link-panel hidden">

@@ -4578,6 +4578,15 @@ function initTakContactsOverlay() {
   });
 
   // Close panel when clicking outside
+  radioDeleteBtn?.addEventListener("click", () => {
+    if (!_activeAsset) return;
+    const assetId = _activeAsset.id;
+    const assetName = _activeAsset.name || _activeAsset.emitterLabel || "this emitter";
+    if (!window.confirm(`Delete ${assetName}?`)) return;
+    hideAll();
+    deleteMapContent(`asset:${assetId}`);
+  }, { signal: sig });
+
   document.addEventListener("click", (e) => {
     if (!dom.takContactsOverlay?.contains(e.target)) {
       if (state.takChat.panelOpen) {
@@ -8088,7 +8097,7 @@ const emitterModal = {
     if (placeBtn) {
       if (isEditing) {
         placeBtn.textContent = "Save Changes";
-      } else if (state.ui?.currentView === "emitters") {
+      } else if (isEmitterWorkspaceViewActive()) {
         placeBtn.textContent = "Add to Workspace";
       } else {
         placeBtn.textContent = "Place on Map";
@@ -8674,7 +8683,7 @@ const emitterModal = {
     }
     const profileRef = this.resolveProfileRefForPayload(payload);
     const data = buildEmitterAssetFromProfilePayload(payload, { profileRef });
-    const isEmittersWorkspaceView = state.ui?.currentView === "emitters";
+    const isEmittersWorkspaceView = isEmitterWorkspaceViewActive();
 
     let resolvedLocation = null;
     try {
@@ -9385,7 +9394,13 @@ function wireEvents() {
     emitterModal.open();
   });
   dom.emittersAddBtn?.addEventListener("click", () => {
-    if (state.ui?.currentView === "emitters") {
+    if (isEmitterWorkspaceViewActive()) {
+      reserveEmitterWorkspaceSpawnLayout();
+    }
+    emitterModal.open();
+  });
+  document.getElementById("topoAddEmitterBtn")?.addEventListener("click", () => {
+    if (isEmitterWorkspaceViewActive()) {
       reserveEmitterWorkspaceSpawnLayout();
     }
     emitterModal.open();
@@ -22280,6 +22295,10 @@ function isEmitterWorkspaceAsset(asset) {
 
 function getEmitterWorkspaceAssets() {
   return (state.assets || []).filter((asset) => isEmitterWorkspaceAsset(asset));
+}
+
+function isEmitterWorkspaceViewActive(view = state.ui?.currentView) {
+  return view === "emitters" || view === "topology";
 }
 
 function renderEmittersView() {
@@ -37151,7 +37170,10 @@ function wireTopoNodeContextMenu() {
   const radioPopup = document.getElementById("topoRadioPopup");
   const radioTitle = document.getElementById("topoRadioPopupTitle");
   const radioEditBtn = document.getElementById("topoRadioEditBtn");
+  const radioAddNetBtn = document.getElementById("topoRadioAddNetBtn");
+  const radioConfigureNetBtn = document.getElementById("topoRadioConfigureNetBtn");
   const radioLinkBtn = document.getElementById("topoRadioLinkBtn");
+  const radioDeleteBtn = document.getElementById("topoRadioDeleteBtn");
   const radioLinkPanel = document.getElementById("topoRadioLinkPanel");
   const radioLinkList  = document.getElementById("topoRadioLinkList");
   if (!ctxMenu || !radioPopup) return;
@@ -37247,6 +37269,19 @@ function wireTopoNodeContextMenu() {
   }, { signal: sig });
 
   // Link to Unit Radio â†’ show unit/radio picker
+  radioAddNetBtn?.addEventListener("click", () => {
+    if (!_activeAsset) return;
+    hideAll();
+    openEmittersNetModal(_activeAsset.id, "", { createNew: true });
+  }, { signal: sig });
+
+  radioConfigureNetBtn?.addEventListener("click", () => {
+    if (!_activeAsset) return;
+    hideAll();
+    const firstNet = getEmitterNets(_activeAsset)[0] || null;
+    openEmittersNetModal(_activeAsset.id, firstNet?.id || "", { createNew: !firstNet });
+  }, { signal: sig });
+
   radioLinkBtn.addEventListener("click", () => {
     if (!_activeAsset || !_activeUnitId) return;
     radioLinkPanel.classList.remove("hidden");
