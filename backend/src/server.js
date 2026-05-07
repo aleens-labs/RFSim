@@ -39,7 +39,9 @@ const {
   getTakConnectTarget,
   getTakTlsVerifyHost,
   isTakCertUploadLike,
+  normalizeTakTlsServerName,
   summarizeTakConnectionFailure,
+  validateTakTlsServerName,
 } = require("./tak/connection");
 
 const app = express();
@@ -699,7 +701,10 @@ const takProfileItemSchema = z.object({
   id: z.string().min(1).max(200),
   label: z.string().max(120).optional().default(""),
   serverHost: z.string().min(1).max(255),
-  tlsServerName: z.string().max(255).optional().default(""),
+  tlsServerName: z.string().max(255).optional().default("").transform((value) => normalizeTakTlsServerName(value)).refine(
+    (value) => !validateTakTlsServerName(value),
+    { message: "TLS Server Name must be a valid DNS hostname or IP address." }
+  ),
   serverPort: z.number().int().min(1).max(65535).optional().default(8089),
   transport: z.string().min(1).max(80).optional().default("ssl"),
   enrollForClientCert: z.boolean().optional().default(false),

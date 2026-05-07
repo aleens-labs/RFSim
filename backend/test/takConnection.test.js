@@ -6,6 +6,7 @@ const {
   attemptTakConnection,
   buildTakSocketConfig,
   summarizeTakConnectionFailure,
+  validateTakTlsServerName,
 } = require("../src/tak/connection");
 
 const CLIENT_CERT_PEM = [
@@ -70,6 +71,13 @@ test("buildTakSocketConfig falls back to the server host when no TLS server name
 
   assert.equal(config.verifyHost, "3.150.66.52");
   assert.equal(config.tlsOptions.servername, undefined);
+});
+
+test("validateTakTlsServerName rejects display labels with spaces", () => {
+  assert.match(
+    validateTakTlsServerName("RF SIM"),
+    /valid DNS hostname or IP address/i
+  );
 });
 
 test("summarizeTakConnectionFailure explains IP hostname mismatch with an actionable hint", () => {

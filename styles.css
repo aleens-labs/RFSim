@@ -7614,6 +7614,34 @@ body.emitter-modal-open {
   transition: background 0.12s;
 }
 .tak-contact-row:hover { background: rgba(148,163,184,0.08); }
+
+/* TAK contact right-click context menu */
+.tak-contact-ctx-menu {
+  background: var(--bg-overlay);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.45);
+  padding: 4px;
+  min-width: 180px;
+}
+.tak-contact-ctx-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tak-contact-ctx-item:hover { background: rgba(148,163,184,0.1); }
+.tak-contact-ctx-item strong { font-weight: 700; margin-left: 2px; }
+
 .tak-contact-avatar {
   width: 28px;
   height: 28px;
@@ -7803,7 +7831,7 @@ body.emitter-modal-open {
 .map-tak-identity-btn {
   position: absolute;
   top: 14px;
-  left: calc(138px + 340px + 8px + 86px + 8px + 120px + 8px);
+  left: calc(138px + 340px + 8px + 86px + 8px + 120px + 18px);
   z-index: 650;
   height: 32px;
   padding: 0 12px;

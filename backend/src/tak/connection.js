@@ -62,6 +62,42 @@ function decodeTakUploadBlob(rawValue = "") {
   };
 }
 
+function isValidHostname(value = "") {
+  const text = String(value || "").trim();
+  if (!text || text.length > 253) {
+    return false;
+  }
+  if (text.toLowerCase() === "localhost") {
+    return true;
+  }
+  if (text.endsWith(".")) {
+    return isValidHostname(text.slice(0, -1));
+  }
+  const labels = text.split(".");
+  return labels.every((label) => (
+    label.length >= 1
+    && label.length <= 63
+    && /^[a-z0-9-]+$/i.test(label)
+    && !label.startsWith("-")
+    && !label.endsWith("-")
+  ));
+}
+
+function normalizeTakTlsServerName(value = "") {
+  return String(value || "").trim();
+}
+
+function validateTakTlsServerName(value = "") {
+  const text = normalizeTakTlsServerName(value);
+  if (!text) {
+    return "";
+  }
+  if (net.isIP(text) || isValidHostname(text)) {
+    return "";
+  }
+  return "TLS Server Name must be a valid DNS hostname or IP address, not a label like \"RF SIM\".";
+}
+
 function getTakTlsVerifyHost(connectionOrProfile = {}) {
   const tlsServerName = String(
     connectionOrProfile.tlsServerName
@@ -106,9 +142,13 @@ function buildTakSocketConfig(profileRow, { decryptSecret = (value) => value } =
   const host = String(profileRow?.server_host || profileRow?.serverHost || "").trim();
   const port = Number(profileRow?.server_port || profileRow?.serverPort || 0);
   const transport = String(profileRow?.transport || "ssl").trim().toLowerCase();
-  const tlsServerName = String(profileRow?.tls_server_name || profileRow?.tlsServerName || "").trim();
+  const tlsServerName = normalizeTakTlsServerName(profileRow?.tls_server_name || profileRow?.tlsServerName || "");
   if (!host || !Number.isFinite(port) || port < 1 || port > 65535) {
     throw new Error("TAK profile is missing a valid host or port.");
+  }
+  const tlsServerNameError = validateTakTlsServerName(tlsServerName);
+  if (tlsServerNameError) {
+    throw new Error(tlsServerNameError);
   }
 
   const clientCertRaw = decryptSecret(profileRow.client_cert_pem || profileRow.clientCertPem || "");
@@ -293,5 +333,7 @@ module.exports = {
   getTakTlsVerifyHost,
   isPemLike,
   isTakCertUploadLike,
+  normalizeTakTlsServerName,
   summarizeTakConnectionFailure,
+  validateTakTlsServerName,
 };

@@ -3628,11 +3628,20 @@ function removeTacticalObjectLayer(objectId) {
 
 function renderTakLiveLayer(object) {
   if (!state.map) return null;
+  const selfUid = buildTakGpsUid();
   const contentId = buildTakLiveContentId(object.uid);
   const existing = state.takRuntime.layersByUid.get(object.uid);
   existing?.remove?.();
   const layer = createTacticalLeafletLayer(object, contentId, { live: true });
   if (!layer) return null;
+  // Right-click on a live PLI track opens a chat with that contact (skip self)
+  if (object.uid !== selfUid) {
+    layer.on("contextmenu", (e) => {
+      L.DomEvent.stopPropagation(e);
+      const callsign = escapeHtml(object.name || object.designator || object.uid);
+      showTakContactContextMenu(e.originalEvent || e, object.uid, callsign);
+    });
+  }
   state.takRuntime.layersByUid.set(object.uid, layer);
   if (!isContentEffectivelyHidden(contentId)) {
     layer.addTo(state.map);
@@ -3816,9 +3825,10 @@ async function pollTakLiveContacts({ immediate = false } = {}) {
       const profile = payload.profile ?? getTakProfileForProject(currentProjectId);
       state.takRuntime.profileId = profile?.id || "";
       state.takRuntime.projectId = currentProjectId;
+      const selfUid = buildTakGpsUid(currentProjectId);
       const seen = new Set();
       (Array.isArray(payload.contacts) ? payload.contacts : []).forEach((contact) => {
-        if (!contact?.uid) return;
+        if (!contact?.uid || contact.uid === selfUid) return;
         seen.add(contact.uid);
         upsertTakLiveContact(contact, profile);
       });
@@ -3984,7 +3994,8 @@ function renderTakContactsOverlay() {
 
 function renderTakContactsList() {
   if (!dom.takContactsList) return;
-  const contacts = [...state.takRuntime.objectsByUid.values()];
+  const selfUid = buildTakGpsUid();
+  const contacts = [...state.takRuntime.objectsByUid.values()].filter((c) => c.uid !== selfUid);
   if (dom.takContactsPanelCount) {
     dom.takContactsPanelCount.textContent = `${contacts.length} online`;
   }
@@ -4011,22 +4022,51 @@ function renderTakContactsList() {
   }).join("");
 
   dom.takContactsList.querySelectorAll(".tak-contact-row").forEach((btn) => {
-    btn.addEventListener("click", () => openTakChat(btn.dataset.uid));
+    btn.addEventListener("click", (e) => { e.stopPropagation(); openTakChat(btn.dataset.uid); });
   });
 }
 
 function openTakChat(uid) {
   const contact = state.takRuntime.objectsByUid.get(uid);
   if (!contact) return;
+  state.takChat.panelOpen = true;
   state.takChat.activeUid = uid;
-  // Clear unread for this thread
-  const thread = getTakChatThread(uid, contact.name || contact.designator);
+  const thread = getTakChatThread(uid, contact.name || contact.designator || uid);
   state.takChat.totalUnread = Math.max(0, state.takChat.totalUnread - thread.unread);
   thread.unread = 0;
   if (dom.takChatContactName) dom.takChatContactName.textContent = thread.callsign;
   renderTakChatMessages();
   renderTakContactsOverlay();
   requestAnimationFrame(() => dom.takChatInput?.focus());
+}
+
+// Called from map right-click context menu on a live PLI track
+function openTakChatFromMap(uid) {
+  openTakChat(uid);
+}
+
+function showTakContactContextMenu(nativeEvent, uid, callsign) {
+  // Remove any existing TAK contact context menu
+  document.getElementById("_takContactCtxMenu")?.remove();
+  const menu = document.createElement("div");
+  menu.id = "_takContactCtxMenu";
+  menu.className = "tak-contact-ctx-menu";
+  menu.innerHTML = `<button class="tak-contact-ctx-item" type="button">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+    Message <strong>${callsign}</strong>
+  </button>`;
+  const x = nativeEvent?.clientX ?? 0;
+  const y = nativeEvent?.clientY ?? 0;
+  menu.style.cssText = `position:fixed;left:${x}px;top:${y}px;z-index:9999`;
+  document.body.appendChild(menu);
+  menu.querySelector("button").addEventListener("click", (e) => {
+    e.stopPropagation();
+    menu.remove();
+    openTakChatFromMap(uid);
+  });
+  // Dismiss on any outside click
+  const dismiss = (e) => { if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener("click", dismiss, true); } };
+  setTimeout(() => document.addEventListener("click", dismiss, true), 0);
 }
 
 function closeTakChat() {
@@ -5555,6 +5595,28 @@ function formatTakCertSummary({ hasValue, fileName, updatedAt, pendingName, dele
     return parts.join(" • ");
   }
   return emptyText;
+}
+
+function isValidTakHostname(value = "") {
+  const text = String(value || "").trim();
+  if (!text || text.length > 253) return false;
+  if (text.toLowerCase() === "localhost") return true;
+  const normalized = text.endsWith(".") ? text.slice(0, -1) : text;
+  return normalized.split(".").every((label) => (
+    label.length >= 1
+    && label.length <= 63
+    && /^[a-z0-9-]+$/i.test(label)
+    && !label.startsWith("-")
+    && !label.endsWith("-")
+  ));
+}
+
+function validateTakTlsServerName(value = "") {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  const isIp = /^(\d{1,3}\.){3}\d{1,3}$/.test(text) || /^\[[0-9a-f:]+\]$/i.test(text) || text.includes(":");
+  if (isIp || isValidTakHostname(text)) return "";
+  return "TLS Server Name must be a valid DNS hostname or IP address. Clear it or replace it with the hostname printed on the TAK server certificate.";
 }
 
 function renderTakSavedProfileOptions() {
@@ -11519,6 +11581,13 @@ async function saveTakProfile() {
     setStatus("Enter a TAK server address before saving.", true);
     return;
   }
+  {
+    const tlsServerNameError = validateTakTlsServerName(draft.tlsServerName);
+    if (tlsServerNameError) {
+      setStatus(tlsServerNameError, true);
+      return;
+    }
+  }
   if (draft._clientCertFileNameDraft && !String(draft._clientCertPasswordDraft || "").trim()) {
     setStatus("Enter the client certificate password before saving.", true);
     return;
@@ -11615,6 +11684,15 @@ async function testTakProfileConnection() {
   if (!profile) {
     setStatus("Save the TAK server profile before testing it.", true);
     return;
+  }
+  {
+    const tlsServerNameError = validateTakTlsServerName(profile.tlsServerName);
+    if (tlsServerNameError) {
+      state.takSettings.statusMessage = tlsServerNameError;
+      syncTakUi();
+      setStatus(tlsServerNameError, true);
+      return;
+    }
   }
   state.takSettings.statusMessage = "Testing TAK profile...";
   syncTakUi();
