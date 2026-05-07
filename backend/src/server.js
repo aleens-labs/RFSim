@@ -5,7 +5,6 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const { Readable } = require("stream");
-const net = require("net");
 const tls = require("tls");
 const fs = require("fs");
 const path = require("path");
@@ -32,7 +31,16 @@ const {
   summarizeEmitterProfilePayload,
   formatEmitterProfileRow,
 } = require("./emitterProfiles");
-const { parsePkcs12, parseTruststore } = require("./tak/certUtils");
+const {
+  attemptTakConnection,
+  buildTakSocketConfig,
+  connectTakSocket: openTakSocket,
+  createTakConnectionDebugDetail,
+  getTakConnectTarget,
+  getTakTlsVerifyHost,
+  isTakCertUploadLike,
+  summarizeTakConnectionFailure,
+} = require("./tak/connection");
 
 const app = express();
 app.set("trust proxy", 1);
@@ -169,38 +177,6 @@ function decryptSecret(payload = "") {
   return decrypted.toString("utf8");
 }
 
-function isPemLike(value = "", { kind = "generic" } = {}) {
-  const text = String(value || "").trim();
-  if (!text) {
-    return false;
-  }
-  if (kind === "certificate") {
-    return /-----BEGIN CERTIFICATE-----[\s\S]+-----END CERTIFICATE-----/i.test(text);
-  }
-  if (kind === "privateKey") {
-    return /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]+-----END [A-Z0-9 ]*PRIVATE KEY-----/i.test(text);
-  }
-  return /-----BEGIN [A-Z0-9 ]+-----[\s\S]+-----END [A-Z0-9 ]+-----/i.test(text);
-}
-
-function isTakCertUploadLike(value = "") {
-  const text = String(value || "").trim();
-  if (!text) {
-    return false;
-  }
-  if (isPemLike(text)) {
-    return true;
-  }
-  return /^data:[^;]+;base64,[a-z0-9+/=\s]+$/i.test(text);
-}
-
-function extractPemBlocks(value = "", typePattern = "[A-Z0-9 ]+") {
-  const matches = String(value || "").match(
-    new RegExp(`-----BEGIN ${typePattern}-----[\\s\\S]+?-----END ${typePattern}-----`, "gi")
-  );
-  return Array.isArray(matches) ? matches.join("\n") : "";
-}
-
 function summarizeTakProfileRow(row) {
   if (!row) {
     return null;
@@ -209,6 +185,7 @@ function summarizeTakProfileRow(row) {
     id: row.id,
     label: row.label,
     serverHost: row.server_host,
+    tlsServerName: row.tls_server_name || "",
     serverPort: Number(row.server_port ?? 8089),
     transport: row.transport,
     enrollForClientCert: Boolean(row.enroll_for_client_cert),
@@ -331,96 +308,6 @@ function parseTakCotEvent(xml = "") {
   };
 }
 
-function decodeTakUploadBlob(rawValue = "") {
-  const value = String(rawValue || "").trim();
-  if (!value) {
-    return { kind: "empty", text: "", buffer: null, mimeType: "", nameHint: "" };
-  }
-  if (value.startsWith("data:")) {
-    const match = value.match(/^data:([^;,]+)?(?:;[^,]*)?;base64,([\s\S]+)$/i);
-    if (!match) {
-      throw new Error("TAK certificate upload is malformed.");
-    }
-    return {
-      kind: "data-url",
-      text: "",
-      buffer: Buffer.from(match[2].replace(/\s+/g, ""), "base64"),
-      mimeType: String(match[1] || "application/octet-stream").toLowerCase(),
-      nameHint: "",
-    };
-  }
-  return {
-    kind: "text",
-    text: value,
-    buffer: Buffer.from(value, "utf8"),
-    mimeType: isPemLike(value) ? "application/x-pem-file" : "text/plain",
-    nameHint: "",
-  };
-}
-
-function buildTakSocketConfig(profileRow) {
-  const host = String(profileRow?.server_host || "").trim();
-  const port = Number(profileRow?.server_port || 0);
-  const transport = String(profileRow?.transport || "ssl").trim().toLowerCase();
-  if (!host || !Number.isFinite(port) || port < 1 || port > 65535) {
-    throw new Error("TAK profile is missing a valid host or port.");
-  }
-
-  const clientCertRaw = decryptSecret(profileRow.client_cert_pem || "");
-  const clientCertPassword = decryptSecret(profileRow.client_cert_password_secret || "");
-  const caCertRaw = decryptSecret(profileRow.ca_cert_pem || "");
-  const clientCert = decodeTakUploadBlob(clientCertRaw);
-  const caCert = decodeTakUploadBlob(caCertRaw);
-
-  if (!clientCertRaw || !clientCertPassword) {
-    throw new Error("TAK client certificate bundle or password is missing.");
-  }
-
-  const tlsOptions = { host, port };
-  let verificationMode = "system";
-  let verificationNote = "";
-
-  if (clientCert.kind === "data-url") {
-    const { certPem, keyPem } = parsePkcs12(clientCert.buffer, clientCertPassword);
-    tlsOptions.cert = certPem;
-    tlsOptions.key = keyPem;
-  } else if (
-    isPemLike(clientCert.text, { kind: "certificate" })
-    && isPemLike(clientCert.text, { kind: "privateKey" })
-  ) {
-    tlsOptions.cert = extractPemBlocks(clientCert.text, "CERTIFICATE");
-    tlsOptions.key = extractPemBlocks(clientCert.text, "[A-Z0-9 ]*PRIVATE KEY");
-  } else {
-    throw new Error("Client certificate bundle format is not supported.");
-  }
-
-  if (!caCertRaw) {
-    throw new Error("A TAK CA trust bundle is required. Server identity verification cannot be disabled.");
-  } else if (caCert.kind === "text" && isPemLike(caCert.text, { kind: "certificate" })) {
-    tlsOptions.ca = caCert.text;
-    tlsOptions.rejectUnauthorized = true;
-    verificationMode = "custom-ca";
-    verificationNote = "The uploaded CA trust bundle is used with hostname verification enabled.";
-  } else if (caCert.kind === "data-url") {
-    const { caPem } = parseTruststore(caCert.buffer, decryptSecret(profileRow.ca_cert_password_secret || ""));
-    tlsOptions.ca = caPem;
-    tlsOptions.rejectUnauthorized = true;
-    verificationMode = "custom-ca-p12";
-    verificationNote = "The uploaded PKCS12 CA truststore is used with hostname verification enabled.";
-  } else {
-    throw new Error("TAK CA trust bundle format is not supported.");
-  }
-
-  return {
-    host,
-    port,
-    transport,
-    tlsOptions,
-    verificationMode,
-    verificationNote,
-  };
-}
-
 function buildTakConnectorKey(userId, profileId) {
   return `${userId}:${profileId}`;
 }
@@ -487,6 +374,8 @@ function summarizeTakConnector(connector) {
     status: connector.status,
     connected: connector.status === "connected",
     message: connector.lastError || connector.statusMessage || "",
+    connectTarget: connector.connection?.connectTarget || getTakConnectTarget(connector.connection),
+    verifyAs: getTakTlsVerifyHost(connector.connection),
     verificationMode: connector.verificationMode,
     verificationNote: connector.verificationNote || "",
     connectedAt: connector.connectedAt,
@@ -570,11 +459,7 @@ function scheduleTakConnectorReconnect(connector) {
 }
 
 function connectTakSocket(connector) {
-  const { transport, tlsOptions, host, port } = connector.connection;
-  if (transport === "tcp" || transport === "plain") {
-    return net.connect({ host, port });
-  }
-  return tls.connect(tlsOptions);
+  return openTakSocket(connector.connection);
 }
 
 function startTakConnector(connector) {
@@ -588,7 +473,7 @@ function startTakConnector(connector) {
     connector,
     "status",
     "Connecting",
-    `${connector.connection.transport.toUpperCase()} ${connector.connection.host}:${connector.connection.port}`,
+    createTakConnectionDebugDetail(connector.connection),
     "info"
   );
 
@@ -596,10 +481,17 @@ function startTakConnector(connector) {
   try {
     socket = connectTakSocket(connector);
   } catch (error) {
-    connector.lastError = error.message;
+    const failure = summarizeTakConnectionFailure(error, connector.connection);
+    connector.lastError = failure.message;
     connector.status = "error";
-    connector.statusMessage = error.message;
-    pushTakConnectorDebug(connector, "status", "Connect failed", error.message, "error");
+    connector.statusMessage = failure.message;
+    pushTakConnectorDebug(
+      connector,
+      "status",
+      "Connect failed",
+      [failure.message, createTakConnectionDebugDetail(connector.connection), failure.hint].filter(Boolean).join("\n"),
+      "error"
+    );
     scheduleTakConnectorReconnect(connector);
     return connector;
   }
@@ -618,7 +510,7 @@ function startTakConnector(connector) {
       connector,
       "status",
       "Connected",
-      `${connector.connection.transport.toUpperCase()} ${connector.connection.host}:${connector.connection.port}`,
+      createTakConnectionDebugDetail(connector.connection),
       "info"
     );
   };
@@ -657,10 +549,17 @@ function startTakConnector(connector) {
   });
 
   socket.on("error", (error) => {
-    connector.lastError = error.message;
+    const failure = summarizeTakConnectionFailure(error, connector.connection);
+    connector.lastError = failure.message;
     connector.status = "error";
-    connector.statusMessage = error.message;
-    pushTakConnectorDebug(connector, "status", "Socket error", error.message, "error");
+    connector.statusMessage = failure.message;
+    pushTakConnectorDebug(
+      connector,
+      "status",
+      "Socket error",
+      [failure.message, createTakConnectionDebugDetail(connector.connection), failure.hint].filter(Boolean).join("\n"),
+      "error"
+    );
   });
 
   socket.on("close", () => {
@@ -696,7 +595,7 @@ function ensureTakConnector(userId, profileRow) {
     return existing;
   }
 
-  const connection = buildTakSocketConfig(profileRow);
+  const connection = buildTakSocketConfig(profileRow, { decryptSecret });
   const connector = {
     key,
     userId,
@@ -800,6 +699,7 @@ const takProfileItemSchema = z.object({
   id: z.string().min(1).max(200),
   label: z.string().max(120).optional().default(""),
   serverHost: z.string().min(1).max(255),
+  tlsServerName: z.string().max(255).optional().default(""),
   serverPort: z.number().int().min(1).max(65535).optional().default(8089),
   transport: z.string().min(1).max(80).optional().default("ssl"),
   enrollForClientCert: z.boolean().optional().default(false),
@@ -1605,7 +1505,7 @@ app.put("/api/user/tak-profiles", authRequired, async (request, response) => {
 
       await client.query(
         `insert into user_tak_profile (
-           id, owner_user_id, label, server_host, server_port, transport, enroll_for_client_cert, use_authentication, username, auth_secret,
+           id, owner_user_id, label, server_host, tls_server_name, server_port, transport, enroll_for_client_cert, use_authentication, username, auth_secret,
            client_cert_pem, client_key_pem, ca_cert_pem,
            client_cert_file_name, client_key_file_name, ca_cert_file_name,
            client_cert_updated_at, client_key_updated_at, ca_cert_updated_at,
@@ -1613,16 +1513,17 @@ app.put("/api/user/tak-profiles", authRequired, async (request, response) => {
            position, updated_at
          )
          values (
-           $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-           $11, $12, $13,
-           $14, $15, $16,
-           $17, $18, $19,
-           $20, $21,
-           $22, now()
+           $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+           $12, $13, $14,
+           $15, $16, $17,
+           $18, $19, $20,
+           $21, $22,
+           $23, now()
          )
          on conflict (id) do update set
            label = excluded.label,
            server_host = excluded.server_host,
+           tls_server_name = excluded.tls_server_name,
            server_port = excluded.server_port,
            transport = excluded.transport,
            enroll_for_client_cert = excluded.enroll_for_client_cert,
@@ -1648,6 +1549,7 @@ app.put("/api/user/tak-profiles", authRequired, async (request, response) => {
           request.user.sub,
           profile.label ?? "",
           profile.serverHost.trim(),
+          (profile.tlsServerName ?? "").trim(),
           profile.serverPort ?? 8089,
           profile.transport ?? "ssl",
           Boolean(profile.enrollForClientCert),
@@ -1740,18 +1642,24 @@ app.post("/api/user/tak-profiles/:profileId/test", authRequired, async (request,
     );
     let socketConfig = null;
     let configError = "";
+    let connectionFailure = null;
     if (hasCore && hasTakCerts) {
       try {
-        socketConfig = buildTakSocketConfig(profile);
+        socketConfig = buildTakSocketConfig(profile, { decryptSecret });
+        await attemptTakConnection(socketConfig, { timeoutMs: 6000 });
       } catch (error) {
-        configError = error.message;
+        if (!socketConfig) {
+          configError = error.message;
+        } else {
+          connectionFailure = summarizeTakConnectionFailure(error, socketConfig);
+        }
       }
     }
     const status = !hasCore
       ? "error"
       : !hasTakCerts
         ? "incomplete"
-        : socketConfig
+        : (socketConfig && !connectionFailure)
           ? "ready"
           : "error";
     const checkedAt = new Date().toISOString();
@@ -1759,8 +1667,12 @@ app.post("/api/user/tak-profiles/:profileId/test", authRequired, async (request,
       ? "Profile is missing required TAK server settings."
       : !hasTakCerts
         ? "Server settings are saved, but the CA certificate, client certificate, or their passwords are still missing."
-        : socketConfig
-          ? "Profile is bridge-ready. Live TAK transport can use this CA and client certificate bundle configuration."
+        : connectionFailure
+          ? `${connectionFailure.message}${connectionFailure.hint ? ` ${connectionFailure.hint}` : ""}`
+          : socketConfig
+            ? (socketConfig.transport === "tcp"
+              ? `Connected to ${socketConfig.connectTarget}.`
+              : `Connected to ${socketConfig.connectTarget}. TLS verified as ${socketConfig.verifyHost}.`)
           : `Certificate configuration is not usable yet: ${configError}`;
 
     await query(
@@ -1773,10 +1685,15 @@ app.post("/api/user/tak-profiles/:profileId/test", authRequired, async (request,
       status,
       checkedAt,
       message,
+      connectTarget: socketConfig?.connectTarget || getTakConnectTarget(profile),
+      verifyAs: socketConfig?.verifyHost || getTakTlsVerifyHost(profile),
+      failureReason: connectionFailure?.reason || "",
+      failureHint: connectionFailure?.hint || "",
       verificationMode: socketConfig?.verificationMode || "",
       verificationNote: socketConfig?.verificationNote || "",
       requirements: {
         hasServerHost: Boolean(profile.server_host),
+        hasTlsServerName: Boolean(profile.tls_server_name),
         hasServerPort: Boolean(profile.server_port),
         hasTransport: Boolean(profile.transport),
         hasAuthSecret: Boolean(profile.auth_secret),

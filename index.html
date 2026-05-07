@@ -2509,8 +2509,13 @@
                 <input id="takProfileLabelInput" type="text" placeholder="RF Sim">
               </label>
               <label class="tak-settings-host">
-                Server Host IP
-                <input id="takServerHostInput" type="text" placeholder="18.118.133.90">
+                Server Address
+                <input id="takServerHostInput" type="text" placeholder="tak.example.mil or 18.118.133.90">
+              </label>
+              <label class="settings-span-2 tak-settings-wide">
+                TLS Server Name (optional)
+                <input id="takTlsServerNameInput" type="text" placeholder="tak.example.mil">
+                <span class="fine-print">Use this when you connect by IP but the TAK certificate is issued to a DNS name.</span>
               </label>
               <label class="tak-settings-port">
                 Port

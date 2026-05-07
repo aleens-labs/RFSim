@@ -1755,6 +1755,7 @@ const dom = {
   takDeleteProfileBtn: document.querySelector("#takDeleteProfileBtn"),
   takProfileLabelInput: document.querySelector("#takProfileLabelInput"),
   takServerHostInput: document.querySelector("#takServerHostInput"),
+  takTlsServerNameInput: document.querySelector("#takTlsServerNameInput"),
   takServerPortInput: document.querySelector("#takServerPortInput"),
   takTransportSelect: document.querySelector("#takTransportSelect"),
   takEnrollClientCertToggle: document.querySelector("#takEnrollClientCertToggle"),
@@ -2461,6 +2462,8 @@ const state = {
     profileId: "",
     projectId: null,
     provider: "backend-direct",
+    connectTarget: "",
+    verifyAs: "",
     lastEventAt: "",
     lastPollAt: "",
     lastConnectedAt: "",
@@ -3385,6 +3388,7 @@ function createEmptyTakProfileDraft() {
     id: "",
     label: "",
     serverHost: "",
+    tlsServerName: "",
     serverPort: 8089,
     transport: "ssl",
     enrollForClientCert: false,
@@ -3424,6 +3428,7 @@ function sanitizeTakProfileSummary(profile) {
     id: typeof profile.id === "string" ? profile.id : "",
     label: typeof profile.label === "string" ? profile.label : "",
     serverHost: typeof profile.serverHost === "string" ? profile.serverHost : "",
+    tlsServerName: typeof profile.tlsServerName === "string" ? profile.tlsServerName : "",
     serverPort: Number.isFinite(Number(profile.serverPort)) ? Number(profile.serverPort) : 8089,
     transport: typeof profile.transport === "string" && profile.transport ? profile.transport : "ssl",
     enrollForClientCert: Boolean(profile.enrollForClientCert),
@@ -3756,6 +3761,8 @@ function stopTakLivePolling({ clearContacts = false } = {}) {
   state.takRuntime.status = "idle";
   state.takRuntime.message = "";
   state.takRuntime.profileId = "";
+  state.takRuntime.connectTarget = "";
+  state.takRuntime.verifyAs = "";
   state.takRuntime.lastPollAt = "";
   state.takRuntime.lastConnectedAt = "";
   state.takRuntime.lastOutboundAt = "";
@@ -3795,6 +3802,8 @@ async function pollTakLiveContacts({ immediate = false } = {}) {
     state.takLive.lastPollAt = nowIso();
     state.takRuntime.status = state.takLive.status;
     state.takRuntime.message = state.takLive.message;
+    state.takRuntime.connectTarget = payload.connectTarget || "";
+    state.takRuntime.verifyAs = payload.verifyAs || "";
     state.takRuntime.lastPollAt = state.takLive.lastPollAt;
     state.takRuntime.lastConnectedAt = payload.connectedAt || "";
     state.takRuntime.lastOutboundAt = payload.lastOutboundAt || "";
@@ -5623,6 +5632,7 @@ function syncTakUi() {
 
   dom.takProfileLabelInput.value = draft.label ?? "";
   dom.takServerHostInput.value = draft.serverHost ?? "";
+  if (dom.takTlsServerNameInput) dom.takTlsServerNameInput.value = draft.tlsServerName ?? "";
   dom.takServerPortInput.value = String(draft.serverPort ?? 8089);
   dom.takTransportSelect.value = draft.transport || "ssl";
   if (dom.takEnrollClientCertToggle) dom.takEnrollClientCertToggle.checked = Boolean(draft.enrollForClientCert);
@@ -5770,6 +5780,7 @@ function buildTakProfilesPayload() {
       id: profile.id,
       label: profile.label,
       serverHost: profile.serverHost,
+      tlsServerName: profile.tlsServerName || "",
       serverPort: Number(profile.serverPort) || 8089,
       transport: profile.transport || "ssl",
       enrollForClientCert: Boolean(profile.enrollForClientCert),
@@ -8943,6 +8954,7 @@ function wireEvents() {
   dom.takDeleteProfileBtn?.addEventListener("click", () => deleteTakProfile().catch((error) => setStatus(error.message, true)));
   dom.takProfileLabelInput?.addEventListener("change", onTakDraftFieldChanged);
   dom.takServerHostInput?.addEventListener("change", onTakDraftFieldChanged);
+  dom.takTlsServerNameInput?.addEventListener("change", onTakDraftFieldChanged);
   dom.takServerPortInput?.addEventListener("change", onTakDraftFieldChanged);
   dom.takTransportSelect?.addEventListener("change", onTakDraftFieldChanged);
   dom.takEnrollClientCertToggle?.addEventListener("change", () => { onTakDraftFieldChanged(); syncTakUi(); });
@@ -11471,6 +11483,7 @@ function onTakDraftFieldChanged() {
   const draft = state.takSettings.draft ?? createEmptyTakProfileDraft();
   draft.label = dom.takProfileLabelInput?.value.trim() ?? "";
   draft.serverHost = dom.takServerHostInput?.value.trim() ?? "";
+  draft.tlsServerName = dom.takTlsServerNameInput?.value.trim() ?? "";
   draft.serverPort = Math.max(1, Number.parseInt(dom.takServerPortInput?.value ?? "8089", 10) || 8089);
   draft.transport = dom.takTransportSelect?.value || "ssl";
   draft.enrollForClientCert = Boolean(dom.takEnrollClientCertToggle?.checked);
@@ -11503,7 +11516,7 @@ async function saveTakProfile() {
   onTakDraftFieldChanged();
   const draft = state.takSettings.draft ?? createEmptyTakProfileDraft();
   if (!draft.serverHost) {
-    setStatus("Enter a TAK server host before saving.", true);
+    setStatus("Enter a TAK server address before saving.", true);
     return;
   }
   if (draft._clientCertFileNameDraft && !String(draft._clientCertPasswordDraft || "").trim()) {
@@ -12670,12 +12683,13 @@ Use it when you need to:
 
 1. Open **Settings → TAK**.
 2. Create or select a saved TAK server profile.
-3. Enter the server host, port, and protocol.
-4. Load CA and client certificates if required.
-5. Configure authentication if required.
-6. Save the server profile.
-7. Assign enabled projects if your environment uses server-backed projects.
-8. Click **Test Connection**.
+3. Enter the server address, port, and protocol.
+4. If you connect by IP but the certificate is issued to DNS, enter the certificate hostname in **TLS Server Name**.
+5. Load CA and client certificates if required.
+6. Configure authentication if required.
+7. Save the server profile.
+8. Assign enabled projects if your environment uses server-backed projects.
+9. Click **Test Connection** to run a real network and TLS check.
 
 ## Certificate handling guidance
 
@@ -35857,10 +35871,15 @@ function formatMapTakDebugLines() {
   const project = state.session.projects.find((entry) => entry.id === state.session.activeProjectId) ?? null;
   const profile = getTakProfileForProject(state.session.activeProjectId);
   const runtime = state.takRuntime;
+  const connectTarget = runtime.connectTarget
+    || (profile?.serverHost ? `${profile.serverHost}:${Number(profile.serverPort) || 8089}` : "—");
+  const verifyAs = runtime.verifyAs || profile?.tlsServerName || profile?.serverHost || "—";
   const lines = [
     `Project: ${project?.name || "None"}`,
     `Profile: ${profile?.label || profile?.serverHost || "Not linked"}`,
     `Status: ${runtime.status || "idle"}${runtime.message ? ` • ${runtime.message}` : ""}`,
+    `Connect target: ${connectTarget}`,
+    `Verify as: ${verifyAs}`,
     `Contacts: ${runtime.lastContactCount || 0}`,
     `Last inbound: ${formatMapTakDebugTimestamp(runtime.lastEventAt)}`,
     `Last outbound: ${formatMapTakDebugTimestamp(runtime.lastOutboundAt || runtime.gpsLastPublishAt)}`,
