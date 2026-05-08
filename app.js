@@ -35932,9 +35932,9 @@ const MILSTD_FRAME_PATHS = {
 
 const MILSTD_EQUIPMENT_FRAME_PATHS = {
   unknown: "images/milstd/Frames/0_101_0.svg",
-  friendly: "images/milstd/Frames/0_301_0.svg",
-  neutral: "images/milstd/Frames/0_401_0.svg",
-  hostile: "images/milstd/Frames/0_601_0.svg",
+  friendly: "images/milstd/Frames/0_315_0.svg",
+  neutral: "images/milstd/Frames/0_410_0.svg",
+  hostile: "images/milstd/Frames/0_610_0.svg",
 };
 
 const MILSTD_ECHELON_PATHS = {
@@ -36039,7 +36039,18 @@ const MILSTD_FALLBACK_TEXT = {
   chaplain: "REL",
 };
 
+function resolveMilstdCotTail(unit) {
+  return getCotTypeTail(unit?.cotType || buildCatalogCotType(normalizeToUnitType(unit?.type), unit?.affiliation || "friendly"));
+}
+
 function resolveMilstdDomain(unit) {
+  const tail = resolveMilstdCotTail(unit);
+  const dimension = tail.split("-").filter(Boolean)[0] || "";
+  if (dimension === "P") return "space";
+  if (dimension === "S") return "sea_surface";
+  if (dimension === "U") return "subsurface";
+  if (dimension === "A") return "air";
+  if (dimension === "G") return "ground";
   const type = normalizeToUnitType(unit?.type);
   if (type === "space") return "space";
   if (["naval_surface", "amphibious", "mine_warfare", "coast_guard"].includes(type)) return "sea_surface";
@@ -36051,13 +36062,19 @@ function resolveMilstdDomain(unit) {
   return "ground";
 }
 
+function resolveMilstdFrameClass(unit) {
+  const tail = resolveMilstdCotTail(unit);
+  if (tail.startsWith("G-E")) return "ground_equipment";
+  return resolveMilstdDomain(unit);
+}
+
 function resolveMilstdFramePath(unit) {
   const affiliation = MILSTD_FRAME_PATHS[unit.affiliation] ? unit.affiliation : "unknown";
-  const tail = getCotTypeTail(unit?.cotType || buildCatalogCotType(normalizeToUnitType(unit?.type), affiliation));
-  if (tail.startsWith("G-E")) {
+  const frameClass = resolveMilstdFrameClass(unit);
+  if (frameClass === "ground_equipment") {
     return MILSTD_EQUIPMENT_FRAME_PATHS[affiliation] || MILSTD_EQUIPMENT_FRAME_PATHS.unknown;
   }
-  return MILSTD_FRAME_PATHS[affiliation][resolveMilstdDomain(unit)] || MILSTD_FRAME_PATHS.unknown.ground;
+  return MILSTD_FRAME_PATHS[affiliation][frameClass] || MILSTD_FRAME_PATHS.unknown.ground;
 }
 
 function resolveMilstdMainPath(unit) {
