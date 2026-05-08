@@ -22515,6 +22515,69 @@ function hideEmittersContextMenu() {
   dom.emittersContextMenu?.classList.add("hidden");
 }
 
+function openEmitterEditorById(assetId) {
+  if (!assetId) return;
+  const asset = state.assets.find((entry) => entry.id === assetId) || null;
+  if (!asset) return;
+  state.editingAssetId = assetId;
+  emitterModal.open(asset);
+}
+
+function openEmitterToUnitPickerById(assetId) {
+  if (!assetId) return;
+  const asset = state.assets.find((entry) => entry.id === assetId) || null;
+  if (!asset) return;
+  _currentEmitterEditId = assetId;
+  if (asset.toUnitId) {
+    updateEmitterToLinkBadge((_toState.units || []).find((unit) => Number(unit.id) === Number(asset.toUnitId)) || null);
+  } else {
+    updateEmitterToLinkBadge(null);
+  }
+  openToPicker({ mode: "emitter-link", commitEmitterId: assetId });
+}
+
+function duplicateEmitterAssetById(assetId) {
+  if (!assetId) return null;
+  const original = state.assets.find((entry) => entry.id === assetId) || null;
+  if (!original) return null;
+  const layout = ensureEmitterWorkspaceLayout(original);
+  const dupe = stampContentRecord({
+    ...JSON.parse(JSON.stringify(original)),
+    id: generateId(),
+    name: `${original.name || "Emitter"} (copy)`,
+    workspaceLayout: { x: layout.x + 40, y: layout.y + 40 },
+  });
+  ensureTakMetadataForAsset(dupe);
+  state.assets.push(dupe);
+  _emittersWorkspaceState.selectedAssetId = dupe.id;
+  renderAssets();
+  renderTopologyView();
+  saveMapState();
+  setStatus(`Duplicated ${original.name || "Emitter"}.`);
+  return dupe;
+}
+
+function deleteEmitterAssetById(assetId) {
+  if (!assetId) return false;
+  const asset = state.assets.find((entry) => entry.id === assetId) || null;
+  if (!asset) return false;
+  const name = asset.name || "Emitter";
+  state.assets = state.assets.filter((entry) => entry.id !== assetId);
+  const marker = state.assetMarkers.get(assetId);
+  if (marker) {
+    marker.remove();
+    state.assetMarkers.delete(assetId);
+  }
+  if (_emittersWorkspaceState.selectedAssetId === assetId) {
+    _emittersWorkspaceState.selectedAssetId = "";
+  }
+  renderAssets();
+  renderTopologyView();
+  saveMapState();
+  setStatus(`Deleted ${name}.`);
+  return true;
+}
+
 function showEmittersContextMenu(assetId, x, y) {
   if (!dom.emittersContextMenu) {
     return;
@@ -22869,14 +22932,7 @@ function initEmittersViewIfNeeded() {
     const assetId = _emittersWorkspaceState.contextAssetId;
     hideEmittersContextMenu();
     if (!assetId) return;
-    _currentEmitterEditId = assetId;
-    const asset = state.assets.find((entry) => entry.id === assetId) || null;
-    if (asset?.toUnitId) {
-      updateEmitterToLinkBadge((_toState.units || []).find((unit) => Number(unit.id) === Number(asset.toUnitId)) || null);
-    } else {
-      updateEmitterToLinkBadge(null);
-    }
-    openToPicker({ mode: "emitter-link", commitEmitterId: assetId });
+    openEmitterToUnitPickerById(assetId);
   });
   dom.emittersCtxShowMap?.addEventListener("click", () => {
     const assetId = _emittersWorkspaceState.contextAssetId;
@@ -22894,48 +22950,21 @@ function initEmittersViewIfNeeded() {
     const assetId = _emittersWorkspaceState.contextAssetId;
     hideEmittersContextMenu();
     if (!assetId) return;
-    state.editingAssetId = assetId;
-    emitterModal.open(state.assets.find((entry) => entry.id === assetId) || null);
+    openEmitterEditorById(assetId);
   });
 
   dom.emittersCtxDuplicate?.addEventListener("click", () => {
     const assetId = _emittersWorkspaceState.contextAssetId;
     hideEmittersContextMenu();
     if (!assetId) return;
-    const original = state.assets.find((entry) => entry.id === assetId);
-    if (!original) return;
-    const layout = ensureEmitterWorkspaceLayout(original);
-    const dupe = stampContentRecord({
-      ...JSON.parse(JSON.stringify(original)),
-      id: generateId(),
-      name: `${original.name || "Emitter"} (copy)`,
-      workspaceLayout: { x: layout.x + 40, y: layout.y + 40 },
-    });
-    ensureTakMetadataForAsset(dupe);
-    state.assets.push(dupe);
-    _emittersWorkspaceState.selectedAssetId = dupe.id;
-    renderAssets();
-    renderTopologyView();
-    saveMapState();
-    setStatus(`Duplicated ${original.name || "Emitter"}.`);
+    duplicateEmitterAssetById(assetId);
   });
 
   dom.emittersCtxDelete?.addEventListener("click", () => {
     const assetId = _emittersWorkspaceState.contextAssetId;
     hideEmittersContextMenu();
     if (!assetId) return;
-    const asset = state.assets.find((entry) => entry.id === assetId);
-    const name = asset?.name || "Emitter";
-    state.assets = state.assets.filter((entry) => entry.id !== assetId);
-    const marker = state.assetMarkers.get(assetId);
-    if (marker) { marker.remove(); state.assetMarkers.delete(assetId); }
-    if (_emittersWorkspaceState.selectedAssetId === assetId) {
-      _emittersWorkspaceState.selectedAssetId = "";
-    }
-    renderAssets();
-    renderTopologyView();
-    saveMapState();
-    setStatus(`Deleted ${name}.`);
+    deleteEmitterAssetById(assetId);
   });
 
   dom.emittersNetModalCloseBtn?.addEventListener("click", closeEmittersNetModal);
@@ -27674,6 +27703,8 @@ function openMapContentsMenu(event, contentId) {
   state.activeMapContentMenuId = contentId;
   const isFolder = contentId.startsWith("folder:");
   const isTakLive = contentId.startsWith("taklive:");
+  const isAsset = contentId.startsWith("asset:");
+  const isTactical = contentId.startsWith("tactical:");
   const editButton = dom.mapContentsMenu.querySelector('[data-map-content-action="edit"]');
   if (editButton) {
     editButton.classList.toggle("hidden", isFolder || isTakLive);
@@ -27684,11 +27715,16 @@ function openMapContentsMenu(event, contentId) {
   }
   const simulateButton = dom.mapContentsMenu.querySelector('[data-map-content-action="simulate"]');
   if (simulateButton) {
-    simulateButton.classList.toggle("hidden", !contentId.startsWith("asset:"));
+    simulateButton.classList.toggle("hidden", !isAsset);
   }
   const relocateButton = dom.mapContentsMenu.querySelector('[data-map-content-action="relocate"]');
   if (relocateButton) {
-    relocateButton.classList.toggle("hidden", !contentId.startsWith("asset:"));
+    let canRelocate = isAsset;
+    if (isTactical) {
+      const object = getTacticalObjectById(contentId.slice("tactical:".length));
+      canRelocate = Boolean(object && object.geometryType === "Point" && !object.readOnly);
+    }
+    relocateButton.classList.toggle("hidden", !canRelocate);
   }
   const takStreamButton = dom.mapContentsMenu.querySelector('[data-map-content-action="toggle-tak-stream"]');
   if (takStreamButton) {
@@ -27782,7 +27818,13 @@ function onMapContentsMenuAction(event) {
   }
 
   if (action === "relocate") {
-    startAssetRelocation(contentId);
+    if (contentId.startsWith("asset:")) {
+      startAssetRelocation(contentId);
+      return;
+    }
+    if (contentId.startsWith("tactical:")) {
+      startTacticalRelocation(contentId.slice("tactical:".length));
+    }
     return;
   }
 
@@ -36819,9 +36861,18 @@ async function renderTopologyView(options = {}) {
   // Build unitId â†’ [asset, asset, â€¦] (all emitters linked to that TO unit)
   // Falls back to name-based matching if toUnitId is not explicitly set.
   const unitEmittersMap = new Map(); // unitId â†’ asset[]
+  function sortEmittersByFrequency(items = []) {
+    return items.slice().sort((a, b) => {
+      const freqDelta = (Number(a?.frequencyMHz) || 0) - (Number(b?.frequencyMHz) || 0);
+      if (freqDelta !== 0) return freqDelta;
+      const nameA = String(a?.emitterLabel || a?.name || "");
+      const nameB = String(b?.emitterLabel || b?.name || "");
+      return nameA.localeCompare(nameB);
+    });
+  }
   const resolvedEmitterRecords = [];
   for (const a of allEmitters) {
-    let uid = a.toUnitId;
+    let uid = Number.isFinite(Number(a?.toUnitId)) ? Number(a.toUnitId) : null;
     if (!uid) {
       // Try matching emitter name to a TO unit label
       const nameKey = (a.name || "").trim().toUpperCase();
@@ -36903,7 +36954,7 @@ async function renderTopologyView(options = {}) {
           kind: "unit",
           unit: u,
           label: u.label || u.designator || "Unit",
-          emitters: (unitEmittersMap.get(u.id) || []).slice().sort((a, b) => (a.frequencyMHz || 0) - (b.frequencyMHz || 0)),
+          emitters: sortEmittersByFrequency(unitEmittersMap.get(u.id) || []),
         })),
         ...standaloneEmitterEntries,
       ];
@@ -37123,7 +37174,7 @@ async function renderTopologyView(options = {}) {
             else bucket = `${wfA || "freq"}@${buildEmitterChannelBucket(emA)}`;
           }
           if (!bucket) continue;
-          const pairKey = `${nodeA.key}|${nodeB.key}|${bucket}`;
+          const pairKey = `${nodeA.key}|${nodeB.key}|${emA.id || emA.name || "emA"}|${emB.id || emB.name || "emB"}|${bucket}`;
           if (globalSeen.has(pairKey)) continue;
           globalSeen.add(pairKey);
           candidatePairs.push({ a: nodeA, b: nodeB, emA, emB, pairKey });
@@ -37203,7 +37254,7 @@ async function renderTopologyView(options = {}) {
     // List each emitter sorted lowestâ†’highest freq: emitter label + waveform, then frequency
     const emitterListHtml = entry.emitters.map(em => {
       const radioName = em.emitterLabel || em.name || "Emitter";
-      const wf = em.ext?.waveform || "";
+      const wf = em.waveform || em.ext?.waveform || "";
       const freq = `${(em.frequencyMHz || 0).toFixed(3)} MHz`;
       const title = wf ? `${radioName} â€” ${wf}` : radioName;
       return `<div class="topo-em-row">
@@ -37255,6 +37306,7 @@ function wireTopoNodeContextMenu() {
   const radioEditBtn = document.getElementById("topoRadioEditBtn");
   const radioAddNetBtn = document.getElementById("topoRadioAddNetBtn");
   const radioConfigureNetBtn = document.getElementById("topoRadioConfigureNetBtn");
+  const radioDuplicateBtn = document.getElementById("topoRadioDuplicateBtn");
   const radioLinkBtn = document.getElementById("topoRadioLinkBtn");
   const radioDeleteBtn = document.getElementById("topoRadioDeleteBtn");
   const radioLinkPanel = document.getElementById("topoRadioLinkPanel");
@@ -37328,7 +37380,7 @@ function wireTopoNodeContextMenu() {
     const label = _activeAsset.emitterLabel || _activeAsset.name || "Radio";
     const wf    = _activeAsset.ext?.waveform || "";
       radioTitle.textContent = wf ? `${label} â€” ${wf}` : label;
-      radioLinkBtn.disabled = !_activeUnitId;
+      radioLinkBtn.disabled = false;
 
     // Position popup near center of screen
     radioPopup.style.left = "50%";
@@ -37344,9 +37396,8 @@ function wireTopoNodeContextMenu() {
   radioEditBtn.addEventListener("click", () => {
     if (!_activeAsset) return;
     hideAll();
-    state.editingAssetId = _activeAsset.id;
     setAssetPlacementMode(false);
-    emitterModal.open(_activeAsset);
+    openEmitterEditorById(_activeAsset.id);
     refreshActionButtons();
     setStatus(`Editing ${_activeAsset.name}.`);
   }, { signal: sig });
@@ -37365,19 +37416,28 @@ function wireTopoNodeContextMenu() {
     openEmittersNetModal(_activeAsset.id, firstNet?.id || "", { createNew: !firstNet });
   }, { signal: sig });
 
+  radioDuplicateBtn?.addEventListener("click", () => {
+    if (!_activeAsset) return;
+    const assetId = _activeAsset.id;
+    hideAll();
+    duplicateEmitterAssetById(assetId);
+  }, { signal: sig });
+
   radioDeleteBtn?.addEventListener("click", () => {
     if (!_activeAsset) return;
     const assetId = _activeAsset.id;
     const assetName = _activeAsset.name || _activeAsset.emitterLabel || "this emitter";
     if (!window.confirm(`Delete ${assetName}?`)) return;
     hideAll();
-    deleteMapContent(`asset:${assetId}`);
+    deleteEmitterAssetById(assetId);
   }, { signal: sig });
 
   radioLinkBtn.addEventListener("click", () => {
-    if (!_activeAsset || !_activeUnitId) return;
-    radioLinkPanel.classList.remove("hidden");
-    radioLinkList.innerHTML = "";
+    if (!_activeAsset) return;
+    const assetId = _activeAsset.id;
+    hideAll();
+    openEmitterToUnitPickerById(assetId);
+    return;
 
     // Collect all units in same TO hierarchy tree
     function getAncestors(uid) {
@@ -38296,7 +38356,7 @@ function renderMapTakDebugPanel() {
   syncMapTakDebugPanelState();
 }
 
-let _topoDebugCollapsed = false;
+let _topoDebugCollapsed = true;
 let _topoDebugSize = { width: 320, height: 220 };
 let _topoDebugResize = null;
 
