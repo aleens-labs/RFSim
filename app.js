@@ -22099,6 +22099,7 @@ function addAssetToWorkspace(formData) {
   state.assets.push(asset);
   _emittersWorkspaceState.selectedAssetId = asset.id;
   renderAssets();
+  renderTopologyView();
   centerEmittersWorkspaceOnAssets({ assetId: asset.id });
   saveMapState();
 }
@@ -22914,6 +22915,7 @@ function initEmittersViewIfNeeded() {
     state.assets.push(dupe);
     _emittersWorkspaceState.selectedAssetId = dupe.id;
     renderAssets();
+    renderTopologyView();
     saveMapState();
     setStatus(`Duplicated ${original.name || "Emitter"}.`);
   });
@@ -22931,6 +22933,7 @@ function initEmittersViewIfNeeded() {
       _emittersWorkspaceState.selectedAssetId = "";
     }
     renderAssets();
+    renderTopologyView();
     saveMapState();
     setStatus(`Deleted ${name}.`);
   });
