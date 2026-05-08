@@ -37325,6 +37325,22 @@ function wireTopoNodeContextMenu() {
     _activeUnitId = null;
   }
 
+  function openRadioActionPopupForAsset(asset, unitId = null) {
+    if (!asset) return;
+    _activeAsset = asset;
+    _activeUnitId = unitId;
+    ctxMenu.classList.add("hidden");
+    radioLinkPanel.classList.add("hidden");
+    const label = _activeAsset.emitterLabel || _activeAsset.name || "Radio";
+    const wf = _activeAsset.waveform || _activeAsset.ext?.waveform || "";
+    radioTitle.textContent = wf ? `${label} â€” ${wf}` : label;
+    radioLinkBtn.disabled = false;
+    radioPopup.style.left = "50%";
+    radioPopup.style.top = "50%";
+    radioPopup.style.transform = "translate(-50%, -50%)";
+    radioPopup.classList.remove("hidden");
+  }
+
   // Right-click on a topo node card
   document.getElementById("topoCanvas").addEventListener("contextmenu", (e) => {
     const nodeEl = e.target.closest(".topo-node");
@@ -37337,6 +37353,11 @@ function wireTopoNodeContextMenu() {
     if (!meta?.emitters?.length) return;
     _activeUnitId = meta.unitId;
     const emitters = meta.emitters.slice();
+
+    if (emitters.length === 1) {
+      openRadioActionPopupForAsset(emitters[0], meta.unitId);
+      return;
+    }
 
     ctxTitle.textContent = meta.label || "Unit Radios";
     ctxList.innerHTML = emitters.map((em, i) => {
@@ -37371,8 +37392,10 @@ function wireTopoNodeContextMenu() {
     const item = e.target.closest(".topo-node-ctx-item");
     if (!item) return;
     const idx = parseInt(item.dataset.idx, 10);
-    _activeAsset = ctxList._emitters?.[idx];
-    if (!_activeAsset) return;
+    const asset = ctxList._emitters?.[idx];
+    if (!asset) return;
+    openRadioActionPopupForAsset(asset, _activeUnitId);
+    return;
 
     ctxMenu.classList.add("hidden");
     radioLinkPanel.classList.add("hidden");
