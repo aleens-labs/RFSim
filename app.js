@@ -6140,33 +6140,78 @@ function saveTacticalEditor() {
 // â”€â”€ Tactical palette wizard state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const TPAL_AFFIL_COT = { friendly: "f", hostile: "h", neutral: "n", unknown: "u" };
 const _tpalState = { step: 1, affiliation: null, domain: null, selection: null, category: null, search: "" };
+const TACTICAL_PALETTE_DOMAIN_ORDER = ["ground", "air", "sea_surface", "subsurface", "space"];
+const TACTICAL_PALETTE_DOMAIN_LABELS = {
+  ground: "Land",
+  air: "Air",
+  sea_surface: "Sea Surface",
+  subsurface: "Sea Subsurface",
+  space: "Space",
+};
 
 function getTpalFamilyChoices() {
-  return getMilstdPaletteFamilies().map((entry) => ({
-    id: entry.key,
-    label: entry.label,
-    domain: entry.domain,
-    count: entry.count,
-    preview: MILSTD_SYMBOL_CATALOG.find((symbol) => symbol.familyKey === entry.key) || null,
-  }));
+  const grouped = TACTICAL_UNIT_CATALOG.reduce((map, entry) => {
+    const domain = normalizeTacticalDomain(entry?.domain || "ground");
+    if (!map.has(domain)) {
+      map.set(domain, {
+        id: domain,
+        label: TACTICAL_PALETTE_DOMAIN_LABELS[domain] || formatToUnitLabelPart(domain),
+        domain,
+        count: 0,
+        preview: entry,
+      });
+    }
+    const bucket = map.get(domain);
+    bucket.count += 1;
+    if (!bucket.preview) bucket.preview = entry;
+    return map;
+  }, new Map());
+
+  return [...grouped.values()].sort((a, b) => {
+    const ai = TACTICAL_PALETTE_DOMAIN_ORDER.indexOf(a.domain);
+    const bi = TACTICAL_PALETTE_DOMAIN_ORDER.indexOf(b.domain);
+    return (ai >= 0 ? ai : 999) - (bi >= 0 ? bi : 999) || a.label.localeCompare(b.label);
+  });
+}
+
+function getTpalCategories(selectionId = "") {
+  const domain = normalizeTacticalDomain(selectionId || "ground");
+  const grouped = TACTICAL_UNIT_CATALOG
+    .filter((entry) => normalizeTacticalDomain(entry?.domain || "ground") === domain)
+    .reduce((map, entry) => {
+      const key = `${domain}::${entry.group}`;
+      const bucket = map.get(key) || {
+        id: key,
+        label: entry.group,
+        domain,
+        preview: entry,
+        entries: [],
+      };
+      bucket.entries.push(entry);
+      map.set(key, bucket);
+      return map;
+    }, new Map());
+  return [...grouped.values()].sort((a, b) => a.label.localeCompare(b.label));
 }
 
 function getTpalSymbolsForCategory(categoryId = "") {
-  const [familyKey, categoryLabel] = String(categoryId || "").split("::");
+  const [domain, groupLabel] = String(categoryId || "").split("::");
   const search = String(_tpalState.search || "").trim().toLowerCase();
-  return MILSTD_SYMBOL_CATALOG
-    .filter((entry) => (!familyKey || entry.familyKey === familyKey) && (!categoryLabel || entry.category === categoryLabel))
-    .filter((entry) => !search || entry.searchText.includes(search));
+  return TACTICAL_UNIT_CATALOG
+    .filter((entry) => (!domain || normalizeTacticalDomain(entry?.domain || "ground") === domain) && (!groupLabel || entry.group === groupLabel))
+    .filter((entry) => !search || `${entry.label} ${entry.group} ${entry.cotTail}`.toLowerCase().includes(search));
 }
 
 function buildTpalPreviewUnit({ entry = null, affiliation = "friendly", size = "" } = {}) {
-  const detail = buildMilstdDetail({}, entry, affiliation, size);
+  const catalogId = normalizeToUnitType(entry?.id || entry?.catalogId || entry?.type || deriveTacticalUnitTypeFromDomain(entry?.domain || "ground"));
+  const previewSize = entry?.echelonAllowed === false ? "" : size;
   return normalizeToUnit({
     affiliation,
-    type: deriveTacticalUnitTypeFromDomain(entry?.domain || "ground"),
-    size,
-    sidc: detail.milsymId || "",
-    detail,
+    type: catalogId,
+    catalogId,
+    size: previewSize,
+    sidc: "",
+    detail: {},
     frameOnly: false,
   });
 }
@@ -6180,7 +6225,9 @@ function renderTpalSymbol(entry, options = {}) {
   const previewUnit = buildTpalPreviewUnit({
     entry: entry?.preview || entry,
     affiliation: options.affiliation || "friendly",
-    size: typeof entry?.size === "string" ? entry.size : "",
+    size: typeof entry?.size === "string"
+      ? entry.size
+      : ((entry?.preview || entry)?.domain === "ground" && (entry?.preview || entry)?.echelonAllowed !== false ? "team" : ""),
   });
   return renderToUnitIcon(previewUnit);
 }
@@ -6224,7 +6271,7 @@ function _tpalRenderCategories(selectionId) {
   if (!dom.tpalCategoryList) return;
   const aff = _tpalState.affiliation || "friendly";
   const selectedTrack = getTpalFamilyChoices().find((entry) => entry.id === selectionId);
-  const cats = getMilstdPaletteCategories(selectionId);
+  const cats = getTpalCategories(selectionId);
   const header = selectedTrack ? `<div class="tpal-category-heading">${escapeHtml(selectedTrack.label)}</div>` : "";
   dom.tpalCategoryList.innerHTML = `${header}${cats.map((c) => `
     <button class="tpal-cat-btn" type="button" data-cat="${c.id}">
@@ -6246,11 +6293,13 @@ function _tpalRenderTypes(catId) {
   const types = getTpalSymbolsForCategory(catId);
   const aff = _tpalState.affiliation || "friendly";
   dom.tpalTypeGrid.innerHTML = types.map((t) => {
+    const defaultSize = t.domain === "ground" && t.echelonAllowed !== false ? "team" : "";
     return `<button class="tpal-type-btn" type="button"
-      data-symbol-id="${escapeHtml(t.id)}"
+      data-catalog-id="${escapeHtml(t.id)}"
       data-name="${escapeHtml(t.label)}"
       data-domain="${escapeHtml(t.domain || _tpalState.domain || "ground")}"
-      data-object-class="${escapeHtml(t.objectClass || "unit")}"
+      data-object-class="unit"
+      data-size="${escapeHtml(defaultSize)}"
       data-geometry-type="Point">
       <span class="tpal-type-symbol">${renderTpalSymbol(t, { affiliation: aff, domain: _tpalState.domain })}</span>
       <span>${escapeHtml(t.label)}</span>
@@ -9529,22 +9578,22 @@ function wireEvents() {
   dom.tpalTypeGrid?.addEventListener("click", (event) => {
     const typeBtn = event.target.closest(".tpal-type-btn");
     if (!typeBtn) return;
-    const entry = getMilstdSymbolCatalogEntry(typeBtn.dataset.symbolId || "");
+    const entry = getDoctrinalCatalogEntryById(typeBtn.dataset.catalogId || "");
     if (!entry) return;
     const aff = _tpalState.affiliation || "friendly";
-    const size = entry.objectClass === "unit" && entry.familyKey === "land" ? "team" : "";
-    const detail = buildMilstdDetail({}, entry, aff, size);
+    const size = typeBtn.dataset.size || "";
     beginTacticalPlacement({
       id: generateId(),
       name: getTacticalPaletteCustomName(entry.label || typeBtn.dataset.name || "Tactical Item"),
-      objectClass: entry.objectClass || typeBtn.dataset.objectClass || "unit",
+      objectClass: typeBtn.dataset.objectClass || "unit",
       domain: entry.domain || typeBtn.dataset.domain || _tpalState.domain || "ground",
-      unitType: deriveTacticalUnitTypeFromDomain(entry.domain || typeBtn.dataset.domain || "ground"),
+      unitType: entry.id,
+      catalogId: entry.id,
       size,
       affiliation: aff,
-      cotType: getMilstdSymbolDefaultCotType(entry, aff),
-      sidc: detail.milsymId || "",
-      detail,
+      cotType: buildCatalogCotType(entry.id, aff) || buildDefaultCotTypeForTacticalObject("unit", aff, entry.domain || "ground"),
+      sidc: "",
+      detail: {},
       geometryType: typeBtn.dataset.geometryType || "Point",
       drawMode: "",
       shapeKind: "",
