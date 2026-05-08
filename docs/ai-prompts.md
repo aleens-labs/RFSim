@@ -18,7 +18,8 @@ The strongest prompts usually include seven things:
 
 Inside the app, do this before sending a complex prompt:
 
-- Place the relevant assets or import the area geometry first.
+- Build the T/O and configure emitters in EMITTERS before sending complex prompts.
+- Place the relevant assets or import the area geometry in MAP first.
 - Use **Add Current Map View** when terrain, urban clutter, or geometry matters.
 - Use **Add Map Context** to attach the exact map items, routes, or polygons you want the model to reason about.
 - Mention the specific radio family, waveform, and power constraints instead of saying only "radios."
@@ -153,4 +154,4 @@ Then ask the AI to interpret, compare, and document the study outputs.
 
 ## Extended Prompt Library
 
-For a larger raw corpus of scenario prompts, see [../rf_plfanning_prompts.md](../rf_plfanning_prompts.md).
+For a larger raw corpus of scenario prompts, see the extended RF planning prompt library in the repository root if available.

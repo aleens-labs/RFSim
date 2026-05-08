@@ -20,7 +20,3 @@ This directory is the documentation hub for RF SIM. The root [README](../README.
 - [Deterministic Geometry / AI Upgrade Notes](feature-upgrade-deterministic-geometry-ai.md)  
   Design notes for ongoing work around deterministic geometry and AI-assisted drawing workflows.
 
-## Additional Reference Material
-
-- [Extended RF prompt library](../rf_plfanning_prompts.md)  
-  Large prompt corpus used as source material for the curated AI prompt guide.

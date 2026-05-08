@@ -12956,42 +12956,42 @@ const SETTINGS_DOCUMENTATION_MD = `
 
 ## Purpose and workflow
 
-RF SIM is organized around a deliberate operational flow:
+RF SIM is organized around four views selected from the top navigation bar:
 
-1. **T/O VIEW** is where you build the Table of Organization, define command relationships, and link emitters to units.
-2. **MAP VIEW** is where you place assets, import terrain and overlays, edit emitters, and inspect the physical battlespace.
-3. **TOPOLOGY** is where RF-capable assets are grouped into unit cards or shown as individual emitters so you can inspect link relationships.
-4. **ANALYZE** is where terrain, geometry, weather, and emitter parameters are combined into RF study outputs.
+1. **T/O** is where you build the Table of Organization, define command relationships, and assign unit symbols and hierarchy.
+2. **EMITTERS** is a dedicated workspace for creating, organizing, and configuring RF emitter cards — independent of map placement.
+3. **MAP** is where you place emitters on terrain, import overlays, and inspect the physical battlespace.
+4. **ANALYZE** turns terrain, geometry, emitter settings, and environment into RF findings. The **Topology** sub-view inside ANALYZE lets you inspect link structure and connection quality between emitters or units.
 
 If you use the site in that order, the rest of the workflow becomes much easier to reason about.
 
 ## Core concepts
 
-### Unit cards versus emitters
+### Units and emitters
 
-- A **unit** is an organizational object in the Table of Organization.
-- An **emitter** is an RF asset with technical parameters such as frequency, waveform, power, antenna, and location.
+- A **unit** is an organizational node in the Table of Organization — it has a label, symbol, size, and command relationships.
+- An **emitter** is an RF asset with technical parameters: frequency, waveform, power, antenna, and optionally a map location.
 - A unit can have zero, one, or multiple emitters linked to it.
-- In topology mode, RF SIM can either:
-  - show a **single unit card** that groups all emitters linked to that unit, or
-  - show **individual emitters** as separate nodes.
+- Emitters can live in the **EMITTERS workspace** without a map location, or be placed on the **MAP** for geographic analysis.
+- In Topology, RF SIM can show either:
+  - a **unit card** grouping all emitters linked to that unit, or
+  - **individual emitter nodes** for per-link inspection.
 
-### Why the TO matters
+### Why the T/O matters
 
-- The TO is not just visual organization.
-- It controls how units are grouped on cards in topology.
+- The T/O controls how units are grouped on Topology cards.
 - It gives the AI and analysis workflows structure for command relationships and network reasoning.
-- It helps you explain why one unit can or cannot communicate with another by tying emitters to a hierarchy.
+- It lets you explain why one unit can or cannot communicate with another by tying emitters to a hierarchy.
 
 ---
 
-## T/O VIEW
+## T/O
 
-## What T/O VIEW is for
+## What T/O is for
 
-T/O VIEW is where you define force structure before you worry about the exact map placement of every RF asset.
+T/O is where you define force structure before worrying about map placement or RF parameters.
 
-Use T/O VIEW to:
+Use T/O to:
 
 - create units
 - assign unit type, size, and label
@@ -12999,7 +12999,7 @@ Use T/O VIEW to:
 - auto-layout the formation tree
 - link emitters to the correct units
 
-## Recommended sequence in T/O VIEW
+## Recommended sequence in T/O
 
 ### 1. Build the hierarchy first
 
@@ -13033,11 +13033,11 @@ The TO should answer:
 - Manual drag is useful for cleanup, but Auto Layout should be your baseline reset after major changes.
 - If the tree becomes messy after many link changes, run Auto Layout again before moving on.
 
-## Linking emitters to TO units
+## Linking emitters to T/O units
 
-- Emitters created elsewhere in the site can be linked back to units in the TO.
-- This is what allows topology to group multiple radios onto one unit card.
-- If a unit has multiple linked emitters, topology will show them as stacked emitter rows under the unit identity.
+- Emitters can be linked to T/O units from the EMITTERS workspace right-click menu (**Link to T/O Unit**) or from the emitter edit modal.
+- This is what allows Topology to group multiple radios onto one unit card.
+- If a unit has multiple linked emitters, Topology will show them as stacked emitter rows under the unit identity.
 
 Best practice:
 
@@ -13046,13 +13046,71 @@ Best practice:
 
 ---
 
-## MAP VIEW
+## EMITTERS
 
-## What MAP VIEW is for
+## What EMITTERS is for
 
-MAP VIEW is the geographic workspace. This is where you place, import, edit, and inspect spatial data.
+EMITTERS is a dedicated workspace for creating, organizing, and configuring RF emitter cards — independent of map placement.
 
-Use MAP VIEW to:
+Use EMITTERS to:
+
+- create new emitter cards for each radio in the scenario
+- configure waveform, frequency, power, antenna, and net assignments
+- organize emitters visually before placing them on the map
+- review device graphics and net structure at a glance
+- duplicate, edit, delete, or relink emitters without leaving the workspace
+
+Emitters added from this view are **workspace-only** until you explicitly place them on the map from MAP. They appear in Topology and can participate in link analysis even without a map location, but will show as **Not On Map** in the link quality legend.
+
+## Emitter cards
+
+Each emitter card in the workspace shows:
+
+- the device graphic for the selected radio model
+- the emitter name and label
+- configured nets and frequencies
+- the linked T/O unit (if assigned)
+- map visibility status
+
+## Right-click context menu
+
+Right-clicking an emitter card opens a context menu with:
+
+- **Edit** — opens the emitter configuration modal
+- **Add Net** — adds a new net to this emitter
+- **Configure Nets** — opens net configuration for this emitter
+- **Duplicate** — creates a copy of the emitter card in the workspace
+- **Link to T/O Unit** — assigns the emitter to a unit in the Table of Organization
+- **Show on Map** — pans the map to this emitter’s location (only available if the emitter has been placed on the map)
+- **Delete** — removes the emitter from the workspace and map
+
+## Adding an emitter from EMITTERS
+
+1. Click **+ Add Emitter** in the EMITTERS toolbar.
+2. Configure the radio model, waveform, frequency, and nets.
+3. Click **Add to Workspace** to drop a card into the workspace without creating a map marker.
+4. Right-click the card later to edit, duplicate, or place it on the map.
+
+## Waveform matching
+
+Two emitters will only draw a topology link if they share **both** the same waveform and the same frequency channel. Supported waveforms include:
+
+- **MIMO** — default for Silvus SC4200 and SC4400
+- **Wave Relay** — default for Persistent Systems MPU-5
+- **TSM-X** — default for Trellisware TW-950
+- SINCGARS, P25, DMR, and others
+
+If two radios are on the same frequency but different waveforms, no link will be drawn.
+
+---
+
+## MAP
+
+## What MAP is for
+
+MAP is the geographic workspace. This is where you place, import, edit, and inspect spatial data.
+
+Use MAP to:
 
 - place emitters on terrain
 - import operational overlays
@@ -13061,7 +13119,7 @@ Use MAP VIEW to:
 - inspect coordinate positions
 - edit tactical graphics and measurement geometry
 
-## Data sources used by the site
+## Data sources
 
 ### Basemap and imagery
 
@@ -13079,161 +13137,50 @@ RF SIM uses terrain from one or both of these sources:
 - **local DTED / terrain files** that you load into the app
 - **Cesium terrain services** when configured and enabled
 
-Operationally, local terrain is useful for deterministic work in a specific AO, while Cesium terrain is useful for quick broader-area setup.
+Local terrain is preferred for deterministic work in a specific AO. Cesium terrain is useful for quick broader-area setup.
 
-### Imported operational overlays
+### Imported overlays
 
-RF SIM supports imported geospatial content such as:
+RF SIM supports:
 
-- KML
-- KMZ
+- KML / KMZ
 - GeoJSON
+- ATAK data package ZIP
 - tactical shapes drawn directly in the map
-
-These overlays are used for context, planning boundaries, named features, operational routes, terrain references, and area studies.
 
 ## How to import KML, KMZ, and GeoJSON
 
-Use imported overlays when you already have planning products or geospatial context outside the app.
-
 Recommended use cases:
 
-- phase lines
-- routes
-- boundaries
-- operating areas
-- named landmarks
+- phase lines, routes, boundaries
+- operating areas and named landmarks
 - infrastructure overlays
 - prior ISR or terrain products
 
-Guidance:
-
-- Use KML/KMZ when the source product already exists in common geospatial planning tools.
-- Use GeoJSON when you want a cleaner modern feature format for points, lines, and polygons.
-- After import, confirm the geometry loaded into the correct location and naming is readable.
+After import, confirm the geometry loaded into the correct location and that naming is readable.
 
 ## How to load DTED and local terrain
 
-Load DTED or other supported terrain sources when:
+Load local terrain when:
 
-- you need a more authoritative terrain surface than the default globe source
-- you want local analysis over a mission area
+- you need an authoritative terrain surface for the AO
 - line-of-sight, masking, and relief are central to the problem
 
-Best practice:
+Best practice: load terrain before running propagation studies, verify full AO coverage, and re-run analysis after new terrain is loaded.
 
-1. Load local terrain before running high-confidence propagation studies.
-2. Verify that the AO is fully covered by the local terrain files.
-3. Re-run analysis after new terrain is loaded, because coverage and LOS results can change materially.
+## Working with emitters in MAP
 
-## Working with emitters in MAP VIEW
+Each emitter should be configured with realistic technical data. Key fields that affect analysis:
 
-Each emitter should be configured with realistic technical data whenever possible. Key fields affect analysis directly:
-
-- frequency
-- waveform
+- frequency and waveform
 - radio model
-- power
-- antenna gain and pattern
-- cable/system losses
+- power, antenna gain and pattern, cable/system losses
 - height or placement
-- relay capability
-- SATCOM capability
-
-### Good emitter editing workflow
-
-1. Create the emitter.
-2. Place it geographically.
-3. Set identity and radio model.
-4. Set RF characteristics.
-5. Set antenna parameters.
-6. Set network/relay behavior.
-7. Link it to the correct TO unit.
+- relay and SATCOM capability
 
 ### Why exact placement matters
 
-Small terrain changes can alter:
-
-- line of sight
-- terrain masking
-- obstruction clearance
-- relay utility
-- intervisibility between maneuver elements
-
-If an emitter represents a retransmission site, command post, vehicle, or observation node, place it where that asset would really operate.
-
----
-
-## TOPOLOGY
-
-## What TOPOLOGY is for
-
-TOPOLOGY is the network relationship view. It gives you a clean way to see who can talk, why, and how radios are grouped.
-
-## Unit Cards mode
-
-In Unit Cards mode:
-
-- each TO-linked unit appears as a single card
-- all emitters linked to that unit are grouped on the card
-- link lines connect between unit cards
-
-This mode is best for:
-
-- command-network review
-- organizational RF understanding
-- identifying which unit holds which RF capability
-- reviewing multi-radio units
-
-## Emitters mode
-
-In Emitters mode:
-
-- each emitter is shown separately
-- links are evaluated between individual devices
-- this is useful when the user wants equipment-level detail rather than unit-level grouping
-
-## How RF SIM builds topology connections
-
-RF SIM evaluates candidate relationships between visible RF emitters. In practical terms, the topology system looks at things such as:
-
-- frequency compatibility
-- waveform compatibility
-- model similarity
-- SATCOM versus non-SATCOM behavior
-- link-quality assessment results
-
-The app then builds link descriptors and renders them between cards or emitters.
-
-## How assets are grouped on a unit card
-
-An emitter is grouped onto a unit card when its \`toUnitId\` points at a TO unit.
-
-That means:
-
-- if three radios are linked to the same unit, that unit card can show three emitter rows
-- if a radio is not linked to any unit, it can appear as a standalone emitter node
-- if the user switches display mode, the same underlying RF assets are shown through a different organizational lens
-
-## How to read topology correctly
-
-Do not treat topology as just a pretty diagram. It is a summary of RF structure.
-
-Use it to answer:
-
-- which units have redundant radios
-- which links are terrain-limited
-- which units are acting as relay hubs
-- whether a command element depends on a single fragile connection
-- whether a standalone emitter should actually be assigned to a unit
-
-## Best practices in TOPOLOGY
-
-- Use **Unit Cards** when briefing or checking organization-level network design.
-- Use **Emitters** when debugging a specific radio or waveform issue.
-- Drag cards only for local readability.
-- Use **Auto Layout** to reset back to a clean default arrangement.
-- Use **Fit View** after major changes or after switching between display modes.
+Small terrain changes can alter line of sight, masking, obstruction clearance, relay utility, and intervisibility between maneuver elements. Place emitters where the asset would really operate.
 
 ---
 
@@ -13241,52 +13188,70 @@ Use it to answer:
 
 ## What ANALYZE is for
 
-ANALYZE is where the site turns terrain, geometry, emitter settings, and environment into RF conclusions.
+ANALYZE turns terrain, geometry, emitter settings, and environment into RF conclusions.
 
-Typical uses include:
+Typical uses:
 
 - propagation review
 - LOS and masking checks
-- network quality review
 - coverage comparison
-- relay planning
-- command-post siting
+- relay and command-post siting
 - risk and vulnerability analysis
 
-## RF propagation and simulation workflow
+### Topology (inside ANALYZE)
 
-The quality of analysis depends on the quality of inputs. A good sequence is:
+The **Topology** sub-view shows the RF network structure — who can talk, why, and how radios are grouped.
 
-1. Build the TO in T/O VIEW.
-2. Link emitters to the correct units.
-3. Place emitters accurately in MAP VIEW.
-4. Load terrain and import operational overlays.
+#### Unit Cards mode
+
+- each T/O-linked unit appears as a single card
+- all emitters linked to that unit are grouped on the card
+- link lines connect between unit cards
+- best for command-network review and organizational RF briefing
+
+#### Emitters mode
+
+- each emitter is shown as a separate node
+- links are evaluated between individual devices
+- best for equipment-level debugging
+
+#### Link quality legend
+
+| Color | Meaning |
+|---|---|
+| Green | Strong link |
+| Yellow | Marginal link |
+| Red | Poor or failed link |
+| Grey | Not on map (workspace-only emitter) |
+
+#### How topology links are built
+
+Two emitters will link in Topology only when they share **the same waveform AND the same frequency**. SATCOM versus LOS behavior is also evaluated. Emitters without a map location appear with grey links labeled **Not On Map**.
+
+#### Best practices in Topology
+
+- Use **Unit Cards** for briefing or organization-level network review.
+- Use **Emitters** when debugging a specific radio or waveform issue.
+- Use **Auto Layout** to reset to a clean arrangement.
+- Use **Fit View** after switching display modes or making major changes.
+
+## RF propagation workflow
+
+1. Build the T/O in T/O.
+2. Create and configure emitters in EMITTERS.
+3. Place emitters accurately in MAP.
+4. Load terrain and import overlays.
 5. Verify frequencies, waveforms, power, antenna, and height.
-6. Open TOPOLOGY to inspect relationships.
-7. Run analysis with the scenario in a clean, consistent state.
+6. Open ANALYZE → Topology to inspect relationships.
+7. Run RF studies with the scenario in a clean, consistent state.
 
 ## What affects propagation outcomes
 
-Major drivers include:
-
-- terrain elevation and relief
-- obstruction and masking
-- separation distance
-- antenna height
-- antenna gain and pattern
-- frequency band
+- terrain elevation, relief, and obstruction
+- separation distance and antenna height
+- antenna gain, pattern, and frequency band
 - system and cable loss
-- weather and atmospheric assumptions where relevant
 - whether the path is LOS, diffracted, SATCOM, or relay-assisted
-
-## Types of RF questions the site supports well
-
-- Why can unit A talk to unit B but not unit C?
-- Which retransmission site gives the best coverage?
-- Which command post location reduces skyline exposure while preserving links?
-- Which radios should be assigned to which units?
-- Where is the likely single point of failure in the network?
-- Which units need relay support?
 
 ---
 
@@ -13294,53 +13259,45 @@ Major drivers include:
 
 ## What AI integration is for
 
-AI in RF SIM is there to help the user interpret the scenario and generate planning outputs faster. It does not replace disciplined RF engineering or terrain validation.
+AI in RF SIM helps interpret the scenario and generate planning outputs faster. It does not replace disciplined RF engineering or terrain validation.
 
 Use AI for:
 
-- planning assistance
-- structured reports
-- RF reasoning support
-- network explanation
-- scenario documentation
-- comparison of COAs
+- planning assistance and structured reports
+- RF reasoning and network explanation
+- scenario documentation and COA comparison
 
-## Supported provider patterns
+## Supported providers
 
-The site supports multiple AI backends depending on configuration:
-
-- hosted providers such as Anthropic
+- Hosted providers such as Anthropic
 - GenAI.mil via the supported relay flow
-- local models through the local relay
+- Local models through the included local relay
 
 ## How to connect an AI provider
 
 ### Hosted provider
 
-1. Open **Settings â†’ AI Integration**.
+1. Open **Settings → AI Integration**.
 2. Choose a provider.
 3. Paste the API key.
-4. Refresh or select the target model.
-5. Save the key if you want it stored in the UI.
-6. Click **Test Connection** before operational use.
+4. Select the target model.
+5. Click **Test Connection** before operational use.
 
 ### Local model
 
 1. Run the local relay.
 2. Ensure your model server is running.
-3. Detect available models.
-4. Select the active model.
-5. Test the connection.
+3. Detect available models and select the active model.
+4. Test the connection.
 
 ### GenAI.mil
 
-Follow the hosted-site relay guidance in the AI Integration tab. The relay and certificate setup are required where direct network access is restricted.
+Follow the hosted-site relay guidance in the AI Integration tab. Relay and certificate setup are required where direct network access is restricted.
 
-## How to use AI well in RF SIM
+## How to use AI well
 
 - Ask scenario-specific questions, not generic ones.
-- Build the TO and place emitters first.
-- Use AI after the technical inputs are credible.
+- Build the T/O and configure emitters first — AI output quality depends on input quality.
 - Treat AI output as planning support and verify critical claims against terrain, parameters, and mission requirements.
 
 ---
@@ -13349,36 +13306,29 @@ Follow the hosted-site relay guidance in the AI Integration tab. The relay and c
 
 ## What TAK integration is for
 
-TAK integration allows RF SIM to coordinate with external TAK environments and project-backed workflows.
+TAK integration connects RF SIM planning to external TAK environments and project-backed workflows.
 
 Use it when you need to:
 
-- connect RF SIM planning to TAK-hosted operational data
-- stream RF Sim objects into TAK
-- maintain server-backed project relationships
+- connect RF SIM to TAK-hosted operational data
+- stream RF SIM objects into TAK
 - manage certificates and authentication for TAK servers
 
 ## How to connect a TAK server
 
-1. Open **Settings â†’ TAK**.
+1. Open **Settings → TAK**.
 2. Create or select a saved TAK server profile.
 3. Enter the server address, port, and protocol.
-4. If you connect by IP but the certificate is issued to DNS, enter the certificate hostname in **TLS Server Name**.
+4. If connecting by IP but the certificate is issued to DNS, enter the certificate hostname in **TLS Server Name**.
 5. Load CA and client certificates if required.
-6. Configure authentication if required.
-7. Save the server profile.
-8. Assign enabled projects if your environment uses server-backed projects.
-9. Click **Test Connection** to run a real network and TLS check.
+6. Save the server profile.
+7. Click **Test Connection** to verify network and TLS.
 
-## Certificate handling guidance
+## Certificate handling
 
 - Use the CA certificate when the server requires trust establishment.
-- Use the client certificate when the server requires mutual TLS or similar client identity.
-- If a certificate requires a password, provide it when prompted or through the visible password field.
-
-## Streaming new RF Sim items
-
-If the default stream toggle is enabled, new RF SIM items can be sent to TAK by default. Use this when you want newly created operational objects to propagate into TAK-connected workflows automatically.
+- Use the client certificate when the server requires mutual TLS.
+- Provide the certificate password if required.
 
 ---
 
@@ -13386,36 +13336,35 @@ If the default stream toggle is enabled, new RF SIM items can be sent to TAK by 
 
 ## Phase 1: Structure the force
 
-- Build the TO in T/O VIEW.
+- Build the T/O in T/O.
 - Create a hierarchy that mirrors how the formation actually operates.
 - Name units clearly.
 
-## Phase 2: Build the battlespace
+## Phase 2: Build the emitter layer
 
-- Load terrain and imagery.
-- Import KML, KMZ, and GeoJSON overlays.
-- Add operational graphics and reference boundaries.
+- Open EMITTERS and create emitter cards for each radio in the scenario.
+- Configure waveform, frequency, power, antenna, and nets.
+- Right-click cards to duplicate, edit, or link to T/O units.
 
-## Phase 3: Build the RF layer
+## Phase 3: Place emitters on terrain
 
-- Create emitters.
-- Place them carefully on the map.
-- Configure radio and antenna parameters.
-- Link emitters to units.
+- Switch to MAP.
+- Place emitters at their actual operating locations.
+- Load terrain and import overlays for the AO.
 
 ## Phase 4: Inspect the network
 
-- Open TOPOLOGY.
-- Check grouping on unit cards.
+- Open ANALYZE → Topology.
+- Check unit card grouping and individual emitter links.
 - Look for orphan emitters, overloaded hubs, and fragile paths.
-- Reset with Auto Layout if the view becomes cluttered.
+- Use Auto Layout and Fit View to clean up the display.
 
 ## Phase 5: Analyze and iterate
 
 - Run the relevant RF studies.
 - Compare locations and configurations.
 - Adjust power, antenna, placement, or hierarchy as needed.
-- Re-run the analysis after meaningful changes.
+- Re-run analysis after meaningful changes.
 
 ---
 
@@ -13423,23 +13372,24 @@ If the default stream toggle is enabled, new RF SIM items can be sent to TAK by 
 
 ## If topology looks wrong
 
-- Confirm emitters are linked to the intended TO units.
+- Confirm emitters are linked to the intended T/O units.
 - Switch between Unit Cards and Emitters to isolate whether the issue is grouping or RF matching.
 - Use Auto Layout, then Fit View.
 
 ## If an expected link is missing
 
-- Verify frequency and waveform compatibility.
+- Verify both emitters share the same waveform AND frequency.
 - Verify SATCOM capability versus LOS assumptions.
 - Verify both emitters are visible in the current topology filters.
 - Re-check location, elevation, and terrain masking.
+- Check whether either emitter is workspace-only (Not On Map) — workspace-only emitters show grey links.
 
 ## If analysis results look unrealistic
 
-- Verify terrain source coverage.
+- Verify terrain source coverage for the full AO.
 - Verify emitter power and antenna settings.
 - Check for placeholder frequencies or unintentional defaults.
-- Confirm the scenario was built in the right order and not with partially linked units.
+- Confirm the scenario was built in the correct order.
 `;
 
 let _settingsDocumentationRendered = false;

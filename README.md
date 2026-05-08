@@ -10,12 +10,12 @@ This repository contains the web client, local helper services, and the optional
 
 ## What RF SIM Does
 
-RF SIM is organized around four core workspaces:
+RF SIM is organized around four core views selected from the top navigation bar:
 
-- `T/O` builds the table of organization, unit hierarchy, and symbology baseline for the scenario.
-- `MAP` is the main scenario workspace for placing emitters, relays, sensors, routes, shapes, imported overlays, and terrain-backed planning data.
-- `TOPOLOGY` visualizes network relationships, link structure, and connection quality between emitters or units.
-- `ANALYZE` turns terrain, geometry, emitter settings, and environment into RF findings such as coverage, masking, conflicts, and network risk.
+- **T/O** builds the table of organization, unit hierarchy, and symbology baseline for the scenario.
+- **EMITTERS** is a dedicated workspace for creating, organizing, and configuring RF emitters as visual cards — independent of map placement.
+- **MAP** is the main geographic workspace for placing emitters on terrain, importing overlays, and inspecting the physical battlespace.
+- **ANALYZE** turns terrain, geometry, emitter settings, and environment into RF findings such as coverage, masking, conflicts, and network risk. It also includes the TOPOLOGY network view for inspecting link structure and connection quality between emitters or units.
 
 ## Core Capabilities
 
@@ -23,6 +23,8 @@ RF SIM is organized around four core workspaces:
 - Deterministic site studies for relay siting, RF sensor siting, command-post siting, and direct-link analysis.
 - 2D Leaflet map plus synchronized 3D Cesium viewing.
 - Terrain heatmaps, contours, viewsheds, terrain sampling, and path-specific LOS inspection.
+- Emitter workspace with visual cards showing device graphics, net configuration, unit linkage, and map visibility status.
+- Waveform-aware topology linking — radios must share the same waveform and frequency to draw a link (MIMO, Wave Relay, TSM-X, SINCGARS, P25, DMR, and others).
 - Import of `GeoJSON`, `KML`, `KMZ`, ATAK data package `ZIP`, and DTED terrain files.
 - Map Contents workflows for folders, visibility control, search, rename, reorder, relocation, and deletion.
 - Guest/local use without an account, plus signed-in projects, duplication, deletion, and snapshots when the backend is available.
@@ -33,13 +35,13 @@ RF SIM is organized around four core workspaces:
 
 ## Typical Workflow
 
-1. Build the unit structure in `T/O`.
-2. Link emitters and assets to the right units.
-3. Place assets accurately in `MAP`.
-4. Load terrain and import overlays for the actual area of interest.
-5. Verify RF parameters such as band, frequency, waveform, power, antenna height, gain, and system loss.
-6. Inspect network relationships in `TOPOLOGY`.
-7. Run `ANALYZE`, deterministic site studies, and AI-assisted comparisons to refine the plan and generate outputs.
+1. Build the unit structure in **T/O**.
+2. Open **EMITTERS** and add emitter cards for each radio in the scenario, configuring waveform, frequency, and RF parameters.
+3. Right-click cards in the Emitter Workspace to edit, duplicate, add or configure nets, link to a T/O unit, or delete.
+4. Place emitters on the map from **MAP** for geographic analysis, or keep them workspace-only for network planning.
+5. Load terrain and import overlays for the actual area of interest.
+6. Open **ANALYZE → Topology** to inspect network link relationships, filtered by waveform and frequency compatibility.
+7. Run RF studies and AI-assisted comparisons in **ANALYZE** to refine the plan and generate outputs.
 
 ## Ways To Use RF SIM
 
