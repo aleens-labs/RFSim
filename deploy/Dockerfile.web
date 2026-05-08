@@ -23,6 +23,7 @@ RUN chmod +x /docker-entrypoint.d/30-generate-app-config.sh
 
 COPY index.html /usr/share/nginx/html/index.html
 COPY app.js /usr/share/nginx/html/app.js
+COPY milstd-symbol-catalog.js /usr/share/nginx/html/milstd-symbol-catalog.js
 COPY styles.css /usr/share/nginx/html/styles.css
 COPY app-config.js /usr/share/nginx/html/app-config.js
 COPY simulation-worker.js /usr/share/nginx/html/simulation-worker.js
