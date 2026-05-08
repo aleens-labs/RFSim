@@ -9,8 +9,7 @@ const sourceDir = path.join(
   "samples",
   "imagefile_name_category_tags",
 );
-const targetDir = path.join(repoRoot, "generated");
-const targetPath = path.join(targetDir, "milstd-symbol-catalog.js");
+const targetPath = path.join(repoRoot, "milstd-symbol-catalog.js");
 
 const AFFILIATION_VARIANTS = new Map([
   ["0", "unknown"],
@@ -182,7 +181,6 @@ function buildCatalog() {
 }
 
 const catalog = buildCatalog();
-fs.mkdirSync(targetDir, { recursive: true });
 const payload = `window.RFSIM_MILSTD_SYMBOL_CATALOG = ${JSON.stringify(catalog, null, 2)};\n`;
 fs.writeFileSync(targetPath, payload, "utf8");
 
