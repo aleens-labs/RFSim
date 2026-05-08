@@ -22571,6 +22571,7 @@ function closeEmittersNetModal() {
 }
 
 function openEmittersNetModal(assetId, netId = "", { createNew = false } = {}) {
+  initEmittersViewIfNeeded();
   const asset = state.assets.find((entry) => entry.id === assetId);
   if (!asset || !dom.emittersNetModal) {
     return;
@@ -37248,7 +37249,7 @@ async function renderTopologyView(options = {}) {
       </div>
     `;
 
-    _topoNodeMeta.set(entry.key, {
+    _topoNodeMeta.set(String(entry.key), {
       type: entry.kind,
       unitId: unit?.id || null,
       label: entry.label || unit?.label || unit?.designator || "Node",
@@ -37319,6 +37320,56 @@ function wireTopoNodeContextMenu() {
     radioPopup.classList.remove("hidden");
   }
 
+  function openTopoEmitterChooser(meta, clientX, clientY) {
+    if (!meta?.emitters?.length) return;
+    _activeUnitId = meta.unitId;
+    const emitters = meta.emitters.slice();
+    ctxTitle.textContent = meta.label || "Unit Emitters";
+    ctxList.innerHTML = emitters.map((em, i) => {
+      const label = em.emitterLabel || em.name || "Emitter";
+      const wf = em.waveform || em.ext?.waveform || "";
+      const freq = `${(em.frequencyMHz || 0).toFixed(3)} MHz`;
+      const detail = [wf, freq].filter(Boolean).join(" · ");
+      return `<div class="topo-node-ctx-item" data-idx="${i}">
+        <div>
+          <div class="topo-node-ctx-item-name">${esc(label)}</div>
+          <div class="topo-node-ctx-item-detail">${esc(detail)}</div>
+        </div>
+      </div>`;
+    }).join("");
+    ctxList._emitters = emitters;
+    ctxMenu.style.left = clientX + "px";
+    ctxMenu.style.top = clientY + "px";
+    ctxMenu.classList.remove("hidden");
+    requestAnimationFrame(() => {
+      const rect = ctxMenu.getBoundingClientRect();
+      if (rect.right > window.innerWidth) ctxMenu.style.left = Math.max(8, clientX - rect.width) + "px";
+      if (rect.bottom > window.innerHeight) ctxMenu.style.top = Math.max(8, clientY - rect.height) + "px";
+    });
+  }
+
+  function handleTopoNodeContextMenu(e, nodeEl) {
+    if (!nodeEl) {
+      hideAll();
+      return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+    hideAll();
+
+    const meta = _topoNodeMeta.get(String(nodeEl.dataset.key));
+    if (!meta?.emitters?.length) return;
+    if (meta.type === "unit") {
+      openTopoEmitterChooser(meta, e.clientX, e.clientY);
+      return;
+    }
+    if (meta.emitters.length === 1) {
+      openRadioActionPopupForAsset(meta.emitters[0], meta.unitId);
+      return;
+    }
+    openTopoEmitterChooser(meta, e.clientX, e.clientY);
+  }
+
   // Right-click on a topo node card
   document.getElementById("topoCanvas").addEventListener("contextmenu", (e) => {
     const nodeEl = e.target.closest(".topo-node");
@@ -37327,8 +37378,12 @@ function wireTopoNodeContextMenu() {
     e.stopPropagation();
     hideAll();
 
-    const meta = _topoNodeMeta.get(nodeEl.dataset.key);
+    const meta = _topoNodeMeta.get(String(nodeEl.dataset.key));
     if (!meta?.emitters?.length) return;
+    if (meta.type === "unit") {
+      openTopoEmitterChooser(meta, e.clientX, e.clientY);
+      return;
+    }
     _activeUnitId = meta.unitId;
     const emitters = meta.emitters.slice();
 
@@ -37366,6 +37421,12 @@ function wireTopoNodeContextMenu() {
   }, { signal: sig });
 
   // Click on an emitter row in context menu â†’ show radio popup
+  document.querySelectorAll("#topoNodes .topo-node").forEach((nodeEl) => {
+    nodeEl.addEventListener("contextmenu", (e) => {
+      handleTopoNodeContextMenu(e, nodeEl);
+    }, { signal: sig });
+  });
+
   ctxList.addEventListener("click", (e) => {
     const item = e.target.closest(".topo-node-ctx-item");
     if (!item) return;
