@@ -664,6 +664,16 @@ const TACTICAL_UNIT_CATALOG = [
   { id: "artillery", label: "Artillery", group: "Ground - Combat Arms", domain: "ground", cotTail: "G-U-C-F" },
   { id: "air_defense", label: "Air Defense", group: "Ground - Combat Arms", domain: "ground", cotTail: "G-U-C-A-D" },
   { id: "logistics", label: "Logistics", group: "Ground - Sustainment", domain: "ground", cotTail: "G-E-V-C" },
+  { id: "ground_equipment", label: "Ground Equipment", group: "Ground - Equipment", domain: "ground", cotTail: "G-E", tacticalOnly: true, echelonAllowed: false },
+  { id: "missile_launcher", label: "Missile Launcher", group: "Ground - Weapons Systems", domain: "ground", cotTail: "G-E-W", tacticalOnly: true, echelonAllowed: false },
+  { id: "ad_missile_launcher", label: "AD Missile Launcher", group: "Ground - Weapons Systems", domain: "ground", cotTail: "G-E-W-M-S-A", tacticalOnly: true, echelonAllowed: false },
+  { id: "short_range_ad_missile_launcher", label: "Short-Range AD Missile Launcher", group: "Ground - Weapons Systems", domain: "ground", cotTail: "G-E-W-M-S-A-S", tacticalOnly: true, echelonAllowed: false },
+  { id: "medium_range_ad_missile_launcher", label: "Medium-Range AD Missile Launcher", group: "Ground - Weapons Systems", domain: "ground", cotTail: "G-E-W-M-S-A-M", tacticalOnly: true, echelonAllowed: false },
+  { id: "long_range_ad_missile_launcher", label: "Long-Range AD Missile Launcher", group: "Ground - Weapons Systems", domain: "ground", cotTail: "G-E-W-M-S-A-L", tacticalOnly: true, echelonAllowed: false },
+  { id: "surface_to_surface_missile", label: "Surface-to-Surface Missile", group: "Ground - Weapons Systems", domain: "ground", cotTail: "G-E-W-M-S-S", tacticalOnly: true, echelonAllowed: false },
+  { id: "rocket_launcher", label: "Rocket Launcher", group: "Ground - Weapons Systems", domain: "ground", cotTail: "G-E-W-R", tacticalOnly: true, echelonAllowed: false },
+  { id: "mortar", label: "Mortar", group: "Ground - Weapons Systems", domain: "ground", cotTail: "G-E-W-O", tacticalOnly: true, echelonAllowed: false },
+  { id: "howitzer", label: "Howitzer", group: "Ground - Weapons Systems", domain: "ground", cotTail: "G-E-W-H", tacticalOnly: true, echelonAllowed: false },
   { id: "aviation_fixed", label: "Fixed Wing Aviation", group: "Air - Fixed Wing", domain: "air", cotTail: "A-M-F-Q" },
   { id: "fighter", label: "Fighter", group: "Air - Fixed Wing", domain: "air", cotTail: "A-M-F-Q" },
   { id: "bomber", label: "Bomber", group: "Air - Fixed Wing", domain: "air", cotTail: "A-M-F-Q" },
@@ -726,8 +736,10 @@ function buildCatalogCotType(catalogId = "", affiliation = "friendly") {
   return `a-${affCode}-${entry.cotTail}`;
 }
 
-function buildUnitTypeSelectMarkup({ includeBlank = false } = {}) {
-  const grouped = TACTICAL_UNIT_CATALOG.reduce((map, entry) => {
+function buildUnitTypeSelectMarkup({ includeBlank = false, includeExtended = false } = {}) {
+  const grouped = TACTICAL_UNIT_CATALOG
+    .filter((entry) => includeExtended || !entry.tacticalOnly)
+    .reduce((map, entry) => {
     const bucket = map.get(entry.group) || [];
     bucket.push(entry);
     map.set(entry.group, bucket);
@@ -741,13 +753,18 @@ function buildUnitTypeSelectMarkup({ includeBlank = false } = {}) {
   return `${includeBlank ? '<option value="">Select doctrinal unit</option>' : ""}${optgroups}`;
 }
 
-function populateDoctrinalUnitTypeSelect(selectEl, { includeBlank = false } = {}) {
+function populateDoctrinalUnitTypeSelect(selectEl, { includeBlank = false, includeExtended = false } = {}) {
   if (!selectEl) return;
   const current = selectEl.value;
-  selectEl.innerHTML = buildUnitTypeSelectMarkup({ includeBlank });
+  selectEl.innerHTML = buildUnitTypeSelectMarkup({ includeBlank, includeExtended });
   if (current && selectEl.querySelector(`option[value="${current}"]`)) {
     selectEl.value = current;
   }
+}
+
+function catalogAllowsEchelon(catalogId = "") {
+  const entry = getDoctrinalCatalogEntryById(catalogId);
+  return entry?.echelonAllowed !== false;
 }
 
 function deriveTacticalUnitTypeFromCotType(cotType = "", fallbackDomain = "") {
@@ -792,7 +809,9 @@ function normalizeTacticalObject(raw = {}) {
   const catalogEntry = getDoctrinalCatalogEntry(raw);
   const domain = normalizeTacticalDomain(raw.domain || catalogEntry?.domain || deriveTacticalDomainFromCotType(raw.cotType));
   const unitType = normalizeToUnitType(raw.unitType || raw.catalogId || catalogEntry?.id || deriveTacticalUnitTypeFromCotType(raw.cotType, domain));
-  const size = raw.size || "battalion";
+  const size = typeof raw.size === "string"
+    ? raw.size
+    : (catalogAllowsEchelon(unitType) ? "battalion" : "");
   const affiliation = normalizeTacticalAffiliation(raw.affiliation || deriveTacticalAffiliationFromCotType(raw.cotType));
   const coordinates = normalizeTacticalCoordinates(geometryType, raw.coordinates);
   const detail = raw.detail && typeof raw.detail === "object" ? { ...raw.detail } : {};
@@ -903,7 +922,7 @@ function getTacticalDisplayUnit(object) {
     type: normalizedLinked?.catalogId || normalizedLinked?.type || resolvedType || "infantry",
     catalogId: normalizedLinked?.catalogId || resolvedType || "infantry",
     cotType: normalizedLinked?.cotType || object?.cotType || buildCatalogCotType(resolvedType, normalizedLinked?.affiliation || object?.affiliation || "friendly"),
-    size: normalizedLinked?.size || object?.size || "battalion",
+    size: normalizedLinked?.size ?? object?.size ?? (catalogAllowsEchelon(resolvedType) ? "battalion" : ""),
     frameOnly: isGenericCotTrackType(object?.cotType),
   });
 }
@@ -1979,6 +1998,14 @@ const dom = {
   topoTerrainStatus: document.querySelector("#topoTerrainStatus"),
   analyzeView: document.querySelector("#analyzeView"),
   emittersAddBtn: document.querySelector("#emittersAddBtn"),
+  addEmitterBtn: document.querySelector("#addEmitterBtn"),
+  mapEmitterAddMenu: document.querySelector("#mapEmitterAddMenu"),
+  mapEmitterAddFromWorkspaceBtn: document.querySelector("#mapEmitterAddFromWorkspaceBtn"),
+  mapEmitterAddNewBtn: document.querySelector("#mapEmitterAddNewBtn"),
+  mapEmitterPickerModal: document.querySelector("#mapEmitterPickerModal"),
+  mapEmitterPickerGrid: document.querySelector("#mapEmitterPickerGrid"),
+  mapEmitterPickerEmpty: document.querySelector("#mapEmitterPickerEmpty"),
+  mapEmitterPickerCloseBtn: document.querySelector("#mapEmitterPickerCloseBtn"),
   emittersRefreshBtn: document.querySelector("#emittersRefreshBtn"),
   emittersOpenMapBtn: document.querySelector("#emittersOpenMapBtn"),
   emittersCanvas: document.querySelector("#emittersCanvas"),
@@ -5572,6 +5599,7 @@ function syncDoctrinalUnitSelectionFields({ preserveCustomCot = false } = {}) {
   const affiliation = normalizeTacticalAffiliation(dom.tacticalEditorAffiliation?.value || "friendly");
   const catalogId = normalizeToUnitType(dom.tacticalEditorUnitType?.value || "infantry");
   const entry = getDoctrinalCatalogEntryById(catalogId);
+  const usesEchelon = catalogAllowsEchelon(catalogId);
   if (dom.tacticalEditorDomain) {
     dom.tacticalEditorDomain.value = normalizeTacticalDomain(entry?.domain || deriveTacticalDomainFromCotType(dom.tacticalEditorCotType?.value || ""));
     dom.tacticalEditorDomain.disabled = true;
@@ -5581,6 +5609,13 @@ function syncDoctrinalUnitSelectionFields({ preserveCustomCot = false } = {}) {
       dom.tacticalEditorCotType.value = buildCatalogCotType(catalogId, affiliation);
     }
     dom.tacticalEditorCotType.readOnly = true;
+  }
+  if (dom.tacticalEditorUnitSize) {
+    if (!usesEchelon) {
+      dom.tacticalEditorUnitSize.value = "";
+    } else if (!dom.tacticalEditorUnitSize.value) {
+      dom.tacticalEditorUnitSize.value = "battalion";
+    }
   }
 }
 
@@ -5592,7 +5627,7 @@ function updateTacticalEditorPreview() {
     || deriveTacticalUnitTypeFromCotType(cotType, dom.tacticalEditorDomain?.value || "ground")
     || "infantry"
   );
-  const previewSize = dom.tacticalEditorUnitSize?.value || "battalion";
+  const previewSize = dom.tacticalEditorUnitSize?.value ?? "";
   const previewUnit = normalizeToUnit({
     id: 0,
     label: dom.tacticalEditorName?.value?.trim() || buildDefaultToUnitLabel(previewSize, previewType),
@@ -5615,6 +5650,8 @@ function syncTacticalEditorUi() {
   const objectClass = dom.tacticalEditorObjectClass?.value || "unit";
   const isUnit = objectClass === "unit";
   const isPoint = state.tacticalEditor.workingCopy?.geometryType === "Point";
+  const selectedCatalogId = normalizeToUnitType(dom.tacticalEditorUnitType?.value || "infantry");
+  const usesEchelon = isUnit && catalogAllowsEchelon(selectedCatalogId);
   if (isUnit) syncDoctrinalUnitSelectionFields();
   else if (dom.tacticalEditorCotType && !dom.tacticalEditorCotType.value.trim()) {
     dom.tacticalEditorCotType.value = buildDefaultCotTypeForTacticalObject(
@@ -5626,7 +5663,7 @@ function syncTacticalEditorUi() {
   const linkPanel = dom.tacticalEditorAssetLinks?.closest(".tactical-asset-link-panel");
   linkPanel?.classList.toggle("hidden", !isUnit);
   dom.tacticalEditorUnitType?.closest("label")?.classList.toggle("hidden", objectClass === "route" || objectClass === "geofence" || objectClass === "drawing" || objectClass === "shape");
-  dom.tacticalEditorUnitSize?.closest("label")?.classList.toggle("hidden", !isUnit);
+  dom.tacticalEditorUnitSize?.closest("label")?.classList.toggle("hidden", !usesEchelon);
   dom.tacticalEditorLat?.closest("label")?.classList.toggle("hidden", !isPoint);
   dom.tacticalEditorLon?.closest("label")?.classList.toggle("hidden", !isPoint);
   dom.tacticalEditorLocationRow?.classList.toggle("hidden", !isPoint);
@@ -5663,7 +5700,9 @@ function openTacticalEditorModal(object, { mode = "create", live = false } = {})
   dom.tacticalEditorAffiliation.value = normalizeTacticalAffiliation(tactical.affiliation);
   dom.tacticalEditorDomain.value = normalizeTacticalDomain(tactical.domain);
   dom.tacticalEditorUnitType.value = normalizeToUnitType(tactical.catalogId || tactical.unitType);
-  dom.tacticalEditorUnitSize.value = tactical.size || "battalion";
+  dom.tacticalEditorUnitSize.value = typeof tactical.size === "string"
+    ? tactical.size
+    : (catalogAllowsEchelon(dom.tacticalEditorUnitType.value) ? "battalion" : "");
   dom.tacticalEditorCotType.value = tactical.cotType || "";
   const isPoint = tactical.geometryType === "Point";
   const lat = isPoint ? Number(tactical.coordinates[0] ?? 0) : null;
@@ -5715,7 +5754,11 @@ function createTacticalDraftFromPlacement(template, geometryType, coordinates, e
   const catalogEntry = getDoctrinalCatalogEntry(template);
   const domain = normalizeTacticalDomain(template.domain || normalizedPlanUnit?.catalogId && getDoctrinalCatalogEntryById(normalizedPlanUnit.catalogId)?.domain || catalogEntry?.domain || deriveTacticalDomainFromCotType(template.cotType));
   const unitType = normalizeToUnitType(template.catalogId || template.unitType || normalizedPlanUnit?.catalogId || deriveTacticalUnitTypeFromDomain(domain));
-  const size = objectClass === "unit" ? (template.size || normalizedPlanUnit?.size || "battalion") : "team";
+  const size = objectClass === "unit"
+    ? (Object.prototype.hasOwnProperty.call(template, "size")
+        ? template.size
+        : (normalizedPlanUnit?.size ?? (catalogAllowsEchelon(unitType) ? "battalion" : "")))
+    : "team";
   const affiliation = template.affiliation || normalizedPlanUnit?.affiliation || "friendly";
   const name = template.name || normalizedPlanUnit?.label || buildDefaultToUnitLabel(size, unitType);
   return normalizeTacticalObject({
@@ -5842,7 +5885,8 @@ const TPAL_TRACK_CHOICES = [
 
 const TPAL_BRANCHES = {
   ground_track: [
-    { id: "ground_equipment", label: "Equipment", cotTail: "G-E", unitType: "armor" },
+    { id: "ground_equipment", label: "Equipment", cotTail: "G-E", unitType: "ground_equipment" },
+    { id: "ground_weapons_systems", label: "Weapons Systems", cotTail: "G-E-W", unitType: "missile_launcher" },
     { id: "ground_installation", label: "Installation", cotTail: "G-I", unitType: "headquarters" },
     { id: "ground_unit", label: "Unit", cotTail: "G-U-C", unitType: "infantry" },
   ],
@@ -5882,6 +5926,7 @@ const TPAL_TYPES = {
     { id: "cyber", label: "Cyber", unitType: "cyber", cotTail: "G-U-C" },
   ],
   ground_equipment: [
+    { id: "ground_equipment", label: "Ground Equipment", unitType: "ground_equipment", cotTail: "G-E", size: "" },
     { id: "armor", label: "Armor", unitType: "armor", cotTail: "G-E-V-A" },
     { id: "armored_cavalry", label: "Armored Cavalry", unitType: "armored_cavalry", cotTail: "G-E-V-A" },
     { id: "artillery", label: "Artillery", unitType: "artillery", cotTail: "G-E" },
@@ -5890,6 +5935,19 @@ const TPAL_TYPES = {
     { id: "maintenance", label: "Maintenance", unitType: "maintenance", cotTail: "G-E" },
     { id: "chemical", label: "CBRN", unitType: "chemical", cotTail: "G-E" },
     { id: "finance", label: "Finance", unitType: "finance", cotTail: "G-E" },
+  ],
+  ground_weapons_systems: [
+    { id: "missile_launcher", label: "Missile Launcher", unitType: "missile_launcher", cotTail: "G-E-W", size: "" },
+    { id: "ad_missile_launcher", label: "AD Missile Launcher", unitType: "ad_missile_launcher", cotTail: "G-E-W-M-S-A", size: "" },
+    { id: "short_range_ad_missile_launcher", label: "Short-Range AD Missile Launcher", unitType: "short_range_ad_missile_launcher", cotTail: "G-E-W-M-S-A-S", size: "" },
+    { id: "medium_range_ad_missile_launcher", label: "Medium-Range AD Missile Launcher", unitType: "medium_range_ad_missile_launcher", cotTail: "G-E-W-M-S-A-M", size: "" },
+    { id: "long_range_ad_missile_launcher", label: "Long-Range AD Missile Launcher", unitType: "long_range_ad_missile_launcher", cotTail: "G-E-W-M-S-A-L", size: "" },
+    { id: "surface_to_surface_missile", label: "Surface-to-Surface Missile", unitType: "surface_to_surface_missile", cotTail: "G-E-W-M-S-S", size: "" },
+    { id: "rocket_launcher", label: "Rocket Launcher", unitType: "rocket_launcher", cotTail: "G-E-W-R", size: "" },
+    { id: "mortar", label: "Mortar", unitType: "mortar", cotTail: "G-E-W-O", size: "" },
+    { id: "howitzer", label: "Howitzer", unitType: "howitzer", cotTail: "G-E-W-H", size: "" },
+    { id: "artillery", label: "Artillery", unitType: "artillery", cotTail: "G-E", size: "" },
+    { id: "air_defense", label: "Air Defense", unitType: "air_defense", cotTail: "G-E", size: "" },
   ],
   ground_installation: [
     { id: "headquarters", label: "Headquarters", unitType: "headquarters", cotTail: "G-I" },
@@ -5942,11 +6000,11 @@ function buildTpalCotType(cotTail = "", affiliation = "friendly") {
   return normalizedTail ? `a-${affCode}-${normalizedTail}` : "";
 }
 
-function buildTpalPreviewUnit({ cotType = "", domain = "ground", unitType = "", affiliation = "friendly", frameOnly = false } = {}) {
+function buildTpalPreviewUnit({ cotType = "", domain = "ground", unitType = "", affiliation = "friendly", frameOnly = false, size = "" } = {}) {
   return normalizeToUnit({
     affiliation,
     type: unitType || deriveTacticalUnitTypeFromCotType(cotType, domain),
-    size: "",
+    size,
     frameOnly: Boolean(frameOnly) || isGenericCotTrackType(cotType),
   });
 }
@@ -5964,6 +6022,7 @@ function renderTpalSymbol(entry, options = {}) {
     unitType: entry?.unitType || "",
     affiliation: options.affiliation || "friendly",
     frameOnly: Boolean(entry?.frameOnly),
+    size: typeof entry?.size === "string" ? entry.size : "",
   });
   return renderToUnitIcon(previewUnit);
 }
@@ -6035,6 +6094,7 @@ function _tpalRenderTypes(catId) {
       data-cot-type="${escapeHtml(cotType)}"
       data-name="${escapeHtml(t.label)}"
       data-domain="${escapeHtml(_tpalState.domain || deriveTacticalDomainFromCotType(cotType))}"
+      data-size="${escapeHtml(typeof t.size === "string" ? t.size : "")}"
       data-object-class="unit"
       data-geometry-type="Point">
       <span class="tpal-type-symbol">${renderTpalSymbol(t, { affiliation: aff, domain: _tpalState.domain })}</span>
@@ -6075,9 +6135,9 @@ function initTacticalEditorFormOptions() {
   if (dom.tacticalEditorAffiliation && document.getElementById("toAffiliation")) {
     dom.tacticalEditorAffiliation.innerHTML = document.getElementById("toAffiliation").innerHTML;
   }
-  populateDoctrinalUnitTypeSelect(dom.tacticalEditorUnitType);
+  populateDoctrinalUnitTypeSelect(dom.tacticalEditorUnitType, { includeExtended: true });
   if (dom.tacticalEditorUnitSize && document.getElementById("toUnitSize")) {
-    dom.tacticalEditorUnitSize.innerHTML = document.getElementById("toUnitSize").innerHTML;
+    dom.tacticalEditorUnitSize.innerHTML = `<option value="">No Echelon</option>${document.getElementById("toUnitSize").innerHTML}`;
   }
 }
 
@@ -8045,7 +8105,12 @@ const emitterModal = {
     document.querySelector("#emitterSaveCustomBtn")?.addEventListener("click", () => this.saveCustomProfile());
 
     // Open via add-emitter button in map contents header
-    document.querySelector("#addEmitterBtn")?.addEventListener("click", () => this.open());
+    document.querySelector("#addEmitterBtn")?.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (dom.mapEmitterAddMenu?.classList.contains("hidden")) openMapEmitterAddMenu(event.currentTarget);
+      else closeMapEmitterAddMenu();
+    });
     this.renderSavedProfileLibrary();
   },
 
@@ -9325,6 +9390,7 @@ function wireEvents() {
       objectClass: typeBtn.dataset.objectClass || "unit",
       domain: typeBtn.dataset.domain || _tpalState.domain || "ground",
       unitType: typeBtn.dataset.unitType || "infantry",
+      size: typeBtn.dataset.size ?? "",
       affiliation: aff,
       cotType: typeBtn.dataset.cotType || "",
       geometryType: typeBtn.dataset.geometryType || "Point",
@@ -9391,6 +9457,22 @@ function wireEvents() {
       reserveEmitterWorkspaceSpawnLayout();
     }
     emitterModal.open();
+  });
+  dom.mapEmitterAddFromWorkspaceBtn?.addEventListener("click", () => {
+    closeMapEmitterAddMenu();
+    openMapEmitterPickerModal();
+  });
+  dom.mapEmitterAddNewBtn?.addEventListener("click", () => {
+    closeMapEmitterAddMenu();
+    emitterModal.open();
+  });
+  dom.mapEmitterPickerCloseBtn?.addEventListener("click", closeMapEmitterPickerModal);
+  addModalBackdropClose(dom.mapEmitterPickerModal, closeMapEmitterPickerModal);
+  document.addEventListener("click", (event) => {
+    if (!dom.mapEmitterAddMenu || dom.mapEmitterAddMenu.classList.contains("hidden")) return;
+    if (event.target === dom.addEmitterBtn || dom.addEmitterBtn?.contains(event.target)) return;
+    if (dom.mapEmitterAddMenu.contains(event.target)) return;
+    closeMapEmitterAddMenu();
   });
   document.getElementById("topoAddEmitterBtn")?.addEventListener("click", () => {
     if (isEmitterWorkspaceViewActive()) {
@@ -21776,7 +21858,7 @@ function startAssetRelocation(contentId) {
     state.map.getContainer().style.cursor = "crosshair";
   }
   updateCenterCrosshairVisibility();
-  setStatus(`Click map to relocate ${asset.name}. Press Esc to cancel.`);
+  setStatus(`Click map to ${hasAssetMapLocation(asset) ? "relocate" : "place"} ${asset.name}. Press Esc to cancel.`);
 }
 
 function finishAssetRelocation(latlng) {
@@ -21804,7 +21886,16 @@ function finishAssetRelocation(latlng) {
   asset.lon = latlng.lng;
   asset.groundElevationM = sampleTerrainElevation(asset.lat, asset.lon);
   ensureTakMetadataForAsset(asset);
-  const marker = state.assetMarkers.get(asset.id);
+  let marker = state.assetMarkers.get(asset.id);
+  if (!marker && state.map) {
+    marker = L.marker([asset.lat, asset.lon], {
+      icon: createEmitterIcon(asset),
+      pane: getMapContentPaneName(`asset:${asset.id}`),
+    }).addTo(state.map);
+    marker.bindPopup(renderAssetPopup(asset));
+    marker.on("contextmenu", (e) => openMapContentMenuForLeafletEvent(e, `asset:${asset.id}`));
+    state.assetMarkers.set(asset.id, marker);
+  }
   if (marker) marker.setLatLng([asset.lat, asset.lon]);
   updateAssetMarker(asset);
   renderAssets();
@@ -22243,6 +22334,102 @@ function getEmitterWorkspaceAssets() {
 
 function isEmitterWorkspaceViewActive(view = state.ui?.currentView) {
   return view === "emitters" || view === "topology";
+}
+
+function getUnlinkedEmitterWorkspaceAssets() {
+  return getEmitterWorkspaceAssets().filter((asset) => !Number.isFinite(Number(asset?.toUnitId)));
+}
+
+function closeMapEmitterAddMenu() {
+  dom.mapEmitterAddMenu?.classList.add("hidden");
+}
+
+function openMapEmitterAddMenu(anchorEl = dom.addEmitterBtn) {
+  if (!dom.mapEmitterAddMenu || !anchorEl) return;
+  const rect = anchorEl.getBoundingClientRect();
+  dom.mapEmitterAddMenu.style.left = `${Math.round(rect.left)}px`;
+  dom.mapEmitterAddMenu.style.top = `${Math.round(rect.bottom + 8)}px`;
+  dom.mapEmitterAddMenu.classList.remove("hidden");
+  requestAnimationFrame(() => {
+    const menuRect = dom.mapEmitterAddMenu.getBoundingClientRect();
+    if (menuRect.right > window.innerWidth - 8) {
+      dom.mapEmitterAddMenu.style.left = `${Math.max(8, window.innerWidth - menuRect.width - 8)}px`;
+    }
+    if (menuRect.bottom > window.innerHeight - 8) {
+      dom.mapEmitterAddMenu.style.top = `${Math.max(8, rect.top - menuRect.height - 8)}px`;
+    }
+  });
+}
+
+function closeMapEmitterPickerModal() {
+  dom.mapEmitterPickerModal?.classList.add("hidden");
+  updateModalBodyState();
+}
+
+function beginMapPlacementForEmitterAsset(assetId) {
+  const asset = (state.assets || []).find((entry) => entry.id === assetId);
+  if (!asset) return;
+  closeMapEmitterPickerModal();
+  closeMapEmitterAddMenu();
+  setCurrentView("map");
+  state.editingAssetId = null;
+  startAssetRelocation(`asset:${asset.id}`);
+}
+
+function renderMapEmitterPickerCards() {
+  if (!dom.mapEmitterPickerGrid || !dom.mapEmitterPickerEmpty) return;
+  const assets = getUnlinkedEmitterWorkspaceAssets();
+  dom.mapEmitterPickerGrid.innerHTML = "";
+  dom.mapEmitterPickerEmpty.classList.toggle("hidden", assets.length > 0);
+  if (!assets.length) {
+    return;
+  }
+  assets.forEach((asset) => {
+    const graphicPath = resolveEmitterGraphicPath(asset);
+    const markerColor = asset.color || FORCE_COLORS[asset.force] || FORCE_COLORS.friendly;
+    const type = EMITTER_ICONS[asset.type] ? asset.type : "radio";
+    const placeholderStyle = type === "radio"
+      ? `--marker-color:${escapeHtml(markerColor)};`
+      : `background:${escapeHtml(markerColor)}`;
+    const nets = getEmitterNets(asset);
+    const netSummary = nets.length
+      ? nets
+        .slice(0, 2)
+        .map((net) => `${escapeHtml(net.name || "Net")} · ${escapeHtml(formatEmitterWorkspaceFrequency(net.frequencyMHz))} · ${escapeHtml(net.waveform || "Unset")}`)
+        .join("<br>")
+      : "No nets configured";
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "map-emitter-picker-card";
+    card.dataset.assetId = asset.id;
+    card.innerHTML = `
+      <div class="map-emitter-picker-card-header">
+        <div class="map-emitter-picker-card-title">
+          <strong>${escapeHtml(asset.name || "Emitter")}</strong>
+          <span>${escapeHtml(asset.emitterLabel || asset.ext?.emitterType || asset.type || "Emitter")}</span>
+        </div>
+        <span class="force-pill"><span class="force-dot" style="background:${escapeHtml(markerColor)}"></span>${escapeHtml(FORCE_LABELS[asset.force] || "Unknown")}</span>
+      </div>
+      <div class="map-emitter-picker-card-media">
+        ${graphicPath
+          ? `<img src="${graphicPath}" alt="${escapeHtml(asset.emitterLabel || asset.name || "Emitter")}">`
+          : `<div class="emitters-card-placeholder"><div class="emitter-marker ${type}" style="${placeholderStyle}">${getAssetIconSvg(type)}</div></div>`}
+      </div>
+      <div class="map-emitter-picker-card-meta">
+        <span>${escapeHtml(hasAssetMapLocation(asset) ? "Already on map" : "Workspace only")}</span>
+        <span>${escapeHtml(asset.unit || "Unassigned")}</span>
+      </div>
+      <div class="map-emitter-picker-card-nets">${netSummary}</div>
+    `;
+    card.addEventListener("click", () => beginMapPlacementForEmitterAsset(asset.id));
+    dom.mapEmitterPickerGrid.appendChild(card);
+  });
+}
+
+function openMapEmitterPickerModal() {
+  renderMapEmitterPickerCards();
+  dom.mapEmitterPickerModal?.classList.remove("hidden");
+  updateModalBodyState();
 }
 
 function renderEmittersView() {
@@ -35743,6 +35930,13 @@ const MILSTD_FRAME_PATHS = {
   },
 };
 
+const MILSTD_EQUIPMENT_FRAME_PATHS = {
+  unknown: "images/milstd/Frames/0_101_0.svg",
+  friendly: "images/milstd/Frames/0_301_0.svg",
+  neutral: "images/milstd/Frames/0_401_0.svg",
+  hostile: "images/milstd/Frames/0_601_0.svg",
+};
+
 const MILSTD_ECHELON_PATHS = {
   team:      "images/milstd/Echelon/111.svg",
   squad:     "images/milstd/Echelon/112.svg",
@@ -35783,7 +35977,17 @@ const MILSTD_MAIN_ASSETS = {
   military_police: { path: "images/milstd/Appendices/Land/10141200.svg" },
   ew: { path: "images/milstd/Appendices/Land/10150500.svg" },
   military_intelligence: { path: "images/milstd/Appendices/Land/10151000.svg" },
-  logistics: { path: "images/milstd/Appendices/Land/10160700.svg" },
+  ground_equipment: null,
+  missile_launcher: null,
+  ad_missile_launcher: { base: "images/milstd/Appendices/Land/10130100", fullFrame: true },
+  short_range_ad_missile_launcher: { base: "images/milstd/Appendices/Land/10130100", fullFrame: true },
+  medium_range_ad_missile_launcher: { base: "images/milstd/Appendices/Land/10130100", fullFrame: true },
+  long_range_ad_missile_launcher: { base: "images/milstd/Appendices/Land/10130100", fullFrame: true },
+  surface_to_surface_missile: null,
+  rocket_launcher: { base: "images/milstd/Appendices/Land/10163400", fullFrame: true },
+  mortar: { path: "images/milstd/Appendices/Land/10130300.svg" },
+  howitzer: { path: "images/milstd/Appendices/Land/10130300.svg" },
+  logistics: { path: "images/milstd/Appendices/Land/10161100.svg" },
   maintenance: { base: "images/milstd/Appendices/Land/10161300", fullFrame: true },
   judge_advocate: { path: "images/milstd/Appendices/Land/10160800.svg" },
   infantry: { base: "images/milstd/Appendices/Land/10121100", fullFrame: true },
@@ -35816,6 +36020,16 @@ const MILSTD_MAIN_ASSETS = {
 };
 
 const MILSTD_FALLBACK_TEXT = {
+  ground_equipment: "EQP",
+  missile_launcher: "MSL",
+  ad_missile_launcher: "AD",
+  short_range_ad_missile_launcher: "SHORAD",
+  medium_range_ad_missile_launcher: "MRAD",
+  long_range_ad_missile_launcher: "LRAD",
+  surface_to_surface_missile: "SSM",
+  rocket_launcher: "RKT",
+  mortar: "MTR",
+  howitzer: "HWZ",
   ranger: "RGR",
   logistics: "LOG",
   maintenance: "MNT",
@@ -35839,6 +36053,10 @@ function resolveMilstdDomain(unit) {
 
 function resolveMilstdFramePath(unit) {
   const affiliation = MILSTD_FRAME_PATHS[unit.affiliation] ? unit.affiliation : "unknown";
+  const tail = getCotTypeTail(unit?.cotType || buildCatalogCotType(normalizeToUnitType(unit?.type), affiliation));
+  if (tail.startsWith("G-E")) {
+    return MILSTD_EQUIPMENT_FRAME_PATHS[affiliation] || MILSTD_EQUIPMENT_FRAME_PATHS.unknown;
+  }
   return MILSTD_FRAME_PATHS[affiliation][resolveMilstdDomain(unit)] || MILSTD_FRAME_PATHS.unknown.ground;
 }
 
@@ -36117,10 +36335,12 @@ function milstd2525Svg(unit) {
   const mainPath = resolveMilstdMainPath(unit);
   const modifierPaths = resolveMilstdModifierPaths(unit);
   const echelonPath = MILSTD_ECHELON_PATHS[unit.size] || "";
+  const fallbackText = !mainPath && !modifierPaths.length ? getMilstdFallbackText(unit) : "";
   return `<span class="milstd-stack ms2525-icon" aria-hidden="true">
     <img src="${framePath}" class="milstd-layer" alt="">
     ${mainPath ? `<img src="${mainPath}" class="milstd-layer" alt="">` : ""}
     ${modifierPaths.map((path) => `<img src="${path}" class="milstd-layer" alt="">`).join("")}
+    ${fallbackText ? `<span class="milstd-fallback-text">${esc(fallbackText)}</span>` : ""}
     ${echelonPath ? `<img src="${echelonPath}" class="milstd-layer" alt="">` : ""}
   </span>`;
 }
