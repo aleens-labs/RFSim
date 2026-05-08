@@ -2245,6 +2245,8 @@ const dom = {
   analyticsUserDetailAiUsage: document.querySelector("#analyticsUserDetailAiUsage"),
   analyticsUserDetailProjects: document.querySelector("#analyticsUserDetailProjects"),
   analyticsUserDetailEvents: document.querySelector("#analyticsUserDetailEvents"),
+  analyticsUserApproveBtn: document.querySelector("#analyticsUserApproveBtn"),
+  analyticsUserApprovalStatus: document.querySelector("#analyticsUserApprovalStatus"),
   analyticsUserServerKeyBtn: document.querySelector("#analyticsUserServerKeyBtn"),
   analyticsUserServerKeyStatus: document.querySelector("#analyticsUserServerKeyStatus"),
   addMapFolderBtn: document.querySelector("#addMapFolderBtn"),
@@ -7624,6 +7626,13 @@ async function onWorkspaceRegister(credentials = null) {
     method: "POST",
     body: JSON.stringify({ username, password }),
   });
+  if (payload.pendingApproval || !payload.token) {
+    setAuthScreenMode("login");
+    const message = payload.message || "Account request submitted. Wait for administrator approval before signing in.";
+    setAuthScreenStatus(message, false);
+    setStatus(message);
+    return;
+  }
   setGuestSessionEnabled(false);
   state.session.token = payload.token;
   state.session.user = payload.user;
@@ -34353,6 +34362,8 @@ function getEmptyAnalyticsPayload() {
   return {
     summary: {
       registered_users: 0,
+      pending_users: 0,
+      approved_users: 0,
       total_visits: 0,
       total_projects: 0,
       total_snapshots: 0,
@@ -34409,6 +34420,14 @@ function formatAnalyticsIntentLabel(value = "") {
 function formatAnalyticsDisplayLabel(value = "", fallback = ANALYTICS_EMPTY_LABEL) {
   const cleaned = cleanAnalyticsDisplayValue(value);
   return cleaned || fallback;
+}
+
+function normalizeAccountStatus(value = "") {
+  return String(value || "").trim().toLowerCase() === "approved" ? "approved" : "pending";
+}
+
+function formatAccountStatusLabel(value = "") {
+  return normalizeAccountStatus(value) === "approved" ? "Approved" : "Pending approval";
 }
 
 function buildSearchBlob(row) {
@@ -34568,6 +34587,16 @@ function renderAnalyticsUserDetail() {
   if (dom.analyticsUserDetailSubtitle) {
     dom.analyticsUserDetailSubtitle.textContent = `${summary.username || summary.full_name || summary.email} - ${summary.email}`;
   }
+  const accountStatus = normalizeAccountStatus(summary.account_status);
+  if (dom.analyticsUserApprovalStatus) {
+    dom.analyticsUserApprovalStatus.textContent = accountStatus === "approved"
+      ? `Account approved${summary.approved_at ? ` on ${formatAnalyticsDateTime(summary.approved_at)}` : ""}.`
+      : "Account is waiting for administrator approval.";
+  }
+  if (dom.analyticsUserApproveBtn) {
+    dom.analyticsUserApproveBtn.classList.toggle("hidden", accountStatus !== "pending");
+    dom.analyticsUserApproveBtn.disabled = accountStatus !== "pending";
+  }
   if (dom.analyticsUserServerKeyStatus) {
     dom.analyticsUserServerKeyStatus.textContent = summary.server_key_enabled
       ? "Server fallback enabled for this user."
@@ -34579,6 +34608,7 @@ function renderAnalyticsUserDetail() {
   if (dom.analyticsUserDetailSummary) {
     const items = [
       ["Joined", formatAnalyticsDate(summary.created_at)],
+      ["Status", formatAccountStatusLabel(summary.account_status)],
       ["Visits", formatAnalyticsCompactNumber(summary.visit_count)],
       ["Logins", formatAnalyticsCompactNumber(summary.login_count)],
       ["Projects", formatAnalyticsCompactNumber(summary.project_count)],
@@ -34638,6 +34668,13 @@ async function openAnalyticsUserDetail(userId) {
   if (dom.analyticsUserDetailSubtitle) {
     dom.analyticsUserDetailSubtitle.textContent = "Loading user details...";
   }
+  if (dom.analyticsUserApprovalStatus) {
+    dom.analyticsUserApprovalStatus.textContent = "Account status loading.";
+  }
+  if (dom.analyticsUserApproveBtn) {
+    dom.analyticsUserApproveBtn.classList.add("hidden");
+    dom.analyticsUserApproveBtn.disabled = true;
+  }
   if (dom.analyticsUserDetailSummary) {
     dom.analyticsUserDetailSummary.innerHTML = "";
   }
@@ -34657,6 +34694,20 @@ async function openAnalyticsUserDetail(userId) {
       dom.analyticsUserDetailSubtitle.textContent = error.message;
     }
   }
+}
+
+async function approveAnalyticsUser() {
+  if (!_analytics.selectedUserId || !_analytics.selectedUserStats?.summary) {
+    return;
+  }
+  await apiFetch(`/admin/users/${encodeURIComponent(_analytics.selectedUserId)}/approval`, {
+    method: "PUT",
+    body: JSON.stringify({ approved: true }),
+  });
+  await Promise.all([
+    fetchAnalyticsUserDetail(_analytics.selectedUserId),
+    fetchAndRenderAnalytics(),
+  ]);
 }
 
 async function toggleAnalyticsUserServerKey() {
@@ -34933,6 +34984,10 @@ function renderAnalyticsUsers() {
       username: u.username ?? "",
       email: u.email ?? "",
       created_at: { text: formatAnalyticsDate(u.created_at), sortValue: u.created_at || "" },
+      account_status: {
+        text: formatAccountStatusLabel(u.account_status),
+        sortValue: normalizeAccountStatus(u.account_status),
+      },
       login_count: u.login_count ?? 0,
       visit_count: u.visit_count ?? 0,
       project_count: u.project_count ?? 0,
@@ -34942,12 +34997,13 @@ function renderAnalyticsUsers() {
       top_intent: formatAnalyticsIntentLabel(u.top_intent),
       last_seen: { text: formatAnalyticsDateTime(u.last_seen), sortValue: u.last_seen || "" },
       _serverKeyEnabled: Boolean(u.server_key_enabled),
+      _pendingApproval: normalizeAccountStatus(u.account_status) === "pending",
     }))),
     _analytics.sortCol || "last_seen",
     _analytics.sortDir
   );
 
-  const cols = ["username", "email", "created_at", "login_count", "visit_count", "project_count", "ai_request_count", "total_tokens", "favorite_provider", "top_intent", "last_seen"];
+  const cols = ["username", "email", "created_at", "account_status", "login_count", "visit_count", "project_count", "ai_request_count", "total_tokens", "favorite_provider", "top_intent", "last_seen"];
   const tbody = document.querySelector("#analyticsUsersTable tbody");
   if (!tbody) return;
   tbody.innerHTML = "";
@@ -35181,6 +35237,11 @@ function ensureAnalyticsInitialized() {
   dom.analyticsUserDetailCloseBtn?.addEventListener("click", closeAnalyticsUserDetail);
   addModalBackdropClose(dom.analyticsUserDetailModal, closeAnalyticsUserDetail);
   dom.analyticsRefreshBtn?.addEventListener("click", fetchAndRenderAnalytics);
+  dom.analyticsUserApproveBtn?.addEventListener("click", () => {
+    void approveAnalyticsUser().catch((error) => {
+      setStatus(`Account approval failed: ${error.message}`, true);
+    });
+  });
   dom.analyticsUserServerKeyBtn?.addEventListener("click", () => {
     void toggleAnalyticsUserServerKey().catch((error) => {
       setStatus(`Server AI key update failed: ${error.message}`, true);

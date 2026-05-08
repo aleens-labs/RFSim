@@ -14,9 +14,10 @@ Fix:
 - Self-registration always creates non-admin users.
 - Server AI key management now relies on the database `is_admin` flag, not a hardcoded username.
 - Admin-only error messages no longer disclose a specific administrator username.
+- Newly registered accounts are created as `pending` and cannot sign in until an administrator approves them.
 
 Validation:
-- Unit tests cover self-registration policy and server AI key manager checks.
+- Unit tests cover self-registration policy, account approval status handling, and server AI key manager checks.
 
 ### Server-wide AI key exposure
 

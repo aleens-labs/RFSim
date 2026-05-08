@@ -11,6 +11,12 @@ const path = require("path");
 const { z } = require("zod");
 const { config } = require("./config");
 const { pool, query } = require("./db");
+const {
+  ACCOUNT_STATUS_APPROVED,
+  ACCOUNT_STATUS_PENDING,
+  isAccountApproved,
+  normalizeAccountStatus,
+} = require("./accountApprovalPolicy");
 const { formatServerWideAiConfigForClient } = require("./aiConfigPolicy");
 const {
   isReservedSelfRegistrationIdentity,
@@ -133,7 +139,7 @@ function signToken(user) {
   );
 }
 
-function authRequired(request, response, next) {
+async function authRequired(request, response, next) {
   const authorization = request.headers.authorization ?? "";
   const token = authorization.startsWith("Bearer ") ? authorization.slice(7) : null;
   if (!token) {
@@ -142,10 +148,25 @@ function authRequired(request, response, next) {
   }
 
   try {
-    request.user = jwt.verify(token, config.jwtSecret);
+    const decoded = jwt.verify(token, config.jwtSecret);
+    const user = await fetchUserById(decoded.sub);
+    if (!user) {
+      response.status(401).json({ error: "Invalid token." });
+      return;
+    }
+    if (!isAccountApproved(user)) {
+      response.status(403).json({ error: "Account is pending administrator approval." });
+      return;
+    }
+    request.authUser = user;
+    request.user = { ...decoded, sub: user.id, email: user.email };
     next();
-  } catch {
-    response.status(401).json({ error: "Invalid token." });
+  } catch (error) {
+    if (error?.name === "JsonWebTokenError" || error?.name === "TokenExpiredError") {
+      response.status(401).json({ error: "Invalid token." });
+      return;
+    }
+    sendInternalError(response, "authorize request", error);
   }
 }
 
@@ -745,7 +766,8 @@ async function findUserByLoginIdentifier(identifier) {
   }
 
   const result = await query(
-    `select id, username, email, full_name, password_hash, is_admin
+    `select id, username, email, full_name, password_hash, is_admin,
+            account_status, approved_at, approved_by_user_id
      from app_user
      where lower(username) = any($1::text[])
         or lower(email) = any($1::text[])
@@ -764,7 +786,10 @@ async function findUserByLoginIdentifier(identifier) {
 
 async function fetchUserById(userId) {
   const result = await query(
-    "select id, username, email, full_name, is_admin from app_user where id = $1",
+    `select id, username, email, full_name, is_admin,
+            account_status, approved_at, approved_by_user_id
+       from app_user
+      where id = $1`,
     [userId]
   );
   return result.rows[0] ?? null;
@@ -780,6 +805,9 @@ function formatUser(user) {
     email: user.email,
     fullName: user.full_name,
     isAdmin: Boolean(user.is_admin),
+    accountStatus: normalizeAccountStatus(user.account_status),
+    pendingApproval: !isAccountApproved(user),
+    approvedAt: user.approved_at ?? null,
     canManageServerAiKey: isServerAiKeyManager(user),
   };
 }
@@ -1264,18 +1292,19 @@ app.post("/api/auth/register", rateLimit("auth"), async (request, response) => {
 
     const passwordHash = await bcrypt.hash(password, 12);
     const result = await query(
-      `insert into app_user (username, email, password_hash, full_name, is_admin)
-       values ($1, $2, $3, $4, $5)
-       returning id, username, email, full_name, is_admin`,
-      [username, internalEmail, passwordHash, fullName, shouldGrantAdmin]
+      `insert into app_user (username, email, password_hash, full_name, is_admin, account_status)
+       values ($1, $2, $3, $4, $5, $6)
+       returning id, username, email, full_name, is_admin, account_status, approved_at, approved_by_user_id`,
+      [username, internalEmail, passwordHash, fullName, shouldGrantAdmin, ACCOUNT_STATUS_PENDING]
     );
     const user = result.rows[0];
     await logAnalyticsEventForUser(user.id, {
       event_type: "auth_register",
-      meta: { source: "self_service", username },
+      meta: { source: "self_service", username, account_status: ACCOUNT_STATUS_PENDING },
     }, { username: user.username || user.full_name || user.email });
-    response.status(201).json({
-      token: signToken(user),
+    response.status(202).json({
+      pendingApproval: true,
+      message: "Account request submitted. An administrator must approve it before sign-in.",
       user: formatUser(user),
     });
   } catch (error) {
@@ -1303,6 +1332,10 @@ app.post("/api/auth/login", rateLimit("auth"), async (request, response) => {
     const matches = await bcrypt.compare(password, user.password_hash);
     if (!matches) {
       response.status(401).json({ error: "Invalid username or password." });
+      return;
+    }
+    if (!isAccountApproved(user)) {
+      response.status(403).json({ error: "Account is pending administrator approval." });
       return;
     }
 
@@ -2620,7 +2653,7 @@ app.post("/api/projects/:projectId/snapshots", authRequired, async (request, res
 
 async function adminRequired(request, response, next) {
   try {
-    const user = await fetchUserById(request.user?.sub);
+    const user = request.authUser || await fetchUserById(request.user?.sub);
     if (!user?.is_admin) {
       response.status(403).json({ error: "Forbidden." });
       return;
@@ -2634,7 +2667,7 @@ async function adminRequired(request, response, next) {
 
 async function serverAiKeyManagerRequired(request, response, next) {
   try {
-    const user = await fetchUserById(request.user?.sub);
+    const user = request.authUser || await fetchUserById(request.user?.sub);
     if (!isServerAiKeyManager(user)) {
       response.status(403).json({ error: "Forbidden: server admin access required." });
       return;
@@ -2667,6 +2700,10 @@ const analyticsEventSchema = z.object({
 
 const userServerAiKeyToggleSchema = z.object({
   enabled: z.boolean(),
+});
+
+const userApprovalSchema = z.object({
+  approved: z.boolean().optional().default(true),
 });
 
 async function fetchAnalyticsUsername(userId, fallback = "") {
@@ -2763,6 +2800,47 @@ app.delete("/api/admin/user/:userId", authRequired, adminRequired, async (reques
   }
 });
 
+app.put("/api/admin/users/:userId/approval", authRequired, adminRequired, async (request, response) => {
+  const { userId } = request.params;
+  if (!userId || typeof userId !== "string" || userId.length > 64) {
+    response.status(400).json({ error: "Invalid user ID." });
+    return;
+  }
+
+  const parsed = userApprovalSchema.safeParse(request.body ?? {});
+  if (!parsed.success) {
+    response.status(400).json({ error: parsed.error.flatten() });
+    return;
+  }
+  if (!parsed.data.approved) {
+    response.status(400).json({ error: "Only account approval is supported." });
+    return;
+  }
+
+  try {
+    const result = await query(
+      `update app_user
+          set account_status = $3,
+              approved_at = now(),
+              approved_by_user_id = $2,
+              updated_at = now()
+        where id = $1
+        returning id, username, email, full_name, is_admin, account_status, approved_at, approved_by_user_id`,
+      [userId, request.adminUser.id, ACCOUNT_STATUS_APPROVED]
+    );
+    if (result.rowCount === 0) {
+      response.status(404).json({ error: "User not found." });
+      return;
+    }
+    response.json({
+      ok: true,
+      user: formatUser(result.rows[0]),
+    });
+  } catch (error) {
+    sendInternalError(response, "approve user", error);
+  }
+});
+
 app.get("/api/admin/users/:userId/stats", authRequired, serverAiKeyManagerRequired, async (request, response) => {
   const { userId } = request.params;
   if (!userId || typeof userId !== "string" || userId.length > 64) {
@@ -2824,6 +2902,9 @@ app.get("/api/admin/users/:userId/stats", authRequired, serverAiKeyManagerRequir
                  u.full_name,
                  u.created_at,
                  u.is_admin,
+                 u.account_status,
+                 u.approved_at,
+                 u.approved_by_user_id,
                  coalesce(pc.project_count, 0)::int as project_count,
                  coalesce(sc.snapshot_count, 0)::int as snapshot_count,
                  coalesce(ec.visit_count, 0)::int as visit_count,
@@ -3050,6 +3131,8 @@ app.get("/api/admin/analytics", authRequired, adminRequired, async (_request, re
              u.full_name as username,
              u.email,
              u.created_at,
+             u.account_status,
+             u.approved_at,
              coalesce(pc.project_count, 0)::int as project_count,
              coalesce(sc.snapshot_count, 0)::int as snapshot_count,
              coalesce(ec.visit_count, 0)::int as visit_count,
@@ -3184,7 +3267,13 @@ app.get("/api/admin/analytics", authRequired, adminRequired, async (_request, re
       : Promise.resolve({ rows: [] });
 
     const summaryPromise = Promise.all([
-      query("select count(*)::int as registered_users from app_user"),
+      query(
+        `select count(*)::int as registered_users,
+                count(*) filter (where account_status = $1)::int as pending_users,
+                count(*) filter (where account_status = $2)::int as approved_users
+           from app_user`,
+        [ACCOUNT_STATUS_PENDING, ACCOUNT_STATUS_APPROVED]
+      ),
       hasProjectTable
         ? query("select count(*)::int as total_projects from project")
         : Promise.resolve({ rows: [{ total_projects: 0 }] }),
@@ -3220,6 +3309,8 @@ app.get("/api/admin/analytics", authRequired, adminRequired, async (_request, re
       const totalOutput = Number(analytics.total_output_tokens ?? 0);
       return {
         registered_users: Number(usersCountRes.rows[0]?.registered_users ?? 0),
+        pending_users: Number(usersCountRes.rows[0]?.pending_users ?? 0),
+        approved_users: Number(usersCountRes.rows[0]?.approved_users ?? 0),
         total_projects: Number(projectsCountRes.rows[0]?.total_projects ?? 0),
         total_snapshots: Number(snapshotsCountRes.rows[0]?.total_snapshots ?? 0),
         total_visits: Number(analytics.total_visits ?? 0),

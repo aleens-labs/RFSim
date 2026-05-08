@@ -3199,6 +3199,7 @@
                 <th data-col="username">User</th>
                 <th data-col="email">Email</th>
                 <th data-col="created_at">Joined</th>
+                <th data-col="account_status">Status</th>
                 <th data-col="login_count">Logins</th>
                 <th data-col="visit_count">Visits</th>
                 <th data-col="project_count">Projects</th>
@@ -3289,6 +3290,8 @@
       </div>
       <div class="analytics-user-detail-body">
         <div class="analytics-user-detail-header">
+          <button id="analyticsUserApproveBtn" class="primary-button small" type="button">Approve Account</button>
+          <div id="analyticsUserApprovalStatus" class="analytics-user-server-key-status">Account status loading.</div>
           <button id="analyticsUserServerKeyBtn" class="primary-button small" type="button">Enable AI SERVER KEY</button>
           <div id="analyticsUserServerKeyStatus" class="analytics-user-server-key-status">Server fallback disabled for this user.</div>
         </div>
