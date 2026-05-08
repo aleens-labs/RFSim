@@ -37348,7 +37348,7 @@ function wireTopoNodeContextMenu() {
     radioPopup.classList.add("hidden");
     radioLinkPanel.classList.add("hidden");
     radioLinkBtn.disabled = false;
-    radioUnlinkBtn?.classList.toggle("hidden", !Number.isFinite(Number(_activeAsset.toUnitId)));
+    radioUnlinkBtn?.classList.add("hidden");
     _activeAsset = null;
     _activeUnitId = null;
   }
