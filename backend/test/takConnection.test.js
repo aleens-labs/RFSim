@@ -6,6 +6,7 @@ const {
   attemptTakConnection,
   buildTakSocketConfig,
   summarizeTakConnectionFailure,
+  validateTakConnectHost,
   validateTakTlsServerName,
 } = require("../src/tak/connection");
 
@@ -78,6 +79,34 @@ test("validateTakTlsServerName rejects display labels with spaces", () => {
     validateTakTlsServerName("RF SIM"),
     /valid DNS hostname or IP address/i
   );
+});
+
+test("validateTakConnectHost blocks unsafe host targets by default", () => {
+  assert.match(validateTakConnectHost("localhost"), /cannot be localhost/i);
+  assert.match(validateTakConnectHost("127.0.0.1"), /cannot be/i);
+  assert.match(validateTakConnectHost("10.0.0.5"), /cannot be/i);
+  assert.match(validateTakConnectHost("169.254.169.254"), /cannot be/i);
+  assert.match(validateTakConnectHost("::1"), /cannot be/i);
+  assert.equal(validateTakConnectHost("tak.example.mil"), "");
+  assert.equal(validateTakConnectHost("3.150.66.52"), "");
+});
+
+test("validateTakConnectHost allows unsafe targets only when explicitly enabled", () => {
+  assert.equal(validateTakConnectHost("127.0.0.1", { allowUnsafeHost: true }), "");
+  assert.equal(validateTakConnectHost("localhost", { allowUnsafeHost: true }), "");
+});
+
+test("buildTakSocketConfig enforces TAK host safety unless explicitly disabled", () => {
+  assert.throws(
+    () => buildTakSocketConfig(createProfile({ server_host: "127.0.0.1" })),
+    /cannot be/i
+  );
+
+  const config = buildTakSocketConfig(
+    createProfile({ server_host: "127.0.0.1" }),
+    { allowUnsafeHost: true }
+  );
+  assert.equal(config.host, "127.0.0.1");
 });
 
 test("summarizeTakConnectionFailure explains IP hostname mismatch with an actionable hint", () => {

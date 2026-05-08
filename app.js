@@ -7071,7 +7071,9 @@ function sanitizeAiSavedConfig(config) {
   const meta = getAiProviderMeta(provider);
   if (!meta) return null;
   // Local model doesn't require an API key â€” model name is stored in the apiKey field
-  if (!meta.isLocalModel && !apiKey) return null;
+  const serverWide = Boolean(config.serverWide);
+  const hasServerManagedKey = serverWide && config.hasApiKey === true;
+  if (!meta.isLocalModel && !apiKey && !hasServerManagedKey) return null;
   return {
     id: typeof config.id === "string" && config.id ? config.id : generateAiConfigId(),
     label: typeof config.label === "string" ? config.label.trim() : "",
@@ -7079,7 +7081,8 @@ function sanitizeAiSavedConfig(config) {
     apiKey,
     model: ensureAiModelForProvider(provider, typeof config.model === "string" ? config.model : ""),
     localModelUrl: typeof config.localModelUrl === "string" ? config.localModelUrl.trim() : "",
-    serverWide: Boolean(config.serverWide),
+    serverWide,
+    hasApiKey: Boolean(apiKey || hasServerManagedKey),
     ownerUsername: typeof config.ownerUsername === "string" ? config.ownerUsername.trim() : "",
   };
 }
@@ -7096,6 +7099,7 @@ function serializeAiSavedConfigForClientStorage(config) {
     model: config.model,
     localModelUrl: config.localModelUrl || "",
     serverWide: Boolean(config.serverWide),
+    hasApiKey: Boolean(config.hasApiKey),
     ownerUsername: config.ownerUsername || "",
   };
 }
@@ -11723,7 +11727,8 @@ async function autoConnectAiProviderIfConfigured({ openPanelOnSuccess = false, f
   const provider = effectiveConfig?.provider || state.ai.provider;
   const apiKey = effectiveConfig?.apiKey || state.ai.apiKey;
   const isLocal = Boolean(getAiProviderMeta(provider)?.isLocalModel);
-  const hasConfig = Boolean(provider && (apiKey || isLocal));
+  const usesServerFallback = effectiveConfig?.source === "server";
+  const hasConfig = Boolean(provider && (apiKey || isLocal || usesServerFallback));
   if (!hasConfig) {
     return false;
   }
@@ -18161,19 +18166,24 @@ async function testAiProviderConnection({ openPanelOnSuccess = true } = {}) {
   }
 
   if (provider === "anthropic") {
-    if (!apiKey.startsWith("sk-")) {
+    const usesServerFallback = effectiveConfig?.source === "server";
+    if (!usesServerFallback && !apiKey.startsWith("sk-")) {
       state.ai.status = "error";
       state.ai.statusMessage = "Anthropic API keys must start with sk-.";
       syncAiUi();
       return;
     }
     state.ai.status = "testing";
-    state.ai.statusMessage = "Testing Anthropic API access...";
+    state.ai.statusMessage = usesServerFallback
+      ? "Testing server-managed Anthropic access..."
+      : "Testing Anthropic API access...";
     syncAiUi();
     try {
       await callAnthropic([{ role: "user", content: "Reply with READY only." }], 16, 0);
       state.ai.status = "ready";
-      state.ai.statusMessage = "Anthropic (Claude) connected. AI chat is enabled.";
+      state.ai.statusMessage = usesServerFallback
+        ? "Anthropic (Claude) connected through the server-managed key."
+        : "Anthropic (Claude) connected. AI chat is enabled.";
       syncAiUi();
       if (openPanelOnSuccess) {
         openAiPanel();
@@ -19072,23 +19082,33 @@ async function callGenAiMil(messages, maxTokens = 256, temperature = 0, onToken)
 async function callAnthropic(messages, maxTokens = 256, temperature = 0, onToken, systemText = "") {
   const effectiveConfig = getEffectiveAiConfig();
   const streaming = Boolean(onToken);
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": effectiveConfig?.apiKey || state.ai.apiKey,
-      "anthropic-version": "2023-06-01",
-      "anthropic-dangerous-direct-browser-access": "true",
-    },
-    body: JSON.stringify({
-      model: ensureAiModelForProvider("anthropic", effectiveConfig?.model || state.ai.model),
-      system: systemText || undefined,
-      max_tokens: maxTokens,
-      temperature,
-      stream: streaming,
-      messages,
-    }),
-  });
+  const requestBody = {
+    model: ensureAiModelForProvider("anthropic", effectiveConfig?.model || state.ai.model),
+    system: systemText || undefined,
+    max_tokens: maxTokens,
+    temperature,
+    stream: streaming,
+    messages,
+  };
+  const response = effectiveConfig?.source === "server"
+    ? await fetch(`${API_BASE_URL}/ai/anthropic/messages`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${state.session.token}`,
+        },
+        body: JSON.stringify(requestBody),
+      })
+    : await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": effectiveConfig?.apiKey || state.ai.apiKey,
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true",
+        },
+        body: JSON.stringify(requestBody),
+      });
 
   if (!response.ok) {
     const bodyText = await response.text();
@@ -39145,6 +39165,11 @@ async function callViewAi(userMessage, contextJson) {
     "Do not emit JSON actions unless the user explicitly asks to change the scenario.",
   ].join("\n");
   const userContext = `CURRENT VIEW CONTEXT JSON:\n${contextJson}\n\nUSER REQUEST:\n${userMessage}`;
+
+  if (effectiveConfig?.source === "server" && effectiveConfig.provider === "anthropic") {
+    const result = await callAnthropic([{ role: "user", content: userContext }], 512, 0, null, systemPrompt);
+    return result.text;
+  }
 
   if (providerUrl.includes("anthropic") || providerUrl.includes("claude") || model.includes("claude")) {
     const payload = {

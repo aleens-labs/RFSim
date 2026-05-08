@@ -66,6 +66,7 @@ function loadConfig(env = process.env) {
     ),
     analyticsRetentionDays: parseIntegerEnv(env, "ANALYTICS_RETENTION_DAYS", 180, { min: 0 }),
     analyticsPruneIntervalMs: parseIntegerEnv(env, "ANALYTICS_PRUNE_INTERVAL_MS", 21600000, { min: 0 }),
+    allowUnsafeTakHosts: getEnv(env, "TAK_ALLOW_UNSAFE_HOSTS", isProduction ? "false" : "true").toLowerCase() === "true",
   };
 }
 

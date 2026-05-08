@@ -11,6 +11,12 @@ const path = require("path");
 const { z } = require("zod");
 const { config } = require("./config");
 const { pool, query } = require("./db");
+const { formatServerWideAiConfigForClient } = require("./aiConfigPolicy");
+const {
+  isReservedSelfRegistrationIdentity,
+  isServerAiKeyManager,
+  shouldGrantAdminOnSelfRegistration,
+} = require("./adminPolicy");
 const {
   buildLoginIdentifierCandidates,
   normalizeDisplayName,
@@ -688,7 +694,10 @@ function ensureTakConnector(userId, profileRow) {
     return existing;
   }
 
-  const connection = buildTakSocketConfig(profileRow, { decryptSecret });
+  const connection = buildTakSocketConfig(profileRow, {
+    decryptSecret,
+    allowUnsafeHost: config.allowUnsafeTakHosts,
+  });
   const connector = {
     key,
     userId,
@@ -860,22 +869,20 @@ const aiGenAiMilChatSchema = z.object({
   stream: z.boolean().optional()
 });
 
+const aiAnthropicMessagesSchema = z.object({
+  model: z.string().min(1).max(200),
+  system: z.string().max(200000).optional(),
+  messages: z.array(z.any()).min(1),
+  max_tokens: z.number().int().positive().max(200000).optional(),
+  temperature: z.number().min(0).max(1).optional(),
+  stream: z.boolean().optional()
+});
+
 const GENAI_MIL_BASE_URL = "https://api.genai.mil/v1";
 const GENAI_MIL_TIMEOUT_MS = 30000;
-const DEFAULT_ANALYTICS_ADMIN_IDENTITIES = new Set([
-  "kyle.hicks",
-  "kyle.hicks@rfsim.local",
-  "kyle.hicks@rfsim.us",
-  "kyle.hicks@www.rfsim.us",
-]);
-
-function isBootstrapAnalyticsAdminIdentity(...values) {
-  return values.some((value) => DEFAULT_ANALYTICS_ADMIN_IDENTITIES.has(String(value || "").trim().toLowerCase()));
-}
-
-function isServerAiKeyManager(user) {
-  return Boolean(user?.is_admin) && isBootstrapAnalyticsAdminIdentity(user?.username, user?.email);
-}
+const ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages";
+const ANTHROPIC_TIMEOUT_MS = 30000;
+const ANTHROPIC_VERSION = "2023-06-01";
 
 async function hasUserServerAiKeyAccess(userId) {
   if (!userId) {
@@ -949,19 +956,30 @@ async function buildUserAiConfigPayload(user) {
     })),
     canManageServerWideKey,
     fallbackGrantEnabled,
-    fallbackConfig: fallbackConfig
-      ? {
-          id: fallbackConfig.id,
-          label: fallbackConfig.label,
-          provider: fallbackConfig.provider,
-          apiKey: fallbackConfig.apiKey,
-          model: fallbackConfig.model,
-          ownerUserId: fallbackConfig.ownerUserId,
-          ownerUsername: fallbackConfig.ownerUsername,
-          serverWide: true,
-        }
-      : null,
+    fallbackConfig: formatServerWideAiConfigForClient(fallbackConfig),
   };
+}
+
+async function fetchAuthorizedServerWideAiConfig(userId) {
+  const user = await fetchUserById(userId);
+  if (!user) {
+    return { status: 404, error: "User not found." };
+  }
+
+  const allowed = isServerAiKeyManager(user) || await hasUserServerAiKeyAccess(user.id);
+  if (!allowed) {
+    return { status: 403, error: "Server-wide AI key access has not been granted for this user." };
+  }
+
+  const fallbackConfig = await fetchServerWideAiConfig();
+  if (!fallbackConfig) {
+    return { status: 404, error: "Server-wide AI key is not configured." };
+  }
+  if (fallbackConfig.provider !== "anthropic") {
+    return { status: 400, error: "Server-wide AI key must be an Anthropic key." };
+  }
+
+  return { config: fallbackConfig };
 }
 
 function isHtmlLike(text = "") {
@@ -1089,6 +1107,95 @@ async function relayGenAiMilStream(response, upstreamResponse, fallbackMessage) 
   stream.pipe(response);
 }
 
+function buildAiProviderErrorPayload(bodyText, fallbackMessage) {
+  if (!isHtmlLike(bodyText)) {
+    try {
+      const parsed = JSON.parse(bodyText);
+      if (parsed?.error && typeof parsed.error === "object") {
+        return parsed.error;
+      }
+      if (typeof parsed?.error === "string") {
+        return { message: parsed.error };
+      }
+      if (typeof parsed?.message === "string") {
+        return { message: parsed.message };
+      }
+    } catch {}
+  }
+
+  return { message: stripHtml(bodyText).slice(0, 400) || fallbackMessage };
+}
+
+function sendAiProviderError(response, status, payload, fallbackMessage) {
+  const safeStatus = Number.isInteger(status) ? status : 502;
+  const safePayload = payload && typeof payload === "object"
+    ? payload
+    : { message: fallbackMessage };
+  console.error(`[AI relay] client error (${safeStatus}): ${safePayload.message || fallbackMessage}`);
+  response.status(safeStatus).json({ error: safePayload });
+}
+
+async function requestAnthropicMessages({ apiKey, body, stream = false } = {}) {
+  return fetch(ANTHROPIC_MESSAGES_URL, {
+    method: "POST",
+    headers: {
+      Accept: stream ? "text/event-stream, application/json" : "application/json",
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": ANTHROPIC_VERSION,
+    },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(ANTHROPIC_TIMEOUT_MS),
+  });
+}
+
+async function relayAiProviderJson(response, upstreamResponse, fallbackMessage) {
+  const bodyText = await upstreamResponse.text();
+  if (!upstreamResponse.ok) {
+    const payload = buildAiProviderErrorPayload(bodyText, fallbackMessage);
+    sendAiProviderError(response, upstreamResponse.status, payload, fallbackMessage);
+    return;
+  }
+
+  try {
+    response.status(upstreamResponse.status).json(JSON.parse(bodyText));
+  } catch {
+    sendAiProviderError(
+      response,
+      502,
+      { message: "AI provider returned a non-JSON response." },
+      fallbackMessage
+    );
+  }
+}
+
+async function relayAiProviderStream(response, upstreamResponse, fallbackMessage) {
+  if (!upstreamResponse.ok) {
+    const bodyText = await upstreamResponse.text();
+    const payload = buildAiProviderErrorPayload(bodyText, fallbackMessage);
+    sendAiProviderError(response, upstreamResponse.status, payload, fallbackMessage);
+    return;
+  }
+
+  response.status(upstreamResponse.status);
+  response.setHeader("Content-Type", upstreamResponse.headers.get("content-type") || "text/event-stream; charset=utf-8");
+  response.setHeader("Cache-Control", upstreamResponse.headers.get("cache-control") || "no-cache, no-transform");
+  response.setHeader("Connection", "keep-alive");
+  response.flushHeaders?.();
+
+  if (!upstreamResponse.body) {
+    response.end();
+    return;
+  }
+
+  const stream = Readable.fromWeb(upstreamResponse.body);
+  stream.on("error", (error) => {
+    console.error(`[AI relay] stream error: ${error.message}`);
+    response.end();
+  });
+  stream.pipe(response);
+}
+
 app.get("/api/health", async (_request, response) => {
   try {
     await query("select 1");
@@ -1135,7 +1242,12 @@ app.post("/api/auth/register", rateLimit("auth"), async (request, response) => {
   const fullName = normalizeDisplayName(parsed.data.fullName || username);
   const internalEmail = usernameToInternalEmail(username);
   const identifierCandidates = buildLoginIdentifierCandidates(username);
-  const shouldGrantAdmin = isBootstrapAnalyticsAdminIdentity(username, internalEmail, parsed.data.username);
+  const shouldGrantAdmin = shouldGrantAdminOnSelfRegistration();
+
+  if (isReservedSelfRegistrationIdentity(username, internalEmail, parsed.data.username)) {
+    response.status(403).json({ error: "This username is reserved and cannot be self-registered." });
+    return;
+  }
 
   try {
     const existing = await query(
@@ -1265,7 +1377,7 @@ app.put("/api/user/ai-configs", authRequired, async (request, response) => {
       return;
     }
     if (serverWideConfigs.length && !canManageServerWideKey) {
-      response.status(403).json({ error: "Only kyle.hicks can save a server-wide AI key." });
+      response.status(403).json({ error: "Forbidden: server admin access required." });
       return;
     }
     if (serverWideConfigs.some((configItem) => configItem.provider !== "anthropic")) {
@@ -1744,7 +1856,10 @@ app.post("/api/user/tak-profiles/:profileId/test", authRequired, async (request,
     let connectionFailure = null;
     if (hasCore && hasTakCerts) {
       try {
-        socketConfig = buildTakSocketConfig(profile, { decryptSecret });
+        socketConfig = buildTakSocketConfig(profile, {
+          decryptSecret,
+          allowUnsafeHost: config.allowUnsafeTakHosts,
+        });
         await attemptTakConnection(socketConfig, { timeoutMs: 6000 });
       } catch (error) {
         if (!socketConfig) {
@@ -2193,6 +2308,36 @@ app.post("/api/ai/genai-mil/chat/completions", authRequired, rateLimit("aiRelay"
   }
 });
 
+app.post("/api/ai/anthropic/messages", authRequired, rateLimit("aiRelay"), async (request, response) => {
+  const parsed = aiAnthropicMessagesSchema.safeParse(request.body);
+  if (!parsed.success) {
+    response.status(400).json({ error: parsed.error.flatten() });
+    return;
+  }
+
+  try {
+    const access = await fetchAuthorizedServerWideAiConfig(request.user.sub);
+    if (!access.config) {
+      response.status(access.status).json({ error: access.error });
+      return;
+    }
+
+    const upstream = await requestAnthropicMessages({
+      apiKey: access.config.apiKey,
+      body: parsed.data,
+      stream: Boolean(parsed.data.stream),
+    });
+    if (parsed.data.stream) {
+      await relayAiProviderStream(response, upstream, "Anthropic chat completion failed.");
+      return;
+    }
+    await relayAiProviderJson(response, upstream, "Anthropic chat completion failed.");
+  } catch (error) {
+    logServerError("Anthropic chat completion", error);
+    sendAiProviderError(response, 502, null, "Anthropic chat completion failed.");
+  }
+});
+
 app.get("/api/projects", authRequired, async (request, response) => {
   try {
     const result = await query(
@@ -2491,7 +2636,7 @@ async function serverAiKeyManagerRequired(request, response, next) {
   try {
     const user = await fetchUserById(request.user?.sub);
     if (!isServerAiKeyManager(user)) {
-      response.status(403).json({ error: "Only kyle.hicks can manage the server-wide AI key." });
+      response.status(403).json({ error: "Forbidden: server admin access required." });
       return;
     }
     request.adminUser = user;

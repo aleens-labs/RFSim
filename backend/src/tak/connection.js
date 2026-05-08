@@ -98,6 +98,91 @@ function validateTakTlsServerName(value = "") {
   return "TLS Server Name must be a valid DNS hostname or IP address, not a label like \"RF SIM\".";
 }
 
+function normalizeTakConnectHost(value = "") {
+  const host = String(value || "").trim().toLowerCase().replace(/\.$/, "");
+  if (host.startsWith("[") && host.endsWith("]")) {
+    return host.slice(1, -1);
+  }
+  return host;
+}
+
+function parseIpv4(value = "") {
+  const parts = String(value || "").split(".");
+  if (parts.length !== 4) {
+    return null;
+  }
+  const octets = parts.map((part) => Number(part));
+  if (octets.some((octet, index) => (
+    !Number.isInteger(octet)
+    || octet < 0
+    || octet > 255
+    || String(octet) !== parts[index]
+  ))) {
+    return null;
+  }
+  return octets;
+}
+
+function isUnsafeIpv4(value = "") {
+  const octets = parseIpv4(value);
+  if (!octets) {
+    return false;
+  }
+  const [first, second] = octets;
+  return (
+    first === 0
+    || first === 10
+    || first === 127
+    || (first === 100 && second >= 64 && second <= 127)
+    || (first === 169 && second === 254)
+    || (first === 172 && second >= 16 && second <= 31)
+    || (first === 192 && second === 168)
+    || (first === 198 && (second === 18 || second === 19))
+    || first >= 224
+  );
+}
+
+function isUnsafeIpv6(value = "") {
+  const host = String(value || "").toLowerCase();
+  if (host.startsWith("::ffff:")) {
+    return isUnsafeIpv4(host.slice("::ffff:".length));
+  }
+  if (host === "::" || host === "::1") {
+    return true;
+  }
+  const firstGroup = host.split(":")[0];
+  const firstHextet = Number.parseInt(firstGroup || "0", 16);
+  if (!Number.isFinite(firstHextet)) {
+    return false;
+  }
+  return (
+    (firstHextet & 0xffc0) === 0xfe80
+    || (firstHextet & 0xfe00) === 0xfc00
+    || (firstHextet & 0xff00) === 0xff00
+  );
+}
+
+function validateTakConnectHost(value = "", { allowUnsafeHost = false } = {}) {
+  if (allowUnsafeHost) {
+    return "";
+  }
+  const host = normalizeTakConnectHost(value);
+  if (!host) {
+    return "TAK Server Host is required.";
+  }
+  if (host === "localhost" || host.endsWith(".localhost")) {
+    return "TAK Server Host cannot be localhost in this deployment.";
+  }
+  const ipVersion = net.isIP(host);
+  if (ipVersion === 4 && isUnsafeIpv4(host)) {
+    return "TAK Server Host cannot be a loopback, private, link-local, reserved, or multicast IPv4 address in this deployment.";
+  }
+  if (ipVersion === 6 && isUnsafeIpv6(host)) {
+    return "TAK Server Host cannot be a loopback, private, link-local, unique-local, or multicast IPv6 address in this deployment.";
+  }
+  return "";
+}
+
 function getTakTlsVerifyHost(connectionOrProfile = {}) {
   const tlsServerName = String(
     connectionOrProfile.tlsServerName
@@ -138,13 +223,17 @@ function createTakConnectionDebugDetail(connection = {}) {
   return lines.join("\n");
 }
 
-function buildTakSocketConfig(profileRow, { decryptSecret = (value) => value } = {}) {
+function buildTakSocketConfig(profileRow, { decryptSecret = (value) => value, allowUnsafeHost = false } = {}) {
   const host = String(profileRow?.server_host || profileRow?.serverHost || "").trim();
   const port = Number(profileRow?.server_port || profileRow?.serverPort || 0);
   const transport = String(profileRow?.transport || "ssl").trim().toLowerCase();
   const tlsServerName = normalizeTakTlsServerName(profileRow?.tls_server_name || profileRow?.tlsServerName || "");
   if (!host || !Number.isFinite(port) || port < 1 || port > 65535) {
     throw new Error("TAK profile is missing a valid host or port.");
+  }
+  const hostError = validateTakConnectHost(host, { allowUnsafeHost });
+  if (hostError) {
+    throw new Error(hostError);
   }
   const tlsServerNameError = validateTakTlsServerName(tlsServerName);
   if (tlsServerNameError) {
@@ -335,5 +424,6 @@ module.exports = {
   isTakCertUploadLike,
   normalizeTakTlsServerName,
   summarizeTakConnectionFailure,
+  validateTakConnectHost,
   validateTakTlsServerName,
 };

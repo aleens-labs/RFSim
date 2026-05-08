@@ -24,4 +24,32 @@ test("development config can fall back to JWT_SECRET for local convenience", () 
 
   assert.equal(config.aiConfigSecret, "dev-secret");
   assert.equal(config.databasePoolMax, 10);
+  assert.equal(config.allowUnsafeTakHosts, true);
+});
+
+test("production config blocks unsafe TAK hosts by default", () => {
+  const config = loadConfig({
+    NODE_ENV: "production",
+    PORT: "3000",
+    APP_ORIGIN: "https://example.test",
+    DATABASE_URL: "postgres://user:pass@localhost:5432/db",
+    JWT_SECRET: "jwt-secret",
+    AI_CONFIG_SECRET: "ai-config-secret",
+  });
+
+  assert.equal(config.allowUnsafeTakHosts, false);
+});
+
+test("production config can explicitly allow private TAK hosts", () => {
+  const config = loadConfig({
+    NODE_ENV: "production",
+    PORT: "3000",
+    APP_ORIGIN: "https://example.test",
+    DATABASE_URL: "postgres://user:pass@localhost:5432/db",
+    JWT_SECRET: "jwt-secret",
+    AI_CONFIG_SECRET: "ai-config-secret",
+    TAK_ALLOW_UNSAFE_HOSTS: "true",
+  });
+
+  assert.equal(config.allowUnsafeTakHosts, true);
 });
