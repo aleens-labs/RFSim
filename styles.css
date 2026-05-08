@@ -10350,8 +10350,9 @@ body.map-tak-debug-resizing {
 
 .topo-link-popup {
   position: absolute;
-  bottom: 24px;
+  top: 16px;
   left: 24px;
+  bottom: auto;
   z-index: 100;
   background: var(--bg-menu);
   border: 1px solid var(--border);
@@ -10596,6 +10597,7 @@ body.map-tak-debug-resizing {
 .topo-link-fair      { stroke: #f59e0b; }
 .topo-link-poor      { stroke: #f97316; }
 .topo-link-none      { stroke: #ef4444; }
+.topo-link-unplaced  { stroke: #94a3b8; }
 
 /* ═══════════════════════════════════════════════════════════════
    Topo link type — dash patterns by medium

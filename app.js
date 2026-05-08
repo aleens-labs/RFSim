@@ -1512,7 +1512,7 @@ const EMITTER_LIBRARY = {
     programs: {
       "mimo-2x2": {
         label: "MIMO 2Ã—2 â€” 2.4 GHz",
-        rf: { frequencyMHz: 2400, bandwidthKHz: 20000, modulation: "OFDM", waveform: "StreamCaster-MIMO", duplex: "full-duplex", channelSpacingKHz: 20000 },
+        rf: { frequencyMHz: 2400, bandwidthKHz: 20000, modulation: "OFDM", waveform: "MIMO", duplex: "full-duplex", channelSpacingKHz: 20000 },
         tx: { powerW: 1, dutyCycle: 1, papr: 10, spectralEfficiency: 6 },
         rx: { sensitivityDbm: -95, noiseFigDb: 7, requiredSnrDb: 8, acrDb: 35, bdrDb: 60 },
         antenna: { type: "mimo_patch", gainDbi: 3, pattern: "omnidirectional", polarization: "dual", heightM: 1.5, cableLossDb: 0.3, systemLossDb: 1 },
@@ -1521,7 +1521,7 @@ const EMITTER_LIBRARY = {
       },
       "mimo-2x2-4900": {
         label: "MIMO 2Ã—2 â€” 4.9 GHz",
-        rf: { frequencyMHz: 4940, bandwidthKHz: 20000, modulation: "OFDM", waveform: "StreamCaster-MIMO", duplex: "full-duplex", channelSpacingKHz: 20000 },
+        rf: { frequencyMHz: 4940, bandwidthKHz: 20000, modulation: "OFDM", waveform: "MIMO", duplex: "full-duplex", channelSpacingKHz: 20000 },
         tx: { powerW: 1, dutyCycle: 1, papr: 10, spectralEfficiency: 6 },
         rx: { sensitivityDbm: -93, noiseFigDb: 7, requiredSnrDb: 8, acrDb: 35, bdrDb: 60 },
         antenna: { type: "mimo_patch", gainDbi: 5, pattern: "omnidirectional", polarization: "dual", heightM: 1.5, cableLossDb: 0.3, systemLossDb: 1 },
@@ -1536,7 +1536,7 @@ const EMITTER_LIBRARY = {
     programs: {
       "mimo-4x4-2400": {
         label: "MIMO 4Ã—4 â€” 2.4 GHz (High-Cap)",
-        rf: { frequencyMHz: 2400, bandwidthKHz: 40000, modulation: "OFDM", waveform: "StreamCaster-MIMO", duplex: "full-duplex", channelSpacingKHz: 40000 },
+        rf: { frequencyMHz: 2400, bandwidthKHz: 40000, modulation: "OFDM", waveform: "MIMO", duplex: "full-duplex", channelSpacingKHz: 40000 },
         tx: { powerW: 2, dutyCycle: 1, papr: 10, spectralEfficiency: 8 },
         rx: { sensitivityDbm: -97, noiseFigDb: 6, requiredSnrDb: 8, acrDb: 38, bdrDb: 62 },
         antenna: { type: "mimo_array", gainDbi: 6, pattern: "omnidirectional", polarization: "dual", heightM: 2, cableLossDb: 0.3, systemLossDb: 1 },
@@ -1545,7 +1545,7 @@ const EMITTER_LIBRARY = {
       },
       "mimo-4x4-5800": {
         label: "MIMO 4Ã—4 â€” 5.8 GHz (High-Cap)",
-        rf: { frequencyMHz: 5800, bandwidthKHz: 40000, modulation: "OFDM", waveform: "StreamCaster-MIMO", duplex: "full-duplex", channelSpacingKHz: 40000 },
+        rf: { frequencyMHz: 5800, bandwidthKHz: 40000, modulation: "OFDM", waveform: "MIMO", duplex: "full-duplex", channelSpacingKHz: 40000 },
         tx: { powerW: 2, dutyCycle: 1, papr: 10, spectralEfficiency: 8 },
         rx: { sensitivityDbm: -95, noiseFigDb: 6, requiredSnrDb: 8, acrDb: 38, bdrDb: 62 },
         antenna: { type: "mimo_array", gainDbi: 8, pattern: "omnidirectional", polarization: "dual", heightM: 2, cableLossDb: 0.3, systemLossDb: 1 },
@@ -1554,7 +1554,7 @@ const EMITTER_LIBRARY = {
       },
       "mimo-4x4-4900": {
         label: "MIMO 4Ã—4 â€” 4.9 GHz (Public Safety)",
-        rf: { frequencyMHz: 4940, bandwidthKHz: 40000, modulation: "OFDM", waveform: "StreamCaster-MIMO", duplex: "full-duplex", channelSpacingKHz: 40000 },
+        rf: { frequencyMHz: 4940, bandwidthKHz: 40000, modulation: "OFDM", waveform: "MIMO", duplex: "full-duplex", channelSpacingKHz: 40000 },
         tx: { powerW: 2, dutyCycle: 1, papr: 10, spectralEfficiency: 8 },
         rx: { sensitivityDbm: -95, noiseFigDb: 6, requiredSnrDb: 8, acrDb: 38, bdrDb: 62 },
         antenna: { type: "mimo_array", gainDbi: 7, pattern: "omnidirectional", polarization: "dual", heightM: 2, cableLossDb: 0.3, systemLossDb: 1 },
@@ -1569,30 +1569,30 @@ const EMITTER_LIBRARY = {
     programs: {
       "wave-relay-2400": {
         label: "Wave Relay MANET â€” 2.4 GHz",
-        rf: { frequencyMHz: 2400, bandwidthKHz: 20000, modulation: "OFDM", waveform: "Wave-Relay", duplex: "full-duplex", channelSpacingKHz: 20000 },
+        rf: { frequencyMHz: 2400, bandwidthKHz: 20000, modulation: "OFDM", waveform: "Wave Relay", duplex: "full-duplex", channelSpacingKHz: 20000 },
         tx: { powerW: 1, dutyCycle: 1, papr: 9, spectralEfficiency: 5 },
         rx: { sensitivityDbm: -96, noiseFigDb: 7, requiredSnrDb: 9, acrDb: 35, bdrDb: 60 },
         antenna: { type: "omni_dipole", gainDbi: 2, pattern: "omnidirectional", polarization: "vertical", heightM: 1.5, cableLossDb: 0.3, systemLossDb: 1.5 },
         prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true },
-        net: { isManet: true, relayCapable: true, maxHops: 15, latencyMs: 12, adaptiveDataRate: true, dataRateMbps: 50, meshProtocol: "Wave-Relay-MANET" },
+        net: { isManet: true, relayCapable: true, maxHops: 15, latencyMs: 12, adaptiveDataRate: true, dataRateMbps: 50, meshProtocol: "Wave Relay MANET" },
       },
       "wave-relay-4900": {
         label: "Wave Relay MANET â€” 4.9 GHz",
-        rf: { frequencyMHz: 4940, bandwidthKHz: 20000, modulation: "OFDM", waveform: "Wave-Relay", duplex: "full-duplex", channelSpacingKHz: 20000 },
+        rf: { frequencyMHz: 4940, bandwidthKHz: 20000, modulation: "OFDM", waveform: "Wave Relay", duplex: "full-duplex", channelSpacingKHz: 20000 },
         tx: { powerW: 1, dutyCycle: 1, papr: 9, spectralEfficiency: 5 },
         rx: { sensitivityDbm: -93, noiseFigDb: 7, requiredSnrDb: 9, acrDb: 35, bdrDb: 60 },
         antenna: { type: "omni_dipole", gainDbi: 3, pattern: "omnidirectional", polarization: "vertical", heightM: 1.5, cableLossDb: 0.3, systemLossDb: 1.5 },
         prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true },
-        net: { isManet: true, relayCapable: true, maxHops: 15, latencyMs: 12, adaptiveDataRate: true, dataRateMbps: 55, meshProtocol: "Wave-Relay-MANET" },
+        net: { isManet: true, relayCapable: true, maxHops: 15, latencyMs: 12, adaptiveDataRate: true, dataRateMbps: 55, meshProtocol: "Wave Relay MANET" },
       },
       "wave-relay-5800": {
         label: "Wave Relay MANET â€” 5.8 GHz",
-        rf: { frequencyMHz: 5800, bandwidthKHz: 40000, modulation: "OFDM", waveform: "Wave-Relay", duplex: "full-duplex", channelSpacingKHz: 40000 },
+        rf: { frequencyMHz: 5800, bandwidthKHz: 40000, modulation: "OFDM", waveform: "Wave Relay", duplex: "full-duplex", channelSpacingKHz: 40000 },
         tx: { powerW: 1, dutyCycle: 1, papr: 9, spectralEfficiency: 6 },
         rx: { sensitivityDbm: -94, noiseFigDb: 7, requiredSnrDb: 9, acrDb: 35, bdrDb: 60 },
         antenna: { type: "omni_dipole", gainDbi: 4, pattern: "omnidirectional", polarization: "vertical", heightM: 1.5, cableLossDb: 0.3, systemLossDb: 1.5 },
         prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true },
-        net: { isManet: true, relayCapable: true, maxHops: 15, latencyMs: 12, adaptiveDataRate: true, dataRateMbps: 80, meshProtocol: "Wave-Relay-MANET" },
+        net: { isManet: true, relayCapable: true, maxHops: 15, latencyMs: 12, adaptiveDataRate: true, dataRateMbps: 80, meshProtocol: "Wave Relay MANET" },
       },
     },
   },
@@ -37053,6 +37053,36 @@ async function renderTopologyView(options = {}) {
     return em.ext?.satcomEnabled ||
       SATCOM_WF_SET.has((em.ext?.waveform || "").toUpperCase());
   }
+  function getEmitterChannelBandwidthKhz(em) {
+    const explicitBandwidth = Number(em.bandwidthKHz ?? em.ext?.bandwidthKHz);
+    if (Number.isFinite(explicitBandwidth) && explicitBandwidth > 0) {
+      return explicitBandwidth;
+    }
+    const channelSpacing = Number(em.channelSpacingKHz ?? em.ext?.channelSpacingKHz);
+    if (Number.isFinite(channelSpacing) && channelSpacing > 0) {
+      return channelSpacing;
+    }
+    return 25;
+  }
+  function emittersChannelRangesOverlap(emA, emB) {
+    const freqA = Number(emA.frequencyMHz);
+    const freqB = Number(emB.frequencyMHz);
+    if (!Number.isFinite(freqA) || !Number.isFinite(freqB) || freqA <= 0 || freqB <= 0) {
+      return false;
+    }
+    const bwA = getEmitterChannelBandwidthKhz(emA) / 1000;
+    const bwB = getEmitterChannelBandwidthKhz(emB) / 1000;
+    const minA = freqA - (bwA / 2);
+    const maxA = freqA + (bwA / 2);
+    const minB = freqB - (bwB / 2);
+    const maxB = freqB + (bwB / 2);
+    return maxA >= minB && maxB >= minA;
+  }
+  function buildEmitterChannelBucket(em) {
+    const freq = Number(em.frequencyMHz);
+    const bw = getEmitterChannelBandwidthKhz(em);
+    return `${Number.isFinite(freq) ? freq.toFixed(3) : "0.000"}:${bw.toFixed(3)}`;
+  }
 
   const candidatePairs = []; // { a: entry, b: entry, emA: asset, emB: asset }
   const globalSeen = new Set(); // deduplicate across all pairs
@@ -37061,8 +37091,8 @@ async function renderTopologyView(options = {}) {
       const nodeA = posEntries[i], nodeB = posEntries[j];
       for (const emA of nodeA.emitters) {
         for (const emB of nodeB.emitters) {
-          const wfA = (emA.ext?.waveform || "").toUpperCase();
-          const wfB = (emB.ext?.waveform || "").toUpperCase();
+          const wfA = (emA.waveform || emA.ext?.waveform || "").toUpperCase();
+          const wfB = (emB.waveform || emB.ext?.waveform || "").toUpperCase();
           const satA = isSatcomEmitter(emA), satB = isSatcomEmitter(emB);
           // Match by same radio model (emitterLabel) â€” strongest signal
           const labelA = (emA.emitterLabel || "").toUpperCase();
@@ -37075,14 +37105,22 @@ async function renderTopologyView(options = {}) {
           if (satA && satB) {
             // SATCOM only matches SATCOM. Mixed SATCOM/LOS pairs are invalid.
             const wfCompat = !!wfA && !!wfB && wfA === wfB;
-            if (sameModel) bucket = labelA;
-            else if (wfCompat) bucket = wfA;
+            if (!emittersChannelRangesOverlap(emA, emB)) {
+              continue;
+            }
+            if (sameModel) bucket = `${labelA}@${buildEmitterChannelBucket(emA)}`;
+            else if (wfCompat) bucket = `${wfA}@${buildEmitterChannelBucket(emA)}`;
           } else {
-            // Non-SATCOM: same model, OR same freq+compatible waveform
-            const freqMatch = Math.abs((emA.frequencyMHz || 0) - (emB.frequencyMHz || 0)) < 1.0;
-            const waveformMatch = !wfA || !wfB || wfA === wfB;
-            if (sameModel) bucket = labelA;
-            else if (freqMatch && waveformMatch) bucket = wfA || wfB || `freq:${emA.frequencyMHz}`;
+            // Non-SATCOM: require real channel overlap AND matching waveform.
+            // Both must share the same waveform string (case-insensitive).
+            // If both waveforms are empty (manual/custom), fall back to freq+model match.
+            const waveformMatch = wfA && wfB ? wfA === wfB : (!wfA && !wfB);
+            const channelOverlap = emittersChannelRangesOverlap(emA, emB);
+            if (!channelOverlap || !waveformMatch) {
+              continue;
+            }
+            if (sameModel) bucket = `${labelA}@${buildEmitterChannelBucket(emA)}`;
+            else bucket = `${wfA || "freq"}@${buildEmitterChannelBucket(emA)}`;
           }
           if (!bucket) continue;
           const pairKey = `${nodeA.key}|${nodeB.key}|${bucket}`;
@@ -37105,7 +37143,12 @@ async function renderTopologyView(options = {}) {
 
   // Assess link quality for all pairs in parallel
   const qualityResults = await Promise.all(
-    candidatePairs.map(p => assessLinkQuality(p.emA, p.emB).catch(() => ({ score: 50, label: "Unknown", reasons: [], terrain: null })))
+    candidatePairs.map((p) => {
+      if (!hasAssetMapLocation(p.emA) || !hasAssetMapLocation(p.emB)) {
+        return Promise.resolve(buildUnplacedLinkQuality(p.emA, p.emB));
+      }
+      return assessLinkQuality(p.emA, p.emB).catch(() => ({ score: 50, label: "Unknown", reasons: [], terrain: null }));
+    })
   );
   const linkList = candidatePairs.map((p, idx) => ({ ...p, quality: qualityResults[idx] }));
 
@@ -37673,6 +37716,48 @@ function linkQualityClass(score) {
   return "topo-link-none";
 }
 
+function isUnplacedLinkQuality(quality) {
+  return !!quality?.notPlaced;
+}
+
+function resolvedLinkQualityClass(quality) {
+  if (isUnplacedLinkQuality(quality)) return "topo-link-unplaced";
+  return linkQualityClass(quality?.score);
+}
+
+function resolvedLinkQualityColor(quality) {
+  if (isUnplacedLinkQuality(quality)) return "#94a3b8";
+  return linkQualityColor(quality?.score);
+}
+
+function buildUnplacedLinkQuality(a, b) {
+  const reasons = [];
+  const missing = [];
+  if (!hasAssetMapLocation(a)) missing.push(a?.emitterLabel || a?.name || "Emitter A");
+  if (!hasAssetMapLocation(b)) missing.push(b?.emitterLabel || b?.name || "Emitter B");
+  reasons.push("RF settings align closely enough that these emitters would link once they are placed on the map.");
+  if (missing.length === 1) {
+    reasons.push(`${missing[0]} is not placed on the map yet, so terrain, distance, and line-of-sight cannot be assessed.`);
+  } else {
+    reasons.push("Neither emitter is placed on the map yet, so terrain, distance, and line-of-sight cannot be assessed.");
+  }
+  reasons.push("Place the emitter on the map to turn this into an assessed RF link.");
+  return {
+    score: 50,
+    label: "Not Placed",
+    reasons,
+    terrain: null,
+    distKm: null,
+    rssiDbm: null,
+    marginDb: null,
+    forwardRssiDbm: null,
+    reverseRssiDbm: null,
+    forwardMarginDb: null,
+    reverseMarginDb: null,
+    notPlaced: true,
+  };
+}
+
 function topologyAtmosphericAttenuation(freqMHz, weather, distanceKm) {
   const freqGHz = Math.max(Number(freqMHz) || 1, 1) / 1000;
   const humidity = clamp(Number(weather?.humidity) || 0, 0, 100) / 100;
@@ -37961,6 +38046,58 @@ function showTopoLinkDetail(a, b, quality, nameA, nameB) {
       ${quality.reasons.map(r => `<li>${esc(r)}</li>`).join("")}
     </ul>
   `;
+  popup.classList.remove("hidden");
+  document.getElementById("topoLinkPopupClose")?.addEventListener("click", () => popup.classList.add("hidden"), { once: true });
+}
+
+function showEmitterWorkspaceLinkDetail(a, b, quality, nameA, nameB) {
+  const popup = document.getElementById("topoLinkPopup");
+  const title = document.getElementById("topoLinkPopupTitle");
+  const body = document.getElementById("topoLinkPopupBody");
+  const canvas = document.getElementById("topoCanvas");
+  if (!popup || !body) return;
+  const leftName = nameA || a?.name || a?.id || "Emitter A";
+  const rightName = nameB || b?.name || b?.id || "Emitter B";
+  const isUnplaced = isUnplacedLinkQuality(quality);
+  const scoreColor = resolvedLinkQualityColor(quality);
+  const terrain = quality?.terrain;
+  let terrainBadge = `<span style="color:var(--muted);font-size:0.65rem">No terrain data</span>`;
+  if (isUnplaced) {
+    terrainBadge = `<span style="color:#94a3b8;font-size:0.65rem">Placement status: Not placed on map</span>`;
+  } else if (terrain?.blocked) {
+    terrainBadge = `<span style="color:#ef4444;font-size:0.65rem">LOS blocked | ${Math.abs(terrain.minClearanceM).toFixed(0)} m obstruction${terrain.source === "hybrid" ? " | Hybrid" : terrain.source === "cesium" ? " | Cesium" : " | DTED"}</span>`;
+  } else if (terrain) {
+    terrainBadge = `<span style="color:#10b981;font-size:0.65rem">LOS clear | ${terrain.minClearanceM?.toFixed(0) ?? "?"}m clearance${terrain.source === "hybrid" ? " | Hybrid" : terrain.source === "cesium" ? " | Cesium" : " | DTED"}</span>`;
+  }
+  const statsRow = (!isUnplaced && quality?.distKm != null)
+    ? `<div style="display:flex;gap:14px;font-size:0.68rem;color:var(--muted);margin:6px 0 8px">
+        <span>Distance ${quality.distKm.toFixed(1)} km</span>
+        ${quality.rssiDbm != null ? `<span>RSSI ${quality.rssiDbm.toFixed(0)} dBm</span>` : ""}
+        ${quality.marginDb != null ? `<span>Margin ${quality.marginDb.toFixed(0)} dB</span>` : ""}
+      </div>`
+    : "";
+  if (title) title.textContent = `${leftName} -> ${rightName}`;
+  body.innerHTML = `
+    <div style="margin-bottom:8px;display:flex;align-items:center;gap:10px">
+      <div style="font-size:1.4rem;font-weight:700;color:${scoreColor}">${isUnplaced ? "NP" : Math.round(Number(quality?.score) || 0)}</div>
+      <div>
+        <strong style="color:${scoreColor}">${esc(quality?.label || "Unknown")}</strong><br>
+        <span style="color:var(--muted);font-size:0.7rem">${isUnplaced ? "Compatible RF settings, but not placed on map" : "Link Quality Score (0-100)"}</span><br>
+        ${terrainBadge}
+      </div>
+    </div>
+    ${statsRow}
+    <ul style="margin:0;padding:0 0 0 16px;font-size:0.75rem;line-height:1.6">
+      ${(quality?.reasons || []).map((reason) => `<li>${esc(reason)}</li>`).join("")}
+    </ul>
+  `;
+  popup.style.top = "16px";
+  popup.style.left = "16px";
+  popup.style.right = "auto";
+  popup.style.bottom = "auto";
+  if (canvas && popup.parentElement !== canvas) {
+    canvas.appendChild(popup);
+  }
   popup.classList.remove("hidden");
   document.getElementById("topoLinkPopupClose")?.addEventListener("click", () => popup.classList.add("hidden"), { once: true });
 }
@@ -38463,7 +38600,7 @@ function redrawTopoLinksLegacy() {
       x1 += nx; y1 += ny; x2 += nx; y2 += ny;
     }
 
-    const cls = linkQualityClass(lnk.quality.score);
+    const cls = resolvedLinkQualityClass(lnk.quality);
     const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
     line.setAttribute("x1", x1); line.setAttribute("y1", y1);
     line.setAttribute("x2", x2); line.setAttribute("y2", y2);
@@ -38478,7 +38615,7 @@ function redrawTopoLinksLegacy() {
     line.addEventListener("mouseleave", () => { tooltip.style.display = "none"; });
     line.addEventListener("click", (e) => {
       e.stopPropagation();
-      showTopoLinkDetail(lnk.emA, lnk.emB, lnk.quality, lnk.nameA, lnk.nameB);
+      showEmitterWorkspaceLinkDetail(lnk.emA, lnk.emB, lnk.quality, lnk.nameA, lnk.nameB);
     });
     svg.appendChild(line);
   }
@@ -38566,7 +38703,7 @@ function redrawTopoLinks() {
         EDGE_CLEARANCE
       );
 
-      const cls = linkQualityClass(lnk.quality.score);
+      const cls = resolvedLinkQualityClass(lnk.quality);
       const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
       line.setAttribute("x1", start.x);
       line.setAttribute("y1", start.y);
@@ -38574,11 +38711,17 @@ function redrawTopoLinks() {
       line.setAttribute("y2", end.y);
       line.setAttribute("stroke-width", "2.5");
       line.setAttribute("class", `topo-link ${cls} ${lnk.typeClass || ""}`);
-      line.style.stroke = linkQualityColor(lnk.quality.score);
+      line.style.stroke = resolvedLinkQualityColor(lnk.quality);
       line.addEventListener("mousemove", (e) => {
         tooltip.style.display = "block";
         tooltip.style.left = (e.clientX + 12) + "px";
         tooltip.style.top = (e.clientY - 8) + "px";
+        if (isUnplacedLinkQuality(lnk.quality)) {
+          tooltip.innerHTML = `<strong>${esc(lnk.nameA)} -> ${esc(lnk.nameB)}</strong><br>` +
+            `Status: <strong>${esc(lnk.quality.label)}</strong><br>` +
+            `Place the emitters on the map to assess this link.`;
+          return;
+        }
         const rxA = Number.isFinite(lnk.quality.reverseRssiDbm) ? `${lnk.quality.reverseRssiDbm.toFixed(1)} dBm` : "N/A";
         const rxB = Number.isFinite(lnk.quality.forwardRssiDbm) ? `${lnk.quality.forwardRssiDbm.toFixed(1)} dBm` : "N/A";
         tooltip.innerHTML = `<strong>${esc(lnk.nameA)} â†” ${esc(lnk.nameB)}</strong><br>` +
@@ -38591,7 +38734,7 @@ function redrawTopoLinks() {
       });
       line.addEventListener("click", (e) => {
         e.stopPropagation();
-        showTopoLinkDetail(lnk.emA, lnk.emB, lnk.quality, lnk.nameA, lnk.nameB);
+        showEmitterWorkspaceLinkDetail(lnk.emA, lnk.emB, lnk.quality, lnk.nameA, lnk.nameB);
       });
       svg.appendChild(line);
     });
