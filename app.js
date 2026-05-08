@@ -1992,6 +1992,7 @@ const dom = {
   emittersCtxEdit: document.querySelector("#emittersCtxEdit"),
   emittersCtxDuplicate: document.querySelector("#emittersCtxDuplicate"),
   emittersCtxDelete: document.querySelector("#emittersCtxDelete"),
+  emittersCtxClose: document.querySelector("#emittersCtxClose"),
   emittersNetModal: document.querySelector("#emittersNetModal"),
   emittersNetModalTitle: document.querySelector("#emittersNetModalTitle"),
   emittersNetModalSubtitle: document.querySelector("#emittersNetModalSubtitle"),
@@ -22578,13 +22579,36 @@ function deleteEmitterAssetById(assetId) {
   return true;
 }
 
+function unlinkEmitterAssetById(assetId) {
+  if (!assetId) return false;
+  const asset = state.assets.find((entry) => entry.id === assetId) || null;
+  if (!asset || !Number.isFinite(Number(asset.toUnitId))) return false;
+  const assetName = asset.name || asset.emitterLabel || "Emitter";
+  delete asset.toUnitId;
+  if (_currentEmitterEditId === assetId) {
+    updateEmitterToLinkBadge(null);
+  }
+  refreshLinkedViews();
+  renderAssets();
+  renderTopologyView();
+  saveMapState();
+  setStatus(`Unlinked ${assetName} from its T/O unit.`);
+  return true;
+}
+
 function showEmittersContextMenu(assetId, x, y) {
   if (!dom.emittersContextMenu) {
     return;
   }
   _emittersWorkspaceState.contextAssetId = assetId;
-  dom.emittersContextMenu.style.left = `${x}px`;
-  dom.emittersContextMenu.style.top = `${y}px`;
+  const asset = state.assets.find((a) => a.id === assetId);
+  const title = document.querySelector("#emittersCtxTitle");
+  if (title) title.textContent = asset?.emitterLabel || asset?.name || "Emitter";
+  // Clamp to viewport
+  const menuW = 280, menuH = 220;
+  const vw = window.innerWidth, vh = window.innerHeight;
+  dom.emittersContextMenu.style.left = `${Math.min(x, vw - menuW - 8)}px`;
+  dom.emittersContextMenu.style.top = `${Math.min(y, vh - menuH - 8)}px`;
   dom.emittersContextMenu.classList.remove("hidden");
 }
 
@@ -22946,6 +22970,8 @@ function initEmittersViewIfNeeded() {
     switchView("map");
     focusMapContent(`asset:${assetId}`);
   });
+  dom.emittersCtxClose?.addEventListener("click", () => hideEmittersContextMenu());
+
   dom.emittersCtxEdit?.addEventListener("click", () => {
     const assetId = _emittersWorkspaceState.contextAssetId;
     hideEmittersContextMenu();
@@ -37308,6 +37334,7 @@ function wireTopoNodeContextMenu() {
   const radioConfigureNetBtn = document.getElementById("topoRadioConfigureNetBtn");
   const radioDuplicateBtn = document.getElementById("topoRadioDuplicateBtn");
   const radioLinkBtn = document.getElementById("topoRadioLinkBtn");
+  const radioUnlinkBtn = document.getElementById("topoRadioUnlinkBtn");
   const radioDeleteBtn = document.getElementById("topoRadioDeleteBtn");
   const radioLinkPanel = document.getElementById("topoRadioLinkPanel");
   const radioLinkList  = document.getElementById("topoRadioLinkList");
@@ -37321,6 +37348,7 @@ function wireTopoNodeContextMenu() {
     radioPopup.classList.add("hidden");
     radioLinkPanel.classList.add("hidden");
     radioLinkBtn.disabled = false;
+    radioUnlinkBtn?.classList.toggle("hidden", !Number.isFinite(Number(_activeAsset.toUnitId)));
     _activeAsset = null;
     _activeUnitId = null;
   }
@@ -37418,25 +37446,29 @@ function wireTopoNodeContextMenu() {
   // Edit Radio â†’ open the existing emitter modal
   radioEditBtn.addEventListener("click", () => {
     if (!_activeAsset) return;
+    const assetId = _activeAsset.id;
+    const assetName = _activeAsset.name || _activeAsset.emitterLabel || "Emitter";
     hideAll();
     setAssetPlacementMode(false);
-    openEmitterEditorById(_activeAsset.id);
+    openEmitterEditorById(assetId);
     refreshActionButtons();
-    setStatus(`Editing ${_activeAsset.name}.`);
+    setStatus(`Editing ${assetName}.`);
   }, { signal: sig });
 
   // Link to Unit Radio â†’ show unit/radio picker
   radioAddNetBtn?.addEventListener("click", () => {
     if (!_activeAsset) return;
+    const assetId = _activeAsset.id;
     hideAll();
-    openEmittersNetModal(_activeAsset.id, "", { createNew: true });
+    openEmittersNetModal(assetId, "", { createNew: true });
   }, { signal: sig });
 
   radioConfigureNetBtn?.addEventListener("click", () => {
     if (!_activeAsset) return;
-    hideAll();
+    const assetId = _activeAsset.id;
     const firstNet = getEmitterNets(_activeAsset)[0] || null;
-    openEmittersNetModal(_activeAsset.id, firstNet?.id || "", { createNew: !firstNet });
+    hideAll();
+    openEmittersNetModal(assetId, firstNet?.id || "", { createNew: !firstNet });
   }, { signal: sig });
 
   radioDuplicateBtn?.addEventListener("click", () => {
@@ -37444,6 +37476,13 @@ function wireTopoNodeContextMenu() {
     const assetId = _activeAsset.id;
     hideAll();
     duplicateEmitterAssetById(assetId);
+  }, { signal: sig });
+
+  radioUnlinkBtn?.addEventListener("click", () => {
+    if (!_activeAsset) return;
+    const assetId = _activeAsset.id;
+    hideAll();
+    unlinkEmitterAssetById(assetId);
   }, { signal: sig });
 
   radioDeleteBtn?.addEventListener("click", () => {
