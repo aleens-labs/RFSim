@@ -698,6 +698,240 @@ const TACTICAL_UNIT_CATALOG = [
 ];
 const TACTICAL_UNIT_CATALOG_BY_ID = new Map(TACTICAL_UNIT_CATALOG.map((entry) => [entry.id, entry]));
 const TACTICAL_UNIT_CATALOG_BY_TAIL = [...TACTICAL_UNIT_CATALOG].sort((a, b) => b.cotTail.length - a.cotTail.length);
+const MILSTD_SYMBOL_CATALOG = Array.isArray(window.RFSIM_MILSTD_SYMBOL_CATALOG)
+  ? window.RFSIM_MILSTD_SYMBOL_CATALOG
+  : [];
+const MILSTD_SYMBOL_BY_ID = new Map(MILSTD_SYMBOL_CATALOG.map((entry) => [String(entry.id || "").trim(), entry]));
+const MILSTD_SYMBOL_BY_UNIQUE_ID = new Map(MILSTD_SYMBOL_CATALOG.map((entry) => [String(entry.uniqueId || "").trim(), entry]));
+const MILSTD_SYMBOL_BY_LEGACY_SIDC = new Map(
+  MILSTD_SYMBOL_CATALOG
+    .filter((entry) => entry?.legacySidc)
+    .map((entry) => [String(entry.legacySidc).trim().toUpperCase(), entry]),
+);
+const MILSTD_FAMILY_SORT = [
+  "land",
+  "air",
+  "sea_surface",
+  "sea_subsurface",
+  "space",
+  "activities",
+  "cyberspace",
+  "sigint",
+  "control_measures",
+  "metoc_atmospheric",
+  "metoc_oceanographic",
+  "metoc_space",
+  "other",
+];
+const MILSTD_STANDARD_IDENTITY_CODES = {
+  unknown: "1",
+  friendly: "3",
+  neutral: "4",
+  hostile: "6",
+};
+const MILSTD_STANDARD_IDENTITY_BY_CODE = {
+  "1": "unknown",
+  "3": "friendly",
+  "4": "neutral",
+  "6": "hostile",
+};
+const MILSTD_ECHELON_CODES = {
+  team: "11",
+  squad: "12",
+  section: "13",
+  platoon: "14",
+  company: "15",
+  battalion: "16",
+  regiment: "17",
+  brigade: "18",
+  division: "21",
+  corps: "22",
+  army: "23",
+  army_group: "24",
+  theater: "25",
+};
+
+function getMilstdSymbolCatalogEntry(value = null) {
+  if (!value) return null;
+  if (typeof value === "string") {
+    const text = value.trim();
+    return MILSTD_SYMBOL_BY_ID.get(text)
+      || MILSTD_SYMBOL_BY_UNIQUE_ID.get(text)
+      || MILSTD_SYMBOL_BY_LEGACY_SIDC.get(text.toUpperCase())
+      || null;
+  }
+  const detail = value?.detail && typeof value.detail === "object" ? value.detail : {};
+  const id = String(value?.id || detail.milsymCatalogId || "").trim();
+  const uniqueId = String(value?.uniqueId || value?.symbolUniqueId || detail.milsymUniqueId || "").trim();
+  const legacySidc = String(
+    value?.legacySidc
+    || value?.sidcLegacy
+    || detail.milsymLegacyId
+    || (typeof value?.sidc === "string" && value.sidc.length === 15 ? value.sidc : "")
+    || (typeof detail?.milsymId === "string" && detail.milsymId.length === 15 ? detail.milsymId : "")
+    || ""
+  ).trim().toUpperCase();
+  return (id ? MILSTD_SYMBOL_BY_ID.get(id) : null)
+    || (uniqueId ? MILSTD_SYMBOL_BY_UNIQUE_ID.get(uniqueId) : null)
+    || (legacySidc ? MILSTD_SYMBOL_BY_LEGACY_SIDC.get(legacySidc) : null)
+    || null;
+}
+
+function isMilstdSidc20(value = "") {
+  return /^\d{20}$/.test(String(value || "").trim());
+}
+
+function extractMilstdUniqueIdFromSidc(value = "") {
+  const text = String(value || "").trim();
+  if (isMilstdSidc20(text)) {
+    return `${text.slice(4, 6)}${text.slice(10, 16)}`;
+  }
+  const match = getMilstdSymbolCatalogEntry(text);
+  return match?.uniqueId || "";
+}
+
+function buildMilstdSidc(uniqueId = "", affiliation = "friendly", size = "") {
+  const normalizedUniqueId = String(uniqueId || "").trim();
+  if (!/^\d{8}$/.test(normalizedUniqueId)) {
+    return "";
+  }
+  const standardIdentity = MILSTD_STANDARD_IDENTITY_CODES[normalizeTacticalAffiliation(affiliation)] || MILSTD_STANDARD_IDENTITY_CODES.unknown;
+  const echelonCode = MILSTD_ECHELON_CODES[String(size || "").trim()] || "00";
+  const amplifierGroup = echelonCode.charAt(0) || "0";
+  const amplifier = echelonCode.charAt(1) || "0";
+  return `100${standardIdentity}${normalizedUniqueId.slice(0, 2)}00${amplifierGroup}${amplifier}${normalizedUniqueId.slice(2)}0000`;
+}
+
+function deriveTacticalAffiliationFromMilstdSidc(value = "", fallback = "friendly") {
+  const text = String(value || "").trim();
+  if (isMilstdSidc20(text)) {
+    return MILSTD_STANDARD_IDENTITY_BY_CODE[text.charAt(3)] || normalizeTacticalAffiliation(fallback);
+  }
+  const legacy = text.toUpperCase();
+  if (legacy.startsWith("S")) {
+    const code = legacy.charAt(1);
+    if (code === "F") return "friendly";
+    if (code === "H") return "hostile";
+    if (code === "N") return "neutral";
+    if (code === "U") return "unknown";
+  }
+  return normalizeTacticalAffiliation(fallback);
+}
+
+function getMilstdSymbolDefaultCotType(entry, affiliation = "friendly") {
+  const aff = normalizeTacticalAffiliation(affiliation);
+  if (!entry) {
+    return buildDefaultCotTypeForTacticalObject("unit", aff, "ground");
+  }
+  if (entry.familyKey === "control_measures") return "b-m-p-c";
+  if (String(entry.familyKey || "").startsWith("metoc")) return "b-i-w";
+  if (entry.objectClass === "marker") return buildDefaultCotTypeForTacticalObject("marker", aff, entry.domain || "ground");
+  return buildDefaultCotTypeForTacticalObject("unit", aff, entry.domain || "ground");
+}
+
+function buildMilstdDetail(detail = {}, entry, affiliation = "friendly", size = "") {
+  const next = detail && typeof detail === "object" ? { ...detail } : {};
+  const catalogEntry = entry || getMilstdSymbolCatalogEntry(next);
+  const uniqueId = String(next.milsymUniqueId || catalogEntry?.uniqueId || "").trim();
+  const sidc = buildMilstdSidc(uniqueId, affiliation, size) || String(next.milsymId || "").trim();
+  if (catalogEntry?.id) next.milsymCatalogId = catalogEntry.id;
+  if (catalogEntry?.uniqueId) next.milsymUniqueId = catalogEntry.uniqueId;
+  if (catalogEntry?.legacySidc) next.milsymLegacyId = catalogEntry.legacySidc;
+  if (catalogEntry?.label) next.milsymLabel = catalogEntry.label;
+  if (catalogEntry?.familyKey) next.milsymFamilyKey = catalogEntry.familyKey;
+  if (catalogEntry?.familyLabel) next.milsymFamilyLabel = catalogEntry.familyLabel;
+  if (sidc) next.milsymId = sidc;
+  return next;
+}
+
+function shouldRenderStandaloneMilstd(entry) {
+  if (!entry) return false;
+  return entry.familyKey === "control_measures" || String(entry.familyKey || "").startsWith("metoc");
+}
+
+function getMilstdMainPathForAffiliation(entry, affiliation = "friendly") {
+  if (!entry) return "";
+  const normalized = normalizeTacticalAffiliation(affiliation);
+  return entry.variantPaths?.[normalized] || entry.defaultPath || entry.variantPaths?.unknown || "";
+}
+
+function getMilstdFramePathFromSidc(sidc = "") {
+  if (!isMilstdSidc20(sidc)) return "";
+  const text = String(sidc).trim();
+  return `.cache/joint-military-symbology-xml/svg/Frames/${text.slice(2, 3)}_${text.slice(3, 6)}_${text.slice(6, 7)}.svg`;
+}
+
+function getMilstdEchelonPathFromSidc(sidc = "") {
+  if (!isMilstdSidc20(sidc)) return "";
+  const text = String(sidc).trim();
+  const ampGroup = text.charAt(8);
+  const amp = text.charAt(9);
+  if (!["1", "2"].includes(ampGroup) || amp === "0") return "";
+  return `.cache/joint-military-symbology-xml/svg/Echelon/${text.charAt(3)}${ampGroup}${amp}.svg`;
+}
+
+function getMilstdSymbolInfo(value = {}) {
+  const detail = value?.detail && typeof value.detail === "object" ? value.detail : {};
+  const explicitSidc = String(value?.sidc || detail.milsymId || "").trim();
+  const entry = getMilstdSymbolCatalogEntry({
+    ...value,
+    detail,
+    uniqueId: detail.milsymUniqueId || value?.symbolUniqueId || "",
+  });
+  const affiliation = explicitSidc
+    ? deriveTacticalAffiliationFromMilstdSidc(explicitSidc, value?.affiliation || "friendly")
+    : normalizeTacticalAffiliation(value?.affiliation || "friendly");
+  const sidc = isMilstdSidc20(explicitSidc)
+    ? explicitSidc
+    : buildMilstdSidc(String(detail.milsymUniqueId || entry?.uniqueId || "").trim(), affiliation, value?.size || "");
+  return {
+    entry,
+    affiliation,
+    sidc,
+    uniqueId: String(detail.milsymUniqueId || entry?.uniqueId || extractMilstdUniqueIdFromSidc(sidc) || "").trim(),
+  };
+}
+
+function getMilstdPaletteFamilies() {
+  const grouped = MILSTD_SYMBOL_CATALOG.reduce((map, entry) => {
+    const key = String(entry?.familyKey || "other");
+    if (!map.has(key)) {
+      map.set(key, {
+        key,
+        label: entry?.familyLabel || "Other",
+        domain: entry?.domain || "ground",
+        count: 0,
+      });
+    }
+    map.get(key).count += 1;
+    return map;
+  }, new Map());
+  return [...grouped.values()].sort((a, b) => {
+    const ai = MILSTD_FAMILY_SORT.indexOf(a.key);
+    const bi = MILSTD_FAMILY_SORT.indexOf(b.key);
+    return (ai >= 0 ? ai : 999) - (bi >= 0 ? bi : 999) || a.label.localeCompare(b.label);
+  });
+}
+
+function getMilstdPaletteCategories(familyKey = "") {
+  const grouped = MILSTD_SYMBOL_CATALOG
+    .filter((entry) => !familyKey || entry.familyKey === familyKey)
+    .reduce((map, entry) => {
+      const key = `${entry.familyKey}::${entry.category}`;
+      const bucket = map.get(key) || {
+        id: key,
+        familyKey: entry.familyKey,
+        label: entry.category,
+        domain: entry.domain,
+        entries: [],
+        preview: entry,
+      };
+      bucket.entries.push(entry);
+      map.set(key, bucket);
+      return map;
+    }, new Map());
+  return [...grouped.values()].sort((a, b) => a.label.localeCompare(b.label));
+}
 
 function getCotTypeTail(cotType = "") {
   const parts = String(cotType || "").trim().split("-").filter(Boolean);
@@ -805,22 +1039,38 @@ function buildDefaultCotTypeForTacticalObject(objectClass, affiliation = "friend
 
 function normalizeTacticalObject(raw = {}) {
   const geometryType = String(raw.geometryType || "Point");
-  const objectClass = TACTICAL_OBJECT_CLASSES.includes(raw.objectClass) ? raw.objectClass : "unit";
+  const rawDetail = raw.detail && typeof raw.detail === "object" ? { ...raw.detail } : {};
+  const milstdEntry = getMilstdSymbolCatalogEntry({
+    ...raw,
+    detail: rawDetail,
+  });
+  const milstdAffiliation = raw.sidc || rawDetail.milsymId
+    ? deriveTacticalAffiliationFromMilstdSidc(raw.sidc || rawDetail.milsymId, raw.affiliation || "friendly")
+    : normalizeTacticalAffiliation(raw.affiliation || "friendly");
+  const objectClass = TACTICAL_OBJECT_CLASSES.includes(raw.objectClass)
+    ? raw.objectClass
+    : (milstdEntry?.objectClass || "unit");
   const catalogEntry = getDoctrinalCatalogEntry(raw);
-  const domain = normalizeTacticalDomain(raw.domain || catalogEntry?.domain || deriveTacticalDomainFromCotType(raw.cotType));
+  const domain = normalizeTacticalDomain(raw.domain || milstdEntry?.domain || catalogEntry?.domain || deriveTacticalDomainFromCotType(raw.cotType));
   const unitType = normalizeToUnitType(raw.unitType || raw.catalogId || catalogEntry?.id || deriveTacticalUnitTypeFromCotType(raw.cotType, domain));
-  const size = typeof raw.size === "string"
-    ? raw.size
-    : (catalogAllowsEchelon(unitType) ? "battalion" : "");
-  const affiliation = normalizeTacticalAffiliation(raw.affiliation || deriveTacticalAffiliationFromCotType(raw.cotType));
+  const size = objectClass !== "unit"
+    ? (typeof raw.size === "string" ? raw.size : "")
+    : (typeof raw.size === "string"
+        ? raw.size
+        : (catalogAllowsEchelon(unitType) ? "battalion" : ""));
+  const affiliation = normalizeTacticalAffiliation(raw.affiliation || milstdAffiliation || deriveTacticalAffiliationFromCotType(raw.cotType));
   const coordinates = normalizeTacticalCoordinates(geometryType, raw.coordinates);
-  const detail = raw.detail && typeof raw.detail === "object" ? { ...raw.detail } : {};
-  if (raw.cotType && (!detail.usericonPath || String(detail.usericonPath).startsWith("COT_MAPPING_2525B/"))) {
+  const detail = buildMilstdDetail(rawDetail, milstdEntry, affiliation, size);
+  if (!detail.milsymId && raw.cotType && (!detail.usericonPath || String(detail.usericonPath).startsWith("COT_MAPPING_2525B/"))) {
     const usericonPath = buildTakUserIconPath(raw.cotType);
     if (usericonPath) {
       detail.usericonPath = usericonPath;
     }
   }
+  const sidc = String(raw.sidc || detail.milsymId || "").trim();
+  const defaultCotType = milstdEntry
+    ? getMilstdSymbolDefaultCotType(milstdEntry, affiliation)
+    : buildDefaultCotTypeForTacticalObject(objectClass, affiliation, domain);
   return {
     id: raw.id || generateId(),
     uid: String(raw.uid || raw.id || generateId()).trim(),
@@ -832,15 +1082,15 @@ function normalizeTacticalObject(raw = {}) {
     cotType: String(
       raw.cotType
       || (objectClass === "unit" ? buildCatalogCotType(unitType, affiliation) : "")
-      || buildDefaultCotTypeForTacticalObject(objectClass, affiliation, domain)
+      || defaultCotType
     ).trim(),
-    sidc: String(raw.sidc || "").trim(),
+    sidc,
     catalogId: objectClass === "unit" ? unitType : "",
     domain,
     affiliation,
     size,
     unitType,
-    name: String(raw.name || raw.label || buildDefaultToUnitLabel(size, unitType)).trim(),
+    name: String(raw.name || raw.label || detail.milsymLabel || buildDefaultToUnitLabel(size, unitType)).trim(),
     designator: String(raw.designator || raw.callsign || "").trim(),
     remarks: String(raw.remarks || "").trim(),
     detail,
@@ -914,6 +1164,7 @@ function getTacticalDisplayUnit(object) {
   const linked = getLinkedPlanUnitForTacticalObject(object);
   const normalizedLinked = linked ? normalizePlanUnit(linked) : null;
   const resolvedType = normalizeToUnitType(object?.catalogId || deriveTacticalUnitTypeFromCotType(object?.cotType, object?.domain) || object?.unitType);
+  const detail = object?.detail && typeof object.detail === "object" ? { ...object.detail } : {};
   return normalizeToUnit({
     id: normalizedLinked?.id ?? object?.linkedPlanUnitId ?? 0,
     label: normalizedLinked?.label || object?.name || "Tactical Unit",
@@ -922,7 +1173,9 @@ function getTacticalDisplayUnit(object) {
     type: normalizedLinked?.catalogId || normalizedLinked?.type || resolvedType || "infantry",
     catalogId: normalizedLinked?.catalogId || resolvedType || "infantry",
     cotType: normalizedLinked?.cotType || object?.cotType || buildCatalogCotType(resolvedType, normalizedLinked?.affiliation || object?.affiliation || "friendly"),
-    size: normalizedLinked?.size ?? object?.size ?? (catalogAllowsEchelon(resolvedType) ? "battalion" : ""),
+    size: normalizedLinked?.size ?? object?.size ?? (object?.objectClass === "unit" && catalogAllowsEchelon(resolvedType) ? "battalion" : ""),
+    sidc: object?.sidc || detail.milsymId || "",
+    detail,
     frameOnly: isGenericCotTrackType(object?.cotType),
   });
 }
@@ -4833,12 +5086,14 @@ function buildTakTacticalCotEvent(object) {
   const callsign = tactical.designator || tactical.name || tactical.uid;
   const team = tactical.detail?.team || state.takIdentity.team || "Cyan";
   const role = tactical.detail?.role || state.takIdentity.role || "Team Member";
-  const usericonPath = tactical.detail?.usericonPath || buildTakUserIconPath(tactical.cotType);
+  const milsymId = String(tactical.sidc || tactical.detail?.milsymId || "").trim();
+  const usericonPath = milsymId ? "" : (tactical.detail?.usericonPath || buildTakUserIconPath(tactical.cotType));
   const remarks = tactical.remarks || tactical.name || "RF SIM Tactical Object";
   const detailNodes = [
     `<contact callsign="${escapeHtml(callsign)}"/>`,
     `<__group name="${escapeHtml(team)}" role="${escapeHtml(role)}"/>`,
     tactical.objectClass === "track" ? `<track course="0" speed="0"/>` : "",
+    milsymId ? `<__milsym id="${escapeHtml(milsymId)}"/>` : "",
     usericonPath ? `<usericon iconsetpath="${escapeHtml(usericonPath)}"/>` : "",
     `<remarks>${escapeHtml(remarks)}</remarks>`,
   ].filter(Boolean).join("");
@@ -4955,10 +5210,11 @@ function toggleTakStreamingForContent(contentId) {
   setStatus(`${getMapContentName(contentId) || "Item"} TAK streaming ${nextEnabled ? "enabled" : "disabled"}.`);
 }
 
-function buildTakDetailNodes({ callsign, team, role, remarks, usericonPath = "", extraNodes = [] } = {}) {
+function buildTakDetailNodes({ callsign, team, role, remarks, usericonPath = "", milsymId = "", extraNodes = [] } = {}) {
   return [
     callsign ? `<contact callsign="${escapeHtml(callsign)}"/>` : "",
     team || role ? `<__group name="${escapeHtml(team || state.takIdentity.team || "Cyan")}" role="${escapeHtml(role || state.takIdentity.role || "Team Member")}"/>` : "",
+    milsymId ? `<__milsym id="${escapeHtml(milsymId)}"/>` : "",
     usericonPath ? `<usericon iconsetpath="${escapeHtml(usericonPath)}"/>` : "",
     remarks ? `<remarks>${escapeHtml(remarks)}</remarks>` : "",
     ...extraNodes,
@@ -5620,6 +5876,9 @@ function syncDoctrinalUnitSelectionFields({ preserveCustomCot = false } = {}) {
 }
 
 function updateTacticalEditorPreview() {
+  const workingDetail = state.tacticalEditor.workingCopy?.detail && typeof state.tacticalEditor.workingCopy.detail === "object"
+    ? { ...state.tacticalEditor.workingCopy.detail }
+    : {};
   const previewAffiliation = normalizeTacticalAffiliation(dom.tacticalEditorAffiliation?.value || "friendly");
   const cotType = (dom.tacticalEditorCotType?.value || "").trim();
   const previewType = normalizeToUnitType(
@@ -5635,6 +5894,8 @@ function updateTacticalEditorPreview() {
     affiliation: previewAffiliation,
     type: previewType,
     size: previewSize,
+    sidc: buildMilstdSidc(workingDetail.milsymUniqueId || "", previewAffiliation, previewSize) || state.tacticalEditor.workingCopy?.sidc || "",
+    detail: buildMilstdDetail(workingDetail, getMilstdSymbolCatalogEntry({ detail: workingDetail }), previewAffiliation, previewSize),
     frameOnly: isGenericCotTrackType(cotType),
   });
   if (dom.tacticalEditorPreview) {
@@ -5758,7 +6019,7 @@ function createTacticalDraftFromPlacement(template, geometryType, coordinates, e
     ? (Object.prototype.hasOwnProperty.call(template, "size")
         ? template.size
         : (normalizedPlanUnit?.size ?? (catalogAllowsEchelon(unitType) ? "battalion" : "")))
-    : "team";
+    : "";
   const affiliation = template.affiliation || normalizedPlanUnit?.affiliation || "friendly";
   const name = template.name || normalizedPlanUnit?.label || buildDefaultToUnitLabel(size, unitType);
   return normalizeTacticalObject({
@@ -5768,6 +6029,7 @@ function createTacticalDraftFromPlacement(template, geometryType, coordinates, e
     shapeKind: extra.shapeKind || template.shapeKind || (geometryType === "LineString" ? "route" : geometryType === "Polygon" ? "polygon" : "point"),
     coordinates,
     cotType: template.cotType || normalizedPlanUnit?.cotType || buildCatalogCotType(unitType, affiliation) || buildDefaultCotTypeForTacticalObject(objectClass, affiliation, domain),
+    sidc: template.sidc || "",
     catalogId: objectClass === "unit" ? unitType : "",
     domain,
     affiliation,
@@ -5779,11 +6041,15 @@ function createTacticalDraftFromPlacement(template, geometryType, coordinates, e
     linkedPlanUnitId: normalizedPlanUnit?.id ?? null,
     detail: extra.isCircle
       ? {
+          ...(template.detail || {}),
           ...(extra.detail || {}),
           radiusM: Number(extra.radiusM) || 0,
           center: extra.center ? { lat: Number(extra.center.lat), lng: Number(extra.center.lng) } : null,
         }
-      : (extra.detail || {}),
+      : {
+          ...(template.detail || {}),
+          ...(extra.detail || {}),
+        },
     linkedAssetIds: [],
     showLabel: true,
   });
@@ -5873,139 +6139,35 @@ function saveTacticalEditor() {
 
 // â”€â”€ Tactical palette wizard state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const TPAL_AFFIL_COT = { friendly: "f", hostile: "h", neutral: "n", unknown: "u" };
+const _tpalState = { step: 1, affiliation: null, domain: null, selection: null, category: null, search: "" };
 
-const TPAL_TRACK_CHOICES = [
-  { id: "air_track", label: "Air track", domain: "air", cotTail: "A", frameOnly: true },
-  { id: "ground_track", label: "Ground track", domain: "ground", cotTail: "G", frameOnly: true },
-  { id: "sea_surface_track", label: "Sea surface track", domain: "sea_surface", cotTail: "S", frameOnly: true },
-  { id: "space_track", label: "Space track", domain: "space", cotTail: "P", frameOnly: true },
-  { id: "sof_unit", label: "SOF Unit", domain: "ground", cotTail: "G-U-W", unitType: "special_forces", objectClass: "unit" },
-  { id: "subsurface_track", label: "Subsurface track", domain: "subsurface", cotTail: "U", frameOnly: true },
-];
-
-const TPAL_BRANCHES = {
-  ground_track: [
-    { id: "ground_equipment", label: "Equipment", cotTail: "G-E", unitType: "ground_equipment" },
-    { id: "ground_weapons_systems", label: "Weapons Systems", cotTail: "G-E-W", unitType: "missile_launcher" },
-    { id: "ground_installation", label: "Installation", cotTail: "G-I", unitType: "headquarters" },
-    { id: "ground_unit", label: "Unit", cotTail: "G-U-C", unitType: "infantry" },
-  ],
-  air_track: [
-    { id: "air_fixed_wing", label: "Fixed Wing", cotTail: "A-M-F", unitType: "aviation_fixed" },
-    { id: "air_rotary_wing", label: "Rotary Wing", cotTail: "A-M-H", unitType: "aviation_rotary" },
-    { id: "air_uav", label: "UAV", cotTail: "A-M-F", unitType: "uav_fixed" },
-  ],
-  sea_surface_track: [
-    { id: "sea_surface_unit", label: "Unit", cotTail: "S-S", unitType: "naval_surface" },
-    { id: "sea_surface_specialized", label: "Specialized", cotTail: "S-S", unitType: "amphibious" },
-  ],
-  subsurface_track: [
-    { id: "subsurface_unit", label: "Unit", cotTail: "U-U-C", unitType: "submarine" },
-  ],
-  space_track: [
-    { id: "space_unit", label: "Unit", cotTail: "P-S", unitType: "space" },
-  ],
-};
-
-const TPAL_TYPES = {
-  ground_unit: [
-    { id: "infantry", label: "Infantry", unitType: "infantry", cotTail: "G-U-C" },
-    { id: "light_infantry", label: "Light Infantry", unitType: "light_infantry", cotTail: "G-U-C" },
-    { id: "mechanized_infantry", label: "Mechanized Infantry", unitType: "mechanized_infantry", cotTail: "G-U-C" },
-    { id: "airborne_infantry", label: "Airborne", unitType: "airborne_infantry", cotTail: "G-U-C" },
-    { id: "special_forces", label: "Special Forces", unitType: "special_forces", cotTail: "G-U-W" },
-    { id: "recon", label: "Reconnaissance", unitType: "recon", cotTail: "G-U-C-R" },
-    { id: "engineer", label: "Engineer", unitType: "engineer", cotTail: "G-U-C-E" },
-    { id: "signal", label: "Signal", unitType: "signal", cotTail: "G-U-C-S" },
-    { id: "military_intelligence", label: "Military Intelligence", unitType: "military_intelligence", cotTail: "G-U-C-I" },
-    { id: "military_police", label: "Military Police", unitType: "military_police", cotTail: "G-U-C" },
-    { id: "medical", label: "Medical", unitType: "medical", cotTail: "G-U-C-M" },
-    { id: "civil_affairs", label: "Civil Affairs", unitType: "civil_affairs", cotTail: "G-U-C" },
-    { id: "psyop", label: "PSYOP", unitType: "psyop", cotTail: "G-U-C" },
-    { id: "ew", label: "Electronic Warfare", unitType: "ew", cotTail: "G-U-C-E-W" },
-    { id: "cyber", label: "Cyber", unitType: "cyber", cotTail: "G-U-C" },
-  ],
-  ground_equipment: [
-    { id: "ground_equipment", label: "Ground Equipment", unitType: "ground_equipment", cotTail: "G-E", size: "" },
-    { id: "armor", label: "Armor", unitType: "armor", cotTail: "G-E-V-A" },
-    { id: "armored_cavalry", label: "Armored Cavalry", unitType: "armored_cavalry", cotTail: "G-E-V-A" },
-    { id: "artillery", label: "Artillery", unitType: "artillery", cotTail: "G-E" },
-    { id: "air_defense", label: "Air Defense", unitType: "air_defense", cotTail: "G-E" },
-    { id: "logistics", label: "Logistics Vehicle", unitType: "logistics", cotTail: "G-E-V-C" },
-    { id: "maintenance", label: "Maintenance", unitType: "maintenance", cotTail: "G-E" },
-    { id: "chemical", label: "CBRN", unitType: "chemical", cotTail: "G-E" },
-    { id: "finance", label: "Finance", unitType: "finance", cotTail: "G-E" },
-  ],
-  ground_weapons_systems: [
-    { id: "missile_launcher", label: "Missile Launcher", unitType: "missile_launcher", cotTail: "G-E-W", size: "" },
-    { id: "ad_missile_launcher", label: "AD Missile Launcher", unitType: "ad_missile_launcher", cotTail: "G-E-W-M-S-A", size: "" },
-    { id: "short_range_ad_missile_launcher", label: "Short-Range AD Missile Launcher", unitType: "short_range_ad_missile_launcher", cotTail: "G-E-W-M-S-A-S", size: "" },
-    { id: "medium_range_ad_missile_launcher", label: "Medium-Range AD Missile Launcher", unitType: "medium_range_ad_missile_launcher", cotTail: "G-E-W-M-S-A-M", size: "" },
-    { id: "long_range_ad_missile_launcher", label: "Long-Range AD Missile Launcher", unitType: "long_range_ad_missile_launcher", cotTail: "G-E-W-M-S-A-L", size: "" },
-    { id: "surface_to_surface_missile", label: "Surface-to-Surface Missile", unitType: "surface_to_surface_missile", cotTail: "G-E-W-M-S-S", size: "" },
-    { id: "rocket_launcher", label: "Rocket Launcher", unitType: "rocket_launcher", cotTail: "G-E-W-R", size: "" },
-    { id: "mortar", label: "Mortar", unitType: "mortar", cotTail: "G-E-W-O", size: "" },
-    { id: "howitzer", label: "Howitzer", unitType: "howitzer", cotTail: "G-E-W-H", size: "" },
-    { id: "artillery", label: "Artillery", unitType: "artillery", cotTail: "G-E", size: "" },
-    { id: "air_defense", label: "Air Defense", unitType: "air_defense", cotTail: "G-E", size: "" },
-  ],
-  ground_installation: [
-    { id: "headquarters", label: "Headquarters", unitType: "headquarters", cotTail: "G-I" },
-    { id: "judge_advocate", label: "Judge Advocate", unitType: "judge_advocate", cotTail: "G-I" },
-    { id: "chaplain", label: "Chaplain", unitType: "chaplain", cotTail: "G-I" },
-    { id: "adjutant_general", label: "Adjutant General", unitType: "adjutant_general", cotTail: "G-I" },
-  ],
-  air_fixed_wing: [
-    { id: "aviation_fixed", label: "Fixed Wing", unitType: "aviation_fixed", cotTail: "A-M-F-Q" },
-    { id: "fighter", label: "Fighter", unitType: "fighter", cotTail: "A-M-F-Q" },
-    { id: "bomber", label: "Bomber", unitType: "bomber", cotTail: "A-M-F-Q" },
-    { id: "attack_fixed", label: "Attack", unitType: "attack_fixed", cotTail: "A-M-F-Q" },
-    { id: "transport_fixed", label: "Transport", unitType: "transport_fixed", cotTail: "A-M-F-Q" },
-    { id: "isr_fixed", label: "ISR", unitType: "isr_fixed", cotTail: "A-M-F-Q" },
-    { id: "tanker", label: "Tanker", unitType: "tanker", cotTail: "A-M-F-Q" },
-  ],
-  air_rotary_wing: [
-    { id: "aviation_rotary", label: "Rotary Wing", unitType: "aviation_rotary", cotTail: "A-M-H-Q" },
-    { id: "attack_helo", label: "Attack Helicopter", unitType: "attack_helo", cotTail: "A-M-H-Q" },
-    { id: "utility_helo", label: "Utility Helicopter", unitType: "utility_helo", cotTail: "A-M-H-Q" },
-    { id: "recon_helo", label: "Recon Helicopter", unitType: "recon_helo", cotTail: "A-M-H-Q" },
-    { id: "medevac", label: "MEDEVAC", unitType: "medevac", cotTail: "A-M-H-Q" },
-  ],
-  air_uav: [
-    { id: "uav_fixed", label: "Fixed UAV", unitType: "uav_fixed", cotTail: "A-M-F-Q" },
-    { id: "uav_rotary", label: "Rotary UAV", unitType: "uav_rotary", cotTail: "A-M-H-Q" },
-  ],
-  sea_surface_unit: [
-    { id: "naval_surface", label: "Surface Vessel", unitType: "naval_surface", cotTail: "S-S" },
-    { id: "naval_aviation", label: "Naval Aviation", unitType: "naval_aviation", cotTail: "S-S" },
-    { id: "coast_guard", label: "Coast Guard", unitType: "coast_guard", cotTail: "S-S" },
-  ],
-  sea_surface_specialized: [
-    { id: "amphibious", label: "Amphibious", unitType: "amphibious", cotTail: "S-S" },
-    { id: "mine_warfare", label: "Mine Warfare", unitType: "mine_warfare", cotTail: "S-S" },
-  ],
-  subsurface_unit: [
-    { id: "submarine", label: "Submarine", unitType: "submarine", cotTail: "U-U-C" },
-  ],
-  space_unit: [
-    { id: "space", label: "Space Asset", unitType: "space", cotTail: "P-S" },
-  ],
-};
-
-const _tpalState = { step: 1, affiliation: null, domain: null, selection: null, category: null };
-
-function buildTpalCotType(cotTail = "", affiliation = "friendly") {
-  const affCode = TPAL_AFFIL_COT[affiliation] || "u";
-  const normalizedTail = String(cotTail || "").trim().replace(/^-+/, "");
-  return normalizedTail ? `a-${affCode}-${normalizedTail}` : "";
+function getTpalFamilyChoices() {
+  return getMilstdPaletteFamilies().map((entry) => ({
+    id: entry.key,
+    label: entry.label,
+    domain: entry.domain,
+    count: entry.count,
+    preview: MILSTD_SYMBOL_CATALOG.find((symbol) => symbol.familyKey === entry.key) || null,
+  }));
 }
 
-function buildTpalPreviewUnit({ cotType = "", domain = "ground", unitType = "", affiliation = "friendly", frameOnly = false, size = "" } = {}) {
+function getTpalSymbolsForCategory(categoryId = "") {
+  const [familyKey, categoryLabel] = String(categoryId || "").split("::");
+  const search = String(_tpalState.search || "").trim().toLowerCase();
+  return MILSTD_SYMBOL_CATALOG
+    .filter((entry) => (!familyKey || entry.familyKey === familyKey) && (!categoryLabel || entry.category === categoryLabel))
+    .filter((entry) => !search || entry.searchText.includes(search));
+}
+
+function buildTpalPreviewUnit({ entry = null, affiliation = "friendly", size = "" } = {}) {
+  const detail = buildMilstdDetail({}, entry, affiliation, size);
   return normalizeToUnit({
     affiliation,
-    type: unitType || deriveTacticalUnitTypeFromCotType(cotType, domain),
+    type: deriveTacticalUnitTypeFromDomain(entry?.domain || "ground"),
     size,
-    frameOnly: Boolean(frameOnly) || isGenericCotTrackType(cotType),
+    sidc: detail.milsymId || "",
+    detail,
+    frameOnly: false,
   });
 }
 
@@ -6015,13 +6177,9 @@ function getTacticalPaletteCustomName(fallback = "") {
 }
 
 function renderTpalSymbol(entry, options = {}) {
-  const cotType = entry?.cotType || buildTpalCotType(entry?.cotTail, options.affiliation);
   const previewUnit = buildTpalPreviewUnit({
-    cotType,
-    domain: entry?.domain || options.domain || deriveTacticalDomainFromCotType(cotType),
-    unitType: entry?.unitType || "",
+    entry: entry?.preview || entry,
     affiliation: options.affiliation || "friendly",
-    frameOnly: Boolean(entry?.frameOnly),
     size: typeof entry?.size === "string" ? entry.size : "",
   });
   return renderToUnitIcon(previewUnit);
@@ -6050,7 +6208,7 @@ function _tpalSetStep(step) {
 function _tpalRenderTrackChoices() {
   if (!dom.tpalStep2) return;
   const aff = _tpalState.affiliation || "friendly";
-  const markup = TPAL_TRACK_CHOICES.map((entry) => `
+  const markup = getTpalFamilyChoices().map((entry) => `
     <button class="tpal-domain-btn" type="button" data-selection="${entry.id}">
       <span class="tpal-domain-btn-symbol">${renderTpalSymbol(entry, { affiliation: aff, domain: entry.domain })}</span>
       <span>${escapeHtml(entry.label)}</span>
@@ -6065,8 +6223,8 @@ function _tpalRenderTrackChoices() {
 function _tpalRenderCategories(selectionId) {
   if (!dom.tpalCategoryList) return;
   const aff = _tpalState.affiliation || "friendly";
-  const selectedTrack = TPAL_TRACK_CHOICES.find((entry) => entry.id === selectionId);
-  const cats = TPAL_BRANCHES[selectionId] || [];
+  const selectedTrack = getTpalFamilyChoices().find((entry) => entry.id === selectionId);
+  const cats = getMilstdPaletteCategories(selectionId);
   const header = selectedTrack ? `<div class="tpal-category-heading">${escapeHtml(selectedTrack.label)}</div>` : "";
   dom.tpalCategoryList.innerHTML = `${header}${cats.map((c) => `
     <button class="tpal-cat-btn" type="button" data-cat="${c.id}">
@@ -6085,22 +6243,22 @@ function _tpalRenderCategories(selectionId) {
 
 function _tpalRenderTypes(catId) {
   if (!dom.tpalTypeGrid) return;
-  const types = TPAL_TYPES[catId] || [];
+  const types = getTpalSymbolsForCategory(catId);
   const aff = _tpalState.affiliation || "friendly";
   dom.tpalTypeGrid.innerHTML = types.map((t) => {
-    const cotType = buildTpalCotType(t.cotTail, aff);
     return `<button class="tpal-type-btn" type="button"
-      data-unit-type="${escapeHtml(t.unitType)}"
-      data-cot-type="${escapeHtml(cotType)}"
+      data-symbol-id="${escapeHtml(t.id)}"
       data-name="${escapeHtml(t.label)}"
-      data-domain="${escapeHtml(_tpalState.domain || deriveTacticalDomainFromCotType(cotType))}"
-      data-size="${escapeHtml(typeof t.size === "string" ? t.size : "")}"
-      data-object-class="unit"
+      data-domain="${escapeHtml(t.domain || _tpalState.domain || "ground")}"
+      data-object-class="${escapeHtml(t.objectClass || "unit")}"
       data-geometry-type="Point">
       <span class="tpal-type-symbol">${renderTpalSymbol(t, { affiliation: aff, domain: _tpalState.domain })}</span>
       <span>${escapeHtml(t.label)}</span>
     </button>`;
   }).join("");
+  if (!types.length) {
+    dom.tpalTypeGrid.innerHTML = '<div class="tpal-empty-state">No symbols match the current filter.</div>';
+  }
 }
 
 function openTacticalPaletteModal() {
@@ -6109,8 +6267,12 @@ function openTacticalPaletteModal() {
   _tpalState.domain = null;
   _tpalState.selection = null;
   _tpalState.category = null;
+  _tpalState.search = "";
   if (dom.tacticalPaletteName) {
     dom.tacticalPaletteName.value = "";
+  }
+  if (dom.tacticalPaletteSearch) {
+    dom.tacticalPaletteSearch.value = "";
   }
   _tpalSetStep(1);
   dom.tacticalPaletteModal?.classList.remove("hidden");
@@ -9346,24 +9508,8 @@ function wireEvents() {
     const trackBtn = event.target.closest(".tpal-domain-btn");
     if (!trackBtn) return;
     const selectionId = trackBtn.dataset.selection;
-    const selection = TPAL_TRACK_CHOICES.find((entry) => entry.id === selectionId);
+    const selection = getTpalFamilyChoices().find((entry) => entry.id === selectionId);
     if (!selection) return;
-    const aff = _tpalState.affiliation || "friendly";
-    if (!TPAL_BRANCHES[selection.id]?.length) {
-      beginTacticalPlacement({
-        id: generateId(),
-        name: getTacticalPaletteCustomName(selection.label),
-        objectClass: selection.objectClass || "unit",
-        domain: selection.domain,
-        unitType: selection.unitType || deriveTacticalUnitTypeFromCotType(buildTpalCotType(selection.cotTail, aff), selection.domain),
-        affiliation: aff,
-        cotType: buildTpalCotType(selection.cotTail, aff),
-        geometryType: "Point",
-        drawMode: "",
-        shapeKind: "",
-      });
-      return;
-    }
     _tpalState.selection = selection.id;
     _tpalState.domain = selection.domain;
     _tpalRenderCategories(selection.id);
@@ -9383,20 +9529,32 @@ function wireEvents() {
   dom.tpalTypeGrid?.addEventListener("click", (event) => {
     const typeBtn = event.target.closest(".tpal-type-btn");
     if (!typeBtn) return;
+    const entry = getMilstdSymbolCatalogEntry(typeBtn.dataset.symbolId || "");
+    if (!entry) return;
     const aff = _tpalState.affiliation || "friendly";
+    const size = entry.objectClass === "unit" && entry.familyKey === "land" ? "team" : "";
+    const detail = buildMilstdDetail({}, entry, aff, size);
     beginTacticalPlacement({
       id: generateId(),
-      name: getTacticalPaletteCustomName(typeBtn.dataset.name || "Tactical Item"),
-      objectClass: typeBtn.dataset.objectClass || "unit",
-      domain: typeBtn.dataset.domain || _tpalState.domain || "ground",
-      unitType: typeBtn.dataset.unitType || "infantry",
-      size: typeBtn.dataset.size ?? "",
+      name: getTacticalPaletteCustomName(entry.label || typeBtn.dataset.name || "Tactical Item"),
+      objectClass: entry.objectClass || typeBtn.dataset.objectClass || "unit",
+      domain: entry.domain || typeBtn.dataset.domain || _tpalState.domain || "ground",
+      unitType: deriveTacticalUnitTypeFromDomain(entry.domain || typeBtn.dataset.domain || "ground"),
+      size,
       affiliation: aff,
-      cotType: typeBtn.dataset.cotType || "",
+      cotType: getMilstdSymbolDefaultCotType(entry, aff),
+      sidc: detail.milsymId || "",
+      detail,
       geometryType: typeBtn.dataset.geometryType || "Point",
       drawMode: "",
       shapeKind: "",
     });
+  });
+  dom.tacticalPaletteSearch?.addEventListener("input", () => {
+    _tpalState.search = String(dom.tacticalPaletteSearch?.value || "").trim();
+    if (_tpalState.step === 3 && _tpalState.category) {
+      _tpalRenderTypes(_tpalState.category);
+    }
   });
   initTacticalEditorFormOptions();
   [
@@ -36343,6 +36501,18 @@ function renderToCustomSymbolShapes(type, stroke = "#000000", milstd = false, un
 }
 
 function milstd2525Svg(unit) {
+  const symbolInfo = getMilstdSymbolInfo(unit);
+  if (symbolInfo.entry && symbolInfo.sidc) {
+    const mainPath = getMilstdMainPathForAffiliation(symbolInfo.entry, symbolInfo.affiliation);
+    const standalone = shouldRenderStandaloneMilstd(symbolInfo.entry);
+    const framePath = standalone ? "" : getMilstdFramePathFromSidc(symbolInfo.sidc);
+    const echelonPath = standalone ? "" : getMilstdEchelonPathFromSidc(symbolInfo.sidc);
+    return `<span class="milstd-stack ms2525-icon" aria-hidden="true">
+      ${framePath ? `<img src="${framePath}" class="milstd-layer" alt="">` : ""}
+      ${mainPath ? `<img src="${mainPath}" class="milstd-layer" alt="">` : ""}
+      ${echelonPath ? `<img src="${echelonPath}" class="milstd-layer" alt="">` : ""}
+    </span>`;
+  }
   const framePath = resolveMilstdFramePath(unit);
   if (unit?.frameOnly) {
     return `<span class="milstd-stack ms2525-icon" aria-hidden="true">
