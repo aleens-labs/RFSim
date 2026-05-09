@@ -2387,6 +2387,8 @@ const dom = {
   tacticalPaletteName: document.querySelector("#tacticalPaletteName"),
   toUnitTypePickerBtn: document.querySelector("#toUnitTypePickerBtn"),
   toUnitTypePickerLabel: document.querySelector("#toUnitTypePickerLabel"),
+  toEditUnitTypePickerBtn: document.querySelector("#toEditUnitTypePickerBtn"),
+  toEditUnitTypePickerLabel: document.querySelector("#toEditUnitTypePickerLabel"),
   tacticalEditorModal: document.querySelector("#tacticalEditorModal"),
   tacticalEditorCloseBtn: document.querySelector("#tacticalEditorCloseBtn"),
   tacticalEditorCancelBtn: document.querySelector("#tacticalEditorCancelBtn"),
@@ -6327,43 +6329,60 @@ const TPAL_AFFIL_COT = { friendly: "f", hostile: "h", neutral: "n", unknown: "u"
 const _tpalState = {
   step: 1,
   mode: "placement",
+  planTarget: "create",
   affiliation: null,
-  domain: null,
   selection: null,
   path: [],
-  nodes: [],
   search: "",
 };
-const TACTICAL_PALETTE_DOMAIN_ORDER = ["ground", "air", "sea_surface", "subsurface", "space"];
-const TACTICAL_PALETTE_DOMAIN_LABELS = {
+const TACTICAL_PALETTE_SELECTION_ORDER = [
+  "ground",
+  "air",
+  "sea_surface",
+  "subsurface",
+  "space",
+  "activities",
+  "cyberspace",
+  "sigint",
+  "metoc_atmospheric",
+  "metoc_oceanographic",
+  "metoc_space",
+];
+const TACTICAL_PALETTE_SELECTION_LABELS = {
   ground: "Land",
   air: "Air",
   sea_surface: "Sea Surface",
   subsurface: "Sea Subsurface",
   space: "Space",
+  activities: "Activities",
+  cyberspace: "Cyberspace",
+  sigint: "SIGINT",
+  metoc_atmospheric: "METOC Atmospheric",
+  metoc_oceanographic: "METOC Oceanographic",
+  metoc_space: "METOC Space",
 };
 const MILSTD_SYMBOL_SET_NAV_CONFIG = Object.freeze({
-  "01": { domain: "air", id: "air", label: "Air Track" },
-  "02": { domain: "air", id: "air_missile", label: "Air Missile" },
-  "05": { domain: "space", id: "space", label: "Space Track" },
-  "06": { domain: "space", id: "space_missile", label: "Space Missile" },
-  "10": { domain: "ground", id: "land_unit", label: "Unit" },
-  "11": { domain: "ground", id: "land_civilian", label: "Civilian" },
-  "15": { domain: "ground", id: "land_equipment", label: "Equipment" },
-  "20": { domain: "ground", id: "land_installation", label: "Installation" },
-  "30": { domain: "sea_surface", id: "sea_surface", label: "Sea Surface" },
-  "35": { domain: "subsurface", id: "sea_subsurface", label: "Subsurface" },
-  "36": { domain: "subsurface", id: "mine_warfare", label: "Mine Warfare" },
-  "40": { domain: "ground", id: "activities", label: "Activities" },
-  "45": { domain: "ground", id: "atmospheric", label: "Atmospheric" },
-  "46": { domain: "sea_surface", id: "oceanographic", label: "Oceanographic" },
-  "47": { domain: "space", id: "metoc_space", label: "METOC Space" },
-  "50": { domain: "ground", id: "sigint_space", label: "SIGINT Space" },
-  "51": { domain: "air", id: "sigint_air", label: "SIGINT Air" },
-  "52": { domain: "ground", id: "sigint_land", label: "SIGINT Land" },
-  "53": { domain: "sea_surface", id: "sigint_surface", label: "SIGINT Sea Surface" },
-  "54": { domain: "subsurface", id: "sigint_subsurface", label: "SIGINT Subsurface" },
-  "60": { domain: "ground", id: "cyberspace", label: "Cyberspace" },
+  "01": { selectionId: "air", selectionLabel: "Air", domain: "air", id: "air", label: "Air Track" },
+  "02": { selectionId: "air", selectionLabel: "Air", domain: "air", id: "air_missile", label: "Air Missile" },
+  "05": { selectionId: "space", selectionLabel: "Space", domain: "space", id: "space", label: "Space Track" },
+  "06": { selectionId: "space", selectionLabel: "Space", domain: "space", id: "space_missile", label: "Space Missile" },
+  "10": { selectionId: "ground", selectionLabel: "Land", domain: "ground", id: "land_unit", label: "Unit" },
+  "11": { selectionId: "ground", selectionLabel: "Land", domain: "ground", id: "land_civilian", label: "Civilian" },
+  "15": { selectionId: "ground", selectionLabel: "Land", domain: "ground", id: "land_equipment", label: "Equipment" },
+  "20": { selectionId: "ground", selectionLabel: "Land", domain: "ground", id: "land_installation", label: "Installation" },
+  "30": { selectionId: "sea_surface", selectionLabel: "Sea Surface", domain: "sea_surface", id: "sea_surface", label: "Sea Surface" },
+  "35": { selectionId: "subsurface", selectionLabel: "Sea Subsurface", domain: "subsurface", id: "sea_subsurface", label: "Subsurface" },
+  "36": { selectionId: "subsurface", selectionLabel: "Sea Subsurface", domain: "subsurface", id: "mine_warfare", label: "Mine Warfare" },
+  "40": { selectionId: "activities", selectionLabel: "Activities", domain: "ground", id: "activities", label: "Activities" },
+  "45": { selectionId: "metoc_atmospheric", selectionLabel: "METOC Atmospheric", domain: "air", id: "atmospheric", label: "Atmospheric" },
+  "46": { selectionId: "metoc_oceanographic", selectionLabel: "METOC Oceanographic", domain: "sea_surface", id: "oceanographic", label: "Oceanographic" },
+  "47": { selectionId: "metoc_space", selectionLabel: "METOC Space", domain: "space", id: "metoc_space", label: "METOC Space" },
+  "50": { selectionId: "sigint", selectionLabel: "SIGINT", domain: "space", id: "sigint_space", label: "SIGINT Space" },
+  "51": { selectionId: "sigint", selectionLabel: "SIGINT", domain: "air", id: "sigint_air", label: "SIGINT Air" },
+  "52": { selectionId: "sigint", selectionLabel: "SIGINT", domain: "ground", id: "sigint_land", label: "SIGINT Land" },
+  "53": { selectionId: "sigint", selectionLabel: "SIGINT", domain: "sea_surface", id: "sigint_surface", label: "SIGINT Sea Surface" },
+  "54": { selectionId: "sigint", selectionLabel: "SIGINT", domain: "subsurface", id: "sigint_subsurface", label: "SIGINT Subsurface" },
+  "60": { selectionId: "cyberspace", selectionLabel: "Cyberspace", domain: "ground", id: "cyberspace", label: "Cyberspace" },
 });
 let TACTICAL_NAV_ROOTS = null;
 
@@ -6397,8 +6416,8 @@ function getTacticalNavChildren(node = null) {
   return Array.isArray(node?.children) ? node.children : [];
 }
 
-function getTacticalNavNodeAtPath(domain = "", path = []) {
-  const roots = getTacticalNavRootsForDomain(domain);
+function getTacticalNavNodeAtPath(selectionId = "", path = []) {
+  const roots = getTacticalNavRootsForSelection(selectionId);
   let children = roots;
   let current = null;
   for (const segment of path) {
@@ -6411,28 +6430,28 @@ function getTacticalNavNodeAtPath(domain = "", path = []) {
   return current;
 }
 
-function getTacticalNavRootsForDomain(domain = "") {
-  const normalizedDomain = normalizeTacticalDomain(domain || "ground");
+function getTacticalNavRootsForSelection(selectionId = "") {
+  const normalizedSelection = String(selectionId || "").trim() || "ground";
   if (!TACTICAL_NAV_ROOTS) {
     TACTICAL_NAV_ROOTS = buildTacticalNavRoots();
   }
-  return TACTICAL_NAV_ROOTS.get(normalizedDomain) || [];
+  return TACTICAL_NAV_ROOTS.get(normalizedSelection) || [];
 }
 
-function getTacticalNavSiblings(domain = "", path = []) {
+function getTacticalNavSiblings(selectionId = "", path = []) {
   if (!path.length) {
-    return getTacticalNavRootsForDomain(domain);
+    return getTacticalNavRootsForSelection(selectionId);
   }
-  const parent = getTacticalNavNodeAtPath(domain, path.slice(0, -1));
-  return parent ? getTacticalNavChildren(parent) : getTacticalNavRootsForDomain(domain);
+  const parent = getTacticalNavNodeAtPath(selectionId, path.slice(0, -1));
+  return parent ? getTacticalNavChildren(parent) : getTacticalNavRootsForSelection(selectionId);
 }
 
 function buildTacticalNavRoots() {
   const byDomain = new Map();
-  Object.values(MILSTD_SYMBOL_SET_NAV_CONFIG).forEach(({ domain }) => {
-    const normalizedDomain = normalizeTacticalDomain(domain);
-    if (!byDomain.has(normalizedDomain)) {
-      byDomain.set(normalizedDomain, []);
+  Object.values(MILSTD_SYMBOL_SET_NAV_CONFIG).forEach(({ selectionId }) => {
+    const normalizedSelection = String(selectionId || "").trim() || "ground";
+    if (!byDomain.has(normalizedSelection)) {
+      byDomain.set(normalizedSelection, []);
     }
   });
 
@@ -6467,10 +6486,10 @@ function buildTacticalNavRoots() {
     if (!config) {
       return;
     }
-    const domainKey = normalizeTacticalDomain(config.domain);
-    const roots = byDomain.get(domainKey) || [];
-    if (!byDomain.has(domainKey)) {
-      byDomain.set(domainKey, roots);
+    const selectionKey = String(config.selectionId || "").trim() || "ground";
+    const roots = byDomain.get(selectionKey) || [];
+    if (!byDomain.has(selectionKey)) {
+      byDomain.set(selectionKey, roots);
     }
     let root = roots.find((node) => node.id === config.id);
     if (!root) {
@@ -6519,48 +6538,131 @@ function buildTacticalNavRoots() {
   return byDomain;
 }
 
+function findTacticalNavPath(selectionId = "", matcher = () => false) {
+  const visit = (nodes, trail = []) => {
+    for (const node of nodes) {
+      const nextTrail = [...trail, node.id];
+      if (matcher(node)) {
+        return nextTrail;
+      }
+      const nested = visit(getTacticalNavChildren(node), nextTrail);
+      if (nested) {
+        return nested;
+      }
+    }
+    return null;
+  };
+  return visit(getTacticalNavRootsForSelection(selectionId), []);
+}
+
+function isPlanPickableMilstdEntry(entry = null) {
+  return Boolean(entry)
+    && String(entry.objectClass || "") === "unit"
+    && !shouldRenderStandaloneMilstd(entry);
+}
+
 function getTpalFamilyChoices() {
   const grouped = MILSTD_SYMBOL_CATALOG.reduce((map, entry) => {
     const config = MILSTD_SYMBOL_SET_NAV_CONFIG[String(entry?.symbolSetCode || "").padStart(2, "0")];
     if (!config) return map;
-    const domain = normalizeTacticalDomain(config.domain || entry?.domain || "ground");
-    if (!map.has(domain)) {
-      map.set(domain, {
-        id: domain,
-        label: TACTICAL_PALETTE_DOMAIN_LABELS[domain] || formatToUnitLabelPart(domain),
-        domain,
+    if (_tpalState.mode === "plan-picker" && !isPlanPickableMilstdEntry(entry)) {
+      return map;
+    }
+    const selectionId = String(config.selectionId || "").trim() || "ground";
+    if (!map.has(selectionId)) {
+      map.set(selectionId, {
+        id: selectionId,
+        label: config.selectionLabel || TACTICAL_PALETTE_SELECTION_LABELS[selectionId] || formatToUnitLabelPart(selectionId),
+        selectionId,
         count: 0,
         preview: entry,
       });
     }
-    const bucket = map.get(domain);
+    const bucket = map.get(selectionId);
     bucket.count += 1;
     if (!bucket.preview) bucket.preview = entry;
     return map;
   }, new Map());
 
   return [...grouped.values()].sort((a, b) => {
-    const ai = TACTICAL_PALETTE_DOMAIN_ORDER.indexOf(a.domain);
-    const bi = TACTICAL_PALETTE_DOMAIN_ORDER.indexOf(b.domain);
+    const ai = TACTICAL_PALETTE_SELECTION_ORDER.indexOf(a.selectionId);
+    const bi = TACTICAL_PALETTE_SELECTION_ORDER.indexOf(b.selectionId);
     return (ai >= 0 ? ai : 999) - (bi >= 0 ? bi : 999) || a.label.localeCompare(b.label);
   });
 }
 
-function getTpalCategories(selectionId = "") {
-  const domain = normalizeTacticalDomain(selectionId || _tpalState.domain || "ground");
-  return getTacticalNavSiblings(domain, _tpalState.path);
+function ensureTpalSelectionPath() {
+  if (!_tpalState.selection) {
+    _tpalState.path = [];
+    return;
+  }
+  const roots = getTacticalNavRootsForSelection(_tpalState.selection);
+  if (!roots.length) {
+    _tpalState.path = [];
+    return;
+  }
+  const active = getTacticalNavNodeAtPath(_tpalState.selection, _tpalState.path);
+  if (!active) {
+    _tpalState.path = [roots[0].id];
+  }
 }
 
-function getTpalSymbolsForCategory(categoryId = "") {
-  const domain = normalizeTacticalDomain(_tpalState.domain || "ground");
-  const nodes = getTacticalNavSiblings(domain, _tpalState.path);
-  const search = String(_tpalState.search || "").trim().toLowerCase();
-  const filtered = !search
-    ? nodes
-    : nodes.filter((node) => `${node.label} ${(node.entry?.cleanLabel || "")} ${(node.entry?.category || "")}`.toLowerCase().includes(search));
-  return categoryId
-    ? filtered.filter((node) => node.id === categoryId)
-    : filtered;
+function getTpalCurrentNode() {
+  return getTacticalNavNodeAtPath(_tpalState.selection, _tpalState.path);
+}
+
+function getTpalCurrentRoots() {
+  return getTacticalNavRootsForSelection(_tpalState.selection);
+}
+
+function getTpalSearchResults() {
+  const query = String(_tpalState.search || "").trim().toLowerCase();
+  if (!query || !_tpalState.selection) {
+    return [];
+  }
+  const currentNode = getTpalCurrentNode();
+  const bases = currentNode ? [currentNode] : getTpalCurrentRoots();
+  const results = [];
+  const visit = (node, trail) => {
+    const nextTrail = [...trail, node.id];
+    const haystack = [
+      node.label,
+      node.entry?.cleanLabel || node.preview?.cleanLabel || "",
+      node.entry?.category || node.preview?.category || "",
+    ].join(" ").toLowerCase();
+    if (node.entry && haystack.includes(query)) {
+      results.push({ node, path: nextTrail, exact: true, searchResult: true });
+    }
+    getTacticalNavChildren(node).forEach((child) => visit(child, nextTrail));
+  };
+  bases.forEach((node) => visit(node, currentNode ? _tpalState.path.slice(0, -1) : []));
+  return results;
+}
+
+function getTpalVisibleItems() {
+  const searchResults = getTpalSearchResults();
+  if (searchResults.length) {
+    return searchResults;
+  }
+  const currentNode = getTpalCurrentNode();
+  if (!currentNode) {
+    return getTpalCurrentRoots().map((node) => ({ node, path: [node.id], exact: false, searchResult: false }));
+  }
+  const children = getTacticalNavChildren(currentNode).map((node) => ({
+    node,
+    path: [..._tpalState.path, node.id],
+    exact: false,
+    searchResult: false,
+  }));
+  if (currentNode.entry) {
+    return [{
+      node: currentNode,
+      path: _tpalState.path.slice(),
+      exact: true,
+      searchResult: false,
+    }, ...children];
+  }
+  return children;
 }
 
 function buildTpalPreviewUnit({ entry = null, affiliation = "friendly", size = "" } = {}) {
@@ -6610,7 +6712,7 @@ function renderTpalBreadcrumbs() {
   const segments = [];
   let runningPath = [];
   _tpalState.path.forEach((nodeId, index) => {
-    const node = getTacticalNavNodeAtPath(_tpalState.domain, [...runningPath, nodeId]);
+    const node = getTacticalNavNodeAtPath(_tpalState.selection, [...runningPath, nodeId]);
     if (!node) {
       return;
     }
@@ -6628,6 +6730,8 @@ function _tpalSetStep(step) {
   [dom.tpalStep1, dom.tpalStep2, dom.tpalStep3].forEach((el, i) => {
     el?.classList.toggle("hidden", i + 1 !== step);
   });
+  dom.tacticalPaletteName?.closest("label")?.classList.toggle("hidden", _tpalState.mode === "plan-picker");
+  dom.tacticalPaletteSearch?.closest("label")?.classList.toggle("hidden", step !== 3);
   // Update step indicators
   dom.tacticalPaletteModal?.querySelectorAll(".tpal-step").forEach((el) => {
     const s = Number(el.dataset.step);
@@ -6637,43 +6741,43 @@ function _tpalSetStep(step) {
   dom.tpalBackBtn?.classList.toggle("hidden", step === 1);
   const subtitles = [
     "Select affiliation to begin.",
-    "Select a CoT track family.",
-    "Traverse the MIL-STD-2525D symbol hierarchy until you reach the exact icon.",
+    "Choose the symbol family you want to browse.",
+    _tpalState.mode === "plan-picker"
+      ? "Navigate the hierarchy and select the exact symbol for this T/O unit."
+      : "Navigate the hierarchy and select the exact symbol to place on the map.",
   ];
   if (dom.tacticalPaletteSubtitle) dom.tacticalPaletteSubtitle.textContent = subtitles[step - 1] || "";
   if (dom.tacticalPaletteStatus) dom.tacticalPaletteStatus.textContent = "";
   if (step === 3) {
-    requestAnimationFrame(() => dom.tacticalPaletteName?.focus());
+    requestAnimationFrame(() => (_tpalState.mode === "plan-picker" ? dom.tacticalPaletteSearch : dom.tacticalPaletteName)?.focus());
   }
 }
 
 function _tpalRenderTrackChoices() {
   if (!dom.tpalStep2) return;
   const aff = _tpalState.affiliation || "friendly";
-  const markup = getTpalFamilyChoices().map((entry) => `
+  const choices = getTpalFamilyChoices();
+  const markup = choices.map((entry) => `
     <button class="tpal-domain-btn" type="button" data-selection="${entry.id}">
-      <span class="tpal-domain-btn-symbol">${renderTpalSymbol(entry, { affiliation: aff, domain: entry.domain })}</span>
+      <span class="tpal-domain-btn-symbol">${renderTpalSymbol(entry, { affiliation: aff })}</span>
       <span>${escapeHtml(entry.label)}</span>
     </button>
   `).join("");
   const grid = dom.tpalStep2.querySelector(".tpal-domain-grid");
   if (grid) {
-    grid.innerHTML = markup;
+    grid.innerHTML = markup || '<div class="tpal-empty-state">No symbol families are available for this workflow.</div>';
   }
 }
 
-function _tpalRenderCategories(selectionId) {
+function _tpalRenderCategories() {
   if (!dom.tpalCategoryList) return;
   const aff = _tpalState.affiliation || "friendly";
-  const selectedTrack = getTpalFamilyChoices().find((entry) => entry.id === selectionId) || null;
-  const cats = getTpalCategories(selectionId);
-  const headingLabel = _tpalState.path.length
-    ? getTacticalNavNodeAtPath(_tpalState.domain, _tpalState.path.slice(0, -1))?.label || selectedTrack?.label || ""
-    : selectedTrack?.label || "";
-  const header = headingLabel ? `<div class="tpal-category-heading">${escapeHtml(headingLabel)}</div>` : "";
-  dom.tpalCategoryList.innerHTML = `${header}${cats.map((node) => `
-    <button class="tpal-cat-btn${_tpalState.path[_tpalState.path.length - 1] === node.id ? " active" : ""}" type="button" data-cat="${node.id}">
-      <span class="tpal-cat-symbol">${renderTpalSymbol(node, { affiliation: aff, domain: selectedTrack?.domain || _tpalState.domain })}</span>
+  const selectedFamily = getTpalFamilyChoices().find((entry) => entry.id === _tpalState.selection) || null;
+  const roots = getTpalCurrentRoots();
+  const header = selectedFamily?.label ? `<div class="tpal-category-heading">${escapeHtml(selectedFamily.label)}</div>` : "";
+  dom.tpalCategoryList.innerHTML = `${header}${roots.map((node) => `
+    <button class="tpal-cat-btn${_tpalState.path[0] === node.id ? " active" : ""}" type="button" data-cat="${node.id}">
+      <span class="tpal-cat-symbol">${renderTpalSymbol(node, { affiliation: aff })}</span>
       <span>${escapeHtml(node.label)}</span>
       <span class="tpal-nav-arrow" aria-hidden="true">&#8594;</span>
     </button>
@@ -6681,31 +6785,50 @@ function _tpalRenderCategories(selectionId) {
   renderTpalBreadcrumbs();
 }
 
-function _tpalRenderTypes(catId) {
+function _tpalRenderTypes() {
   if (!dom.tpalTypeGrid) return;
-  const types = getTpalCategories(_tpalState.selection);
   const aff = _tpalState.affiliation || "friendly";
-  dom.tpalTypeGrid.innerHTML = types.map((node) => {
+  const items = getTpalVisibleItems();
+  dom.tpalTypeGrid.innerHTML = items.map((item) => {
+    const node = item.node;
     const entry = node.entry || node.preview;
     const hasChildren = getTacticalNavChildren(node).length > 0;
-    const defaultSize = entry?.domain === "ground" && entry?.echelonAllowed !== false ? "team" : "";
+    const trail = item.path
+      .map((_, index) => getTacticalNavNodeAtPath(_tpalState.selection, item.path.slice(0, index + 1))?.label || "")
+      .filter(Boolean)
+      .join(" / ");
     return `<button class="tpal-type-btn" type="button"
       data-node-id="${escapeHtml(node.id)}"
-      data-catalog-id="${escapeHtml(entry?.id || entry?.uniqueId || "")}"
-      data-name="${escapeHtml(node.label)}"
-      data-domain="${escapeHtml(entry?.domain || _tpalState.domain || "ground")}"
-      data-object-class="${escapeHtml(entry?.objectClass || "unit")}"
-      data-size="${escapeHtml(defaultSize)}"
-      data-geometry-type="Point">
-      <span class="tpal-type-symbol">${renderTpalSymbol(node, { affiliation: aff, domain: _tpalState.domain })}</span>
-      <span>${escapeHtml(node.label)}</span>
-      ${hasChildren ? '<span class="tpal-nav-arrow" aria-hidden="true">&#8594;</span>' : ""}
+      data-path="${escapeHtml(item.path.join("|"))}"
+      data-exact="${item.exact ? "1" : "0"}">
+      <span class="tpal-type-symbol">${renderTpalSymbol(node, { affiliation: aff })}</span>
+      <span class="tpal-type-title">${escapeHtml(node.label)}</span>
+      <span class="tpal-type-meta${item.exact || !hasChildren ? " is-select" : ""}">${escapeHtml(item.searchResult ? trail : (item.exact || !hasChildren ? "Select symbol" : "Open branch"))}</span>
     </button>`;
   }).join("");
-  if (!types.length) {
+  if (!items.length) {
     dom.tpalTypeGrid.innerHTML = '<div class="tpal-empty-state">No symbols match the current filter.</div>';
   }
   renderTpalBreadcrumbs();
+}
+
+function renderTacticalPaletteStep3() {
+  ensureTpalSelectionPath();
+  _tpalRenderCategories();
+  _tpalRenderTypes();
+}
+
+function refreshPlanUnitTypePickerLabel(catalogId = "", affiliation = "friendly", { target = "create", entry = null } = {}) {
+  const labelEl = target === "edit" ? dom.toEditUnitTypePickerLabel : dom.toUnitTypePickerLabel;
+  if (!labelEl) {
+    return;
+  }
+  const resolvedEntry = entry
+    || getMilstdSymbolCatalogEntry(catalogId)
+    || getDoctrinalCatalogEntryById(catalogId);
+  const affLabel = FORCE_LABELS?.[affiliation] || formatToUnitLabelPart(affiliation || "friendly");
+  const resolvedLabel = cleanMilstdUnitLabel(resolvedEntry?.label || "");
+  labelEl.textContent = resolvedLabel ? `${affLabel} • ${resolvedLabel}` : `${affLabel} • Select Symbology`;
 }
 
 function updatePlanUnitTypePickerLabel(catalogId = "", affiliation = "friendly") {
@@ -6722,14 +6845,25 @@ function commitTacticalPaletteSelection(entry, { affiliation, size = "", mode = 
     return;
   }
   const aff = normalizeTacticalAffiliation(affiliation || _tpalState.affiliation || "friendly");
+  const milstdEntry = getMilstdSymbolCatalogEntry(entry?.milstdCatalogId || entry?.id || entry?.uniqueId || entry);
+  if (!milstdEntry) {
+    return;
+  }
+  const uniqueId = normalizeMilstdUniqueId(milstdEntry.uniqueId || milstdEntry.id || "");
+  const objectClass = milstdEntry.objectClass || "unit";
+  const catalogId = normalizeToUnitType(uniqueId || milstdEntry.id || DEFAULT_MILSTD_UNIT_ID);
+  const allowsEchelon = milstdUnitEntryAllowsEchelon(milstdEntry);
+  const nextSize = allowsEchelon ? (size || "battalion") : "";
+  const detail = buildMilstdDetail({}, milstdEntry, aff, nextSize);
+  const entryLabel = cleanMilstdUnitLabel(milstdEntry.label || entry.label || "Tactical Item");
   if (mode === "plan-picker") {
-    const typeInput = document.getElementById("toUnitType");
-    const sizeSelect = document.getElementById("toUnitSize");
-    const nextSize = catalogAllowsEchelon(entry.id) ? (size || sizeSelect?.value || "battalion") : "";
+    const isEditTarget = _tpalState.planTarget === "edit";
+    const typeInput = document.getElementById(isEditTarget ? "toEditUnitType" : "toUnitType");
+    const sizeSelect = document.getElementById(isEditTarget ? "toEditUnitSize" : "toUnitSize");
     if (typeInput) {
-      typeInput.value = entry.id;
+      typeInput.value = catalogId;
     }
-    const affiliationSelect = document.getElementById("toAffiliation");
+    const affiliationSelect = document.getElementById(isEditTarget ? "toEditAffiliation" : "toAffiliation");
     if (affiliationSelect) {
       affiliationSelect.value = aff;
     }
@@ -6737,25 +6871,25 @@ function commitTacticalPaletteSelection(entry, { affiliation, size = "", mode = 
       if (nextSize && sizeSelect.querySelector(`option[value="${nextSize}"]`)) {
         sizeSelect.value = nextSize;
       }
-      sizeSelect.disabled = !catalogAllowsEchelon(entry.id);
+      sizeSelect.disabled = !allowsEchelon;
     }
-    updatePlanUnitTypePickerLabel(entry.id, aff);
+    refreshPlanUnitTypePickerLabel(catalogId, aff, { target: isEditTarget ? "edit" : "create", entry: milstdEntry });
     closeTacticalPaletteModal();
-    setStatus(`Selected ${entry.label} for the T/O builder.`);
+    setStatus(`Selected ${entryLabel} for the T/O builder.`);
     return;
   }
   beginTacticalPlacement({
     id: generateId(),
-    name: getTacticalPaletteCustomName(entry.cleanLabel || entry.label || "Tactical Item"),
-    objectClass: entry.objectClass || "unit",
-    domain: entry.domain || _tpalState.domain || "ground",
-    unitType: entry.id || entry.uniqueId,
-    catalogId: entry.id || entry.uniqueId,
-    size,
+    name: getTacticalPaletteCustomName(entryLabel),
+    objectClass,
+    domain: normalizeTacticalDomain(milstdEntry.domain || "ground"),
+    unitType: catalogId,
+    catalogId: objectClass === "unit" ? catalogId : "",
+    size: objectClass === "unit" && allowsEchelon ? (size || "team") : "",
     affiliation: aff,
-    cotType: buildCatalogCotType(entry.id || entry.uniqueId, aff) || getMilstdSymbolDefaultCotType(entry, aff),
-    sidc: "",
-    detail: {},
+    cotType: buildCatalogCotType(catalogId, aff) || getMilstdSymbolDefaultCotType(milstdEntry, aff),
+    sidc: detail.milsymId || "",
+    detail,
     geometryType: "Point",
     drawMode: "",
     shapeKind: "",
@@ -6765,11 +6899,10 @@ function commitTacticalPaletteSelection(entry, { affiliation, size = "", mode = 
 function openTacticalPaletteModal(options = {}) {
   _tpalState.step = 1;
   _tpalState.mode = options.mode === "plan-picker" ? "plan-picker" : "placement";
+  _tpalState.planTarget = options.planTarget === "edit" ? "edit" : "create";
   _tpalState.affiliation = null;
-  _tpalState.domain = null;
   _tpalState.selection = null;
   _tpalState.path = [];
-  _tpalState.nodes = [];
   _tpalState.search = "";
   if (dom.tacticalPaletteName) {
     dom.tacticalPaletteName.value = "";
@@ -10080,6 +10213,13 @@ function wireEvents() {
 
   // Back button
   dom.tpalBackBtn?.addEventListener("click", () => {
+    if (_tpalState.step === 3 && _tpalState.path.length > 1) {
+      _tpalState.path = _tpalState.path.slice(0, -1);
+      _tpalState.search = "";
+      if (dom.tacticalPaletteSearch) dom.tacticalPaletteSearch.value = "";
+      renderTacticalPaletteStep3();
+      return;
+    }
     if (_tpalState.step > 1) _tpalSetStep(_tpalState.step - 1);
   });
 
@@ -10128,8 +10268,8 @@ function wireEvents() {
     const selection = getTpalFamilyChoices().find((entry) => entry.id === selectionId);
     if (!selection) return;
     _tpalState.selection = selection.id;
-    _tpalState.domain = selection.domain;
-    _tpalRenderCategories(selection.id);
+    _tpalState.path = findTacticalNavPath(selection.id, () => true) || [];
+    renderTacticalPaletteStep3();
     _tpalSetStep(3);
   });
 
@@ -10137,41 +10277,61 @@ function wireEvents() {
   dom.tpalCategoryList?.addEventListener("click", (event) => {
     const catBtn = event.target.closest(".tpal-cat-btn");
     if (!catBtn) return;
-    dom.tpalCategoryList.querySelectorAll(".tpal-cat-btn").forEach((b) => b.classList.remove("active"));
-    catBtn.classList.add("active");
-    _tpalState.category = catBtn.dataset.cat;
-    _tpalRenderTypes(_tpalState.category);
+    _tpalState.path = [catBtn.dataset.cat];
+    renderTacticalPaletteStep3();
   });
 
   dom.tpalTypeGrid?.addEventListener("click", (event) => {
     const typeBtn = event.target.closest(".tpal-type-btn");
     if (!typeBtn) return;
-    const entry = getDoctrinalCatalogEntryById(typeBtn.dataset.catalogId || "");
+    const path = String(typeBtn.dataset.path || "").trim()
+      ? String(typeBtn.dataset.path).split("|").filter(Boolean)
+      : (String(typeBtn.dataset.nodeId || "").trim()
+          ? [..._tpalState.path.slice(0, -1), String(typeBtn.dataset.nodeId || "").trim()]
+          : _tpalState.path.slice());
+    const node = getTacticalNavNodeAtPath(_tpalState.selection, path);
+    const entry = node?.entry || node?.preview || null;
     if (!entry) return;
-    const aff = _tpalState.affiliation || "friendly";
-    const size = typeBtn.dataset.size || "";
-    beginTacticalPlacement({
-      id: generateId(),
-      name: getTacticalPaletteCustomName(entry.label || typeBtn.dataset.name || "Tactical Item"),
-      objectClass: typeBtn.dataset.objectClass || "unit",
-      domain: entry.domain || typeBtn.dataset.domain || _tpalState.domain || "ground",
-      unitType: entry.id,
-      catalogId: entry.id,
-      size,
-      affiliation: aff,
-      cotType: buildCatalogCotType(entry.id, aff) || buildDefaultCotTypeForTacticalObject("unit", aff, entry.domain || "ground"),
-      sidc: "",
-      detail: {},
-      geometryType: typeBtn.dataset.geometryType || "Point",
-      drawMode: "",
-      shapeKind: "",
+    const hasChildren = getTacticalNavChildren(node).length > 0;
+    const exact = typeBtn.dataset.exact === "1";
+    if (!exact && hasChildren) {
+      _tpalState.path = path;
+      renderTacticalPaletteStep3();
+      return;
+    }
+    commitTacticalPaletteSelection(entry, {
+      affiliation: _tpalState.affiliation || "friendly",
+      size: entry?.domain === "ground" && milstdUnitEntryAllowsEchelon(entry) ? "team" : "",
+      mode: _tpalState.mode,
     });
   });
   dom.tacticalPaletteSearch?.addEventListener("input", () => {
     _tpalState.search = String(dom.tacticalPaletteSearch?.value || "").trim();
-    if (_tpalState.step === 3 && _tpalState.category) {
-      _tpalRenderTypes(_tpalState.category);
+    if (_tpalState.step === 3) {
+      renderTacticalPaletteStep3();
     }
+  });
+  dom.tpalHierarchyBreadcrumbs?.addEventListener("click", (event) => {
+    const crumb = event.target.closest(".tpal-crumb");
+    if (!crumb) return;
+    const depth = Number(crumb.dataset.depth);
+    if (!Number.isFinite(depth) || depth < 1) return;
+    _tpalState.path = _tpalState.path.slice(0, depth);
+    renderTacticalPaletteStep3();
+  });
+  dom.toUnitTypePickerBtn?.addEventListener("click", () => {
+    const affiliation = document.getElementById("toAffiliation")?.value || "friendly";
+    openTacticalPaletteModal({ mode: "plan-picker", planTarget: "create" });
+    _tpalState.affiliation = affiliation;
+    _tpalRenderTrackChoices();
+    _tpalSetStep(2);
+  });
+  dom.toEditUnitTypePickerBtn?.addEventListener("click", () => {
+    const affiliation = document.getElementById("toEditAffiliation")?.value || "friendly";
+    openTacticalPaletteModal({ mode: "plan-picker", planTarget: "edit" });
+    _tpalState.affiliation = affiliation;
+    _tpalRenderTrackChoices();
+    _tpalSetStep(2);
   });
   initTacticalEditorFormOptions();
   [
@@ -37246,6 +37406,8 @@ function openToEditModal(unitId = _toState.selectedUnit) {
   affiliationSelect.value = normalized.affiliation || "friendly";
   typeSelect.value = normalizeToUnitType(normalized.catalogId || normalized.type);
   sizeSelect.value = normalized.size || "battalion";
+  sizeSelect.disabled = !catalogAllowsEchelon(typeSelect.value || DEFAULT_MILSTD_UNIT_ID);
+  refreshPlanUnitTypePickerLabel(typeSelect.value, affiliationSelect.value, { target: "edit" });
   const validation = document.getElementById("toEditValidation");
   if (validation) validation.textContent = "";
   document.getElementById("toEditModal")?.classList.remove("hidden");
@@ -37307,13 +37469,31 @@ function initPlanViewIfNeeded() {
   populateDoctrinalUnitTypeSelect(unitTypeSelect);
   populateDoctrinalUnitTypeSelect(editTypeSelect);
   if (unitSizeSelect && editSizeSelect) editSizeSelect.innerHTML = unitSizeSelect.innerHTML;
+  if (unitSizeSelect) unitSizeSelect.disabled = !catalogAllowsEchelon(unitTypeSelect?.value || DEFAULT_MILSTD_UNIT_ID);
+  if (editSizeSelect) editSizeSelect.disabled = !catalogAllowsEchelon(editTypeSelect?.value || DEFAULT_MILSTD_UNIT_ID);
+  refreshPlanUnitTypePickerLabel(unitTypeSelect?.value || DEFAULT_MILSTD_UNIT_ID, unitAffiliationSelect?.value || "friendly", { target: "create" });
+  refreshPlanUnitTypePickerLabel(editTypeSelect?.value || DEFAULT_MILSTD_UNIT_ID, editAffiliationSelect?.value || "friendly", { target: "edit" });
+  unitAffiliationSelect?.addEventListener("change", () => {
+    refreshPlanUnitTypePickerLabel(unitTypeSelect?.value || DEFAULT_MILSTD_UNIT_ID, unitAffiliationSelect.value || "friendly", { target: "create" });
+  });
+  unitTypeSelect?.addEventListener("change", () => {
+    refreshPlanUnitTypePickerLabel(unitTypeSelect.value || DEFAULT_MILSTD_UNIT_ID, unitAffiliationSelect?.value || "friendly", { target: "create" });
+    if (unitSizeSelect) unitSizeSelect.disabled = !catalogAllowsEchelon(unitTypeSelect.value || DEFAULT_MILSTD_UNIT_ID);
+  });
+  editAffiliationSelect?.addEventListener("change", () => {
+    refreshPlanUnitTypePickerLabel(editTypeSelect?.value || DEFAULT_MILSTD_UNIT_ID, editAffiliationSelect.value || "friendly", { target: "edit" });
+  });
+  editTypeSelect?.addEventListener("change", () => {
+    refreshPlanUnitTypePickerLabel(editTypeSelect.value || DEFAULT_MILSTD_UNIT_ID, editAffiliationSelect?.value || "friendly", { target: "edit" });
+    if (editSizeSelect) editSizeSelect.disabled = !catalogAllowsEchelon(editTypeSelect.value || DEFAULT_MILSTD_UNIT_ID);
+  });
   // â”€â”€ Wire toolbar buttons â”€â”€
   document.getElementById("toAddUnitBtn")?.addEventListener("click", () => {
     const aff  = document.getElementById("toAffiliation")?.value || "friendly";
     const type = document.getElementById("toUnitType")?.value || DEFAULT_MILSTD_UNIT_ID;
     const size = document.getElementById("toUnitSize")?.value || "battalion";
     const des  = (document.getElementById("toUnitDesignator")?.value || "").trim();
-    const label = des || `${size.charAt(0).toUpperCase() + size.slice(1)} ${type.replace(/_/g," ")}`;
+    const label = des || buildDefaultToUnitLabel(size, type);
     const cx = canvas.clientWidth  / 2 - _toState.panX / _toState.zoom;
     const cy = canvas.clientHeight / 2 - _toState.panY / _toState.zoom;
     const jitter = () => (Math.random() - 0.5) * 120;

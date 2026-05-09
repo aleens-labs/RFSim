@@ -728,7 +728,7 @@
               <option value="neutral">Neutral</option>
               <option value="unknown">Unknown</option>
             </select>
-            <select id="toUnitType" class="to-select" title="Unit Type">
+            <select id="toUnitType" class="to-select to-select-hidden" title="Unit Type" aria-hidden="true" tabindex="-1">
               <optgroup label="Ground — Infantry">
                 <option value="infantry">Infantry</option>
                 <option value="light_infantry">Light Infantry</option>
@@ -788,8 +788,9 @@
                 <option value="coast_guard">Coast Guard</option>
               </optgroup>
             </select>
-            <button id="toUnitTypePickerBtn" class="to-select to-select-button" type="button" title="Unit Type">
-              <span id="toUnitTypePickerLabel">Land Unit</span>
+            <button id="toUnitTypePickerBtn" class="to-picker-button" type="button" title="Choose unit symbology">
+              <span class="to-picker-button-caption">Symbology</span>
+              <span id="toUnitTypePickerLabel">Friendly • Infantry</span>
             </button>
             <select id="toUnitSize" class="to-select" title="Unit Size">
               <option value="team">Team (2-4)</option>
@@ -879,7 +880,11 @@
             </label>
             <label>
               <span>Unit Type</span>
-              <select id="toEditUnitType"></select>
+              <select id="toEditUnitType" class="to-select-hidden" aria-hidden="true" tabindex="-1"></select>
+              <button id="toEditUnitTypePickerBtn" class="to-picker-button to-picker-button--modal" type="button" title="Choose unit symbology">
+                <span class="to-picker-button-caption">Symbology</span>
+                <span id="toEditUnitTypePickerLabel">Friendly • Infantry</span>
+              </button>
             </label>
             <label>
               <span>Unit Size</span>
@@ -967,7 +972,7 @@
           <div class="tpal-steps">
             <div class="tpal-step active" data-step="1"><span>1</span> Affiliation</div>
             <div class="tpal-step-sep"></div>
-            <div class="tpal-step" data-step="2"><span>2</span> Domain</div>
+            <div class="tpal-step" data-step="2"><span>2</span> Family</div>
             <div class="tpal-step-sep"></div>
             <div class="tpal-step" data-step="3"><span>3</span> Type</div>
           </div>
@@ -1018,6 +1023,10 @@
             <label class="tpal-name-field">
               <span>Track Name</span>
               <input id="tacticalPaletteName" type="text" maxlength="80" placeholder="Enter track name">
+            </label>
+            <label class="tpal-search-field">
+              <span>Search Current Branch</span>
+              <input id="tacticalPaletteSearch" type="text" maxlength="80" placeholder="Search symbols">
             </label>
             <div id="tpalHierarchyBreadcrumbs" class="tpal-hierarchy-breadcrumbs"></div>
             <div class="tpal-type-layout">
