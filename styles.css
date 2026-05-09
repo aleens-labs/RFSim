@@ -883,8 +883,12 @@ body.panel-collapsed .control-panel {
   display: block;
   margin-top: 2px;
 }
+
+.workspace-menu {
   overflow-x: hidden;
   overflow-y: visible;
+}
+
 .workspace-menu .workspace-auth-grid,
 .workspace-menu .workspace-project-grid {
   margin-top: 0;

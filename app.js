@@ -65,6 +65,41 @@ const TAK_ROLE_OPTIONS = [
   "K9",
 ];
 
+const workspacePolicy = globalThis.RfSimWorkspacePolicy ?? {
+  isServerProjectActive(activeProjectId) {
+    return typeof activeProjectId === "string" && activeProjectId.trim().length > 0;
+  },
+  shouldPersistLocalMapState(activeProjectId) {
+    return !this.isServerProjectActive(activeProjectId);
+  },
+  shouldHydrateLocalMapState({ hasSessionToken = false, activeProjectId = null } = {}) {
+    return !hasSessionToken || !this.isServerProjectActive(activeProjectId);
+  },
+  resolveActiveProjectId({
+    projects = [],
+    requestedProjectId = null,
+    preferServerProject = false,
+    allowLocalMode = true,
+  } = {}) {
+    const normalizedProjects = Array.isArray(projects)
+      ? projects.filter((project) => project && typeof project.id === "string" && project.id)
+      : [];
+    if (!normalizedProjects.length) {
+      return null;
+    }
+    const normalizedRequestedId = typeof requestedProjectId === "string" && requestedProjectId.trim()
+      ? requestedProjectId.trim()
+      : null;
+    if (normalizedRequestedId && normalizedProjects.some((project) => project.id === normalizedRequestedId)) {
+      return normalizedRequestedId;
+    }
+    if (!preferServerProject && allowLocalMode) {
+      return null;
+    }
+    return normalizedProjects[0].id;
+  },
+};
+
 const BASEMAPS = {
   esri: {
     label: "Esri World Imagery",
@@ -1372,6 +1407,7 @@ async function idbLoadKmzItems(projectId) {
 }
 const AUTH_TOKEN_STORAGE_KEY = "ew-sim-auth-token";
 const ACTIVE_PROJECT_STORAGE_KEY = "ew-sim-active-project";
+const LOCAL_WORKSPACE_MODE_STORAGE_KEY = "ew-sim-local-workspace-mode";
 const GUEST_SESSION_STORAGE_KEY = "ew-sim-guest-session";
 const AI_CHAT_HISTORY_STORAGE_KEY_PREFIX = "ew-sim-ai-chat";
 const ANALYTICS_SESSION_ID_STORAGE_KEY = "ew-sim-analytics-session-id";
@@ -1422,6 +1458,14 @@ function setSessionScopedItem(key, value) {
     window.sessionStorage.setItem(key, value);
   }
   window.localStorage.removeItem(key);
+}
+
+function isLocalWorkspaceModePinned() {
+  return Boolean(state.session.localModePinned);
+}
+
+function setLocalWorkspaceModePinned(enabled) {
+  state.session.localModePinned = Boolean(enabled);
 }
 
 function getTakIdentityStorageKey(user = state.session.user) {
@@ -2344,6 +2388,7 @@ const state = {
     guest: INITIAL_GUEST_SESSION,
     token: INITIAL_GUEST_SESSION ? null : getSessionToken(),
     activeProjectId: INITIAL_GUEST_SESSION ? null : getSessionScopedItem(ACTIVE_PROJECT_STORAGE_KEY),
+    localModePinned: !INITIAL_GUEST_SESSION && getSessionScopedItem(LOCAL_WORKSPACE_MODE_STORAGE_KEY) === "1",
     activeProjectRevision: null,
     user: null,
     projects: [],
@@ -2458,7 +2503,30 @@ if (!INITIAL_GUEST_SESSION) {
   if (state.session.activeProjectId) {
     setSessionScopedItem(ACTIVE_PROJECT_STORAGE_KEY, state.session.activeProjectId);
   }
+  if (state.session.localModePinned) {
+    setSessionScopedItem(LOCAL_WORKSPACE_MODE_STORAGE_KEY, "1");
+  }
 }
+
+function cloneJsonValue(value) {
+  return value == null ? value : JSON.parse(JSON.stringify(value));
+}
+
+const DEFAULT_SETTINGS_STATE = Object.freeze(cloneJsonValue(state.settings));
+const DEFAULT_WEATHER_STATE = Object.freeze(cloneJsonValue(state.weather));
+const DEFAULT_SITE_STUDY_STATE = Object.freeze({
+  type: state.siteStudy.type,
+  primaryAssetId: state.siteStudy.primaryAssetId,
+  secondaryAssetId: state.siteStudy.secondaryAssetId,
+  candidateContentId: state.siteStudy.candidateContentId,
+  objectiveContentId: state.siteStudy.objectiveContentId,
+  linkPreset: state.siteStudy.linkPreset,
+  clearancePolicy: state.siteStudy.clearancePolicy,
+  gridMeters: state.siteStudy.gridMeters,
+  maxMastHeightM: state.siteStudy.maxMastHeightM,
+  topCount: state.siteStudy.topCount,
+  terrainId: state.siteStudy.terrainId,
+});
 
 function updateModalBodyState() {
   const emitterBackdrop = dom.emitterModal ?? document.querySelector("#emitterModal");
@@ -7220,12 +7288,15 @@ function persistSessionStorage() {
   if (isGuestSession()) {
     window.sessionStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
     window.sessionStorage.removeItem(ACTIVE_PROJECT_STORAGE_KEY);
+    window.sessionStorage.removeItem(LOCAL_WORKSPACE_MODE_STORAGE_KEY);
     window.localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
     window.localStorage.removeItem(ACTIVE_PROJECT_STORAGE_KEY);
+    window.localStorage.removeItem(LOCAL_WORKSPACE_MODE_STORAGE_KEY);
     return;
   }
   setSessionToken(state.session.token);
   setSessionScopedItem(ACTIVE_PROJECT_STORAGE_KEY, state.session.activeProjectId);
+  setSessionScopedItem(LOCAL_WORKSPACE_MODE_STORAGE_KEY, state.session.localModePinned ? "1" : null);
 }
 
 function clearSessionState({ preserveGuest = false } = {}) {
@@ -7251,6 +7322,7 @@ function clearSessionState({ preserveGuest = false } = {}) {
   state.session.user = null;
   state.session.projects = [];
   state.session.activeProjectId = null;
+  state.session.localModePinned = false;
   state.session.activeProjectRevision = null;
   state.session.autosaveTimerId = null;
   state.session.autosavePending = false;
@@ -7263,7 +7335,7 @@ function clearSessionState({ preserveGuest = false } = {}) {
   syncTakIdentityUi();
 }
 
-async function hydrateSession() {
+async function hydrateSession({ preferServerProject = false } = {}) {
   if (isGuestSession()) {
     await loadEmitterProfileLibrary();
     syncWorkspaceUi();
@@ -7279,7 +7351,7 @@ async function hydrateSession() {
     const payload = await apiFetch("/auth/me");
     state.session.user = payload.user;
     loadTakIdentitySettings();
-    await loadProjectList();
+    await loadProjectList({ preferServerProject });
     await loadServerTakSettings();
     await loadEmitterProfileLibrary();
     await loadServerAiProviderSettings();
@@ -7295,7 +7367,7 @@ async function hydrateSession() {
   syncWorkspaceUi();
 }
 
-async function loadProjectList() {
+async function loadProjectList({ preferServerProject = false } = {}) {
   if (!state.session.token) {
     state.session.projects = [];
     syncWorkspaceUi();
@@ -7303,6 +7375,17 @@ async function loadProjectList() {
   }
   const payload = await apiFetch("/projects");
   state.session.projects = payload.projects ?? [];
+  const resolvedActiveProjectId = workspacePolicy.resolveActiveProjectId({
+    projects: state.session.projects,
+    requestedProjectId: state.session.activeProjectId,
+    preferServerProject: preferServerProject && !isLocalWorkspaceModePinned(),
+    allowLocalMode: true,
+  });
+  if (resolvedActiveProjectId !== state.session.activeProjectId) {
+    state.session.activeProjectId = resolvedActiveProjectId;
+    setActiveProjectRevision(null);
+    persistSessionStorage();
+  }
   syncWorkspaceUi();
 }
 
@@ -7347,7 +7430,7 @@ function syncAuthScreenUi() {
   dom.authScreenFullNameRow?.classList.add("hidden");
   dom.authScreenSubmitBtn.textContent = isRegister ? "Create Account" : "Sign In";
   // Toggle mode button switches role between register CTA and back-to-login link
-  dom.authScreenToggleModeBtn.textContent = isRegister ? "â† Back to sign in" : "Create a free account";
+  dom.authScreenToggleModeBtn.textContent = isRegister ? "Back to sign in" : "Create a free account";
   dom.authScreenToggleModeBtn.className = isRegister ? "auth-screen-link" : "auth-screen-register-btn";
   // Mode copy line only shown in register mode
   if (dom.authScreenModeCopy) {
@@ -7383,9 +7466,13 @@ async function submitAuthScreen() {
   dom.authScreenPassword.value = "";
 }
 
-function enterGuestMode() {
+async function enterGuestMode() {
   setGuestSessionEnabled(true);
-  window.location.reload();
+  clearSessionState({ preserveGuest: true });
+  await loadEmitterProfileLibrary();
+  loadSettings();
+  syncWorkspaceUi();
+  await reloadWorkspaceState({ restoreAiHistory: true, statusMessage: "Guest workspace ready." });
 }
 
 function syncWorkspaceUi() {
@@ -7449,7 +7536,7 @@ function syncWorkspaceUi() {
   dom.workspaceProjectSnapshotBtn?.removeAttribute("disabled");
   const userLabel = state.session.user.fullName || state.session.user.username || state.session.user.email;
   const activeProject = state.session.projects.find((project) => project.id === state.session.activeProjectId) ?? null;
-  const activeProjectLabel = activeProject?.name || "Local Browser State";
+  const activeProjectLabel = activeProject?.name || "Local Browser Draft";
   const activeTakProfile = getTakProfileForProject(state.session.activeProjectId);
   dom.workspaceUserLabel.textContent = userLabel;
   dom.workspaceMenuValue.textContent = activeProjectLabel;
@@ -7457,12 +7544,12 @@ function syncWorkspaceUi() {
   dom.workspaceProjectMode.textContent = state.session.activeProjectId ? "Server" : "Local";
   dom.workspaceProjectStatus.textContent = state.session.activeProjectId
     ? `Changes autosave to the server. Use Snapshot to save a named version you can restore later.${activeTakProfile ? ` TAK enabled via ${activeTakProfile.label || activeTakProfile.serverHost}.` : " TAK is not enabled for this project."}`
-    : "No server project selected. Map contents are saved to browser storage only.";
+    : "Local browser draft mode is active. Project-backed work stays on the server; local drafts stay in this browser only.";
 
   dom.workspaceProjectSelect.innerHTML = "";
   const localOption = document.createElement("option");
   localOption.value = "";
-  localOption.textContent = "Local Browser State";
+  localOption.textContent = "Local Browser Draft";
   dom.workspaceProjectSelect.appendChild(localOption);
   state.session.projects.forEach((project) => {
     const option = document.createElement("option");
@@ -7482,6 +7569,24 @@ function syncWorkspaceUi() {
   syncAuthScreenUi();
 }
 
+async function applyAuthenticatedSession(payload, successMessage) {
+  setGuestSessionEnabled(false);
+  setLocalWorkspaceModePinned(false);
+  state.session.token = payload.token;
+  state.session.user = payload.user;
+  loadTakIdentitySettings();
+  persistSessionStorage();
+  await loadProjectList({ preferServerProject: true });
+  await loadServerTakSettings();
+  await loadEmitterProfileLibrary();
+  await loadServerAiProviderSettings();
+  await autoConnectAiProviderIfConfigured({ openPanelOnSuccess: false, force: true });
+  syncWorkspaceUi();
+  closeWorkspaceMenu();
+  setAuthScreenStatus("", false);
+  await reloadWorkspaceState({ restoreAiHistory: true, statusMessage: successMessage });
+}
+
 async function onWorkspaceLogin(credentials = null) {
   const username = (credentials?.email ?? dom.workspaceEmail.value).trim();
   const password = credentials?.password ?? dom.workspacePassword.value;
@@ -7495,20 +7600,10 @@ async function onWorkspaceLogin(credentials = null) {
     method: "POST",
     body: JSON.stringify({ username, password }),
   });
-  setGuestSessionEnabled(false);
-  state.session.token = payload.token;
-  state.session.user = payload.user;
-  loadTakIdentitySettings();
-  persistSessionStorage();
-  await loadProjectList();
-  await loadServerTakSettings();
-  await loadEmitterProfileLibrary();
-  await loadServerAiProviderSettings();
-  await autoConnectAiProviderIfConfigured({ openPanelOnSuccess: false, force: true });
-  syncWorkspaceUi();
-  closeWorkspaceMenu();
-  setAuthScreenStatus("", false);
-  setStatus(`Signed in as ${payload.user.fullName || payload.user.username || payload.user.email}.`);
+  await applyAuthenticatedSession(
+    payload,
+    `Signed in as ${payload.user.fullName || payload.user.username || payload.user.email}.`,
+  );
   fireAnalyticsEvent({ event_type: "visit" });
 }
 
@@ -7525,34 +7620,28 @@ async function onWorkspaceRegister(credentials = null) {
     method: "POST",
     body: JSON.stringify({ username, password }),
   });
-  setGuestSessionEnabled(false);
-  state.session.token = payload.token;
-  state.session.user = payload.user;
-  loadTakIdentitySettings();
-  persistSessionStorage();
-  await loadProjectList();
-  await loadServerTakSettings();
-  await loadEmitterProfileLibrary();
-  await loadServerAiProviderSettings();
-  await autoConnectAiProviderIfConfigured({ openPanelOnSuccess: false, force: true });
-  syncWorkspaceUi();
-  closeWorkspaceMenu();
-  setAuthScreenStatus("", false);
-  setStatus(`Account created for ${payload.user.fullName || payload.user.username || payload.user.email}.`);
+  await applyAuthenticatedSession(
+    payload,
+    `Account created for ${payload.user.fullName || payload.user.username || payload.user.email}.`,
+  );
 }
 
-function onWorkspaceSignOut() {
+async function onWorkspaceSignOut() {
   if (isGuestSession()) {
     clearSessionState();
-    window.location.reload();
+    await loadEmitterProfileLibrary();
+    loadSettings();
+    syncWorkspaceUi();
+    await reloadWorkspaceState({ restoreAiHistory: true, statusMessage: "Exited guest workspace." });
     return;
   }
   clearSessionState();
-  void loadEmitterProfileLibrary();
+  await loadEmitterProfileLibrary();
+  loadSettings();
   setAuthScreenMode("login");
   setAuthScreenStatus("Signed out. Sign in to continue.");
   syncWorkspaceUi();
-  setStatus("Signed out.");
+  await reloadWorkspaceState({ restoreAiHistory: true, statusMessage: "Signed out." });
 }
 
 async function onWorkspaceProjectCreate() {
@@ -7567,24 +7656,40 @@ async function onWorkspaceProjectCreate() {
     return;
   }
 
+  if (!state.session.activeProjectId) {
+    persistMapStateNow();
+  }
+  const projectKmzItems = state.importedItems
+    .filter((item) => !item.drawn && !item.tak)
+    .map((item) => serializeImportedItem(item));
   const payload = await apiFetch("/projects", {
     method: "POST",
     body: JSON.stringify({ name, description: "", state: serializeMapStateForServer() }),
   });
+  await idbSaveKmzItems(payload.project.id, projectKmzItems);
+  setLocalWorkspaceModePinned(false);
   state.session.activeProjectId = payload.project.id;
   setActiveProjectRevision(payload.project.revision);
   persistSessionStorage();
   await loadProjectList();
-  setStatus(`Created project ${payload.project.name}. Reloading into server-backed project.`);
-  window.location.reload();
+  dom.workspaceProjectName.value = "";
+  await reloadWorkspaceState({ statusMessage: `Created project ${payload.project.name}.` });
 }
 
 async function onWorkspaceProjectSelectChanged() {
-  state.session.activeProjectId = dom.workspaceProjectSelect.value || null;
+  const nextProjectId = dom.workspaceProjectSelect.value || null;
+  if (!state.session.activeProjectId && nextProjectId) {
+    persistMapStateNow();
+  }
+  setLocalWorkspaceModePinned(!nextProjectId);
+  state.session.activeProjectId = nextProjectId;
   setActiveProjectRevision(null);
   persistSessionStorage();
-  setStatus(state.session.activeProjectId ? "Project selected. Reloading project state..." : "Returned to local browser state.");
-  window.location.reload();
+  await reloadWorkspaceState({
+    statusMessage: state.session.activeProjectId
+      ? "Loaded server-backed project."
+      : "Switched to local browser draft.",
+  });
 }
 
 // â”€â”€ Autosave â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -7609,7 +7714,7 @@ function setAutosaveIndicator(state_) {
     el.classList.add("hidden");
   } else if (state_ === "saving") {
     el.classList.add("is-saving");
-    el.setAttribute("title", "Saving to serverâ€¦");
+    el.setAttribute("title", "Saving to server...");
     setAutosaveRingProgress(0);
   } else if (state_ === "saved") {
     el.classList.add("is-saved");
@@ -7634,7 +7739,7 @@ function setAutosaveIndicator(state_) {
   row.classList.remove("hidden");
   if (state_ === "saving") {
     row.className = "workspace-autosave-status is-saving";
-    label.textContent = "Saving to serverâ€¦";
+    label.textContent = "Saving to server...";
   } else if (state_ === "saved") {
     row.className = "workspace-autosave-status is-saved";
     label.textContent = "All changes saved";
@@ -7776,13 +7881,12 @@ function queueActiveProjectAutosave() {
   }, 1500);
 }
 
-function onWorkspaceProjectReload() {
+async function onWorkspaceProjectReload() {
   if (!state.session.activeProjectId) {
     setStatus("Select a server project first.", true);
     return;
   }
-  setStatus("Reloading active project.");
-  window.location.reload();
+  await reloadWorkspaceState({ statusMessage: "Reloaded active project from the server." });
 }
 
 async function onWorkspaceProjectSnapshot() {
@@ -7820,18 +7924,22 @@ async function onWorkspaceProjectDelete() {
     return;
   }
 
-  saveMapState();
   await apiFetch(`/projects/${projectId}`, { method: "DELETE" });
   state.session.projects = state.session.projects.filter((entry) => entry.id !== projectId);
   state.takSettings.projectAssignments.delete(projectId);
   if (state.session.activeProjectId === projectId) {
-    state.session.activeProjectId = null;
+    state.session.activeProjectId = state.session.projects[0]?.id ?? null;
+    setLocalWorkspaceModePinned(!state.session.activeProjectId);
     setActiveProjectRevision(null);
   }
   persistSessionStorage();
   syncWorkspaceUi();
   syncTakUi();
-  setStatus(`Deleted project ${projectName}. Switched to local browser state.`);
+  await reloadWorkspaceState({
+    statusMessage: state.session.activeProjectId
+      ? `Deleted project ${projectName}. Switched to the next server project.`
+      : `Deleted project ${projectName}. Switched to local browser draft.`,
+  });
 }
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -8774,7 +8882,7 @@ async function init() {
   loadAiProviderSettings();
   resetTakDraft();
   syncTakUi();
-  await hydrateSession();
+  await hydrateSession({ preferServerProject: true });
   loadCesiumIonToken();
   loadSettings();
   applyBasemap(dom.basemapSelect.value);
@@ -8782,26 +8890,15 @@ async function init() {
   wireEvents();
   applyPanelMode();
   setMapPanelMode(state.ui.mapPanelMode);
-  await loadMapState();
-  renderAssets();
-  renderTerrains();
-  renderViewsheds();
-  renderPlanningResults();
-  syncSiteStudyUi();
-  renderMapContents();
-  refreshTakLiveFeed({ immediate: true });
-    renderMapTakDebugPanel();
-    refreshActionButtons();
-    updateTerrainSummary();
-    normalizeWeatherState();
-    applySettings();
-  syncGpsUi();
-  syncTakIdentityUi();
-  updateMapOverlayMetrics();
+  try {
+    await reloadWorkspaceState({ restoreAiHistory: true });
+  } catch (error) {
+    renderWorkspaceState();
+    setStatus(error.message, true);
+  }
+  applySettings();
   updateClock();
-  syncAiUi();
   void autoConnectAiProviderIfConfigured({ openPanelOnSuccess: false });
-  loadAiChatHistory();
   window.setInterval(updateClock, 1000);
   setStatus("Ready.");
   // Deferred render â€” guarantees map contents tray shows saved items after DOM settles
@@ -9094,7 +9191,7 @@ function wireEvents() {
   wireSettingsModalTabs();
   dom.workspaceLoginBtn?.addEventListener("click", () => onWorkspaceLogin().catch((error) => setStatus(error.message, true)));
   dom.workspaceRegisterBtn?.addEventListener("click", () => onWorkspaceRegister().catch((error) => setStatus(error.message, true)));
-  dom.workspaceSignOutBtn?.addEventListener("click", onWorkspaceSignOut);
+  dom.workspaceSignOutBtn?.addEventListener("click", () => onWorkspaceSignOut().catch((error) => setStatus(error.message, true)));
   dom.authScreenToggleModeBtn?.addEventListener("click", () => {
     setAuthScreenStatus("", false);
     setAuthScreenMode(state.authScreenMode === "register" ? "login" : "register");
@@ -9103,7 +9200,10 @@ function wireEvents() {
     setAuthScreenStatus(error.message, true);
     setStatus(error.message, true);
   }));
-  dom.authScreenGuestBtn?.addEventListener("click", enterGuestMode);
+  dom.authScreenGuestBtn?.addEventListener("click", () => enterGuestMode().catch((error) => {
+    setAuthScreenStatus(error.message, true);
+    setStatus(error.message, true);
+  }));
   [dom.authScreenFullName, dom.authScreenEmail, dom.authScreenPassword].forEach((input) => {
     input?.addEventListener("keydown", (event) => {
       if (event.key === "Enter") {
@@ -9142,7 +9242,7 @@ function wireEvents() {
   dom.workspaceProjectCreateBtn?.addEventListener("click", () => onWorkspaceProjectCreate().catch((error) => setStatus(error.message, true)));
   dom.workspaceProjectSelect?.addEventListener("change", () => onWorkspaceProjectSelectChanged().catch((error) => setStatus(error.message, true)));
   dom.workspaceProjectSaveBtn?.addEventListener("click", () => saveActiveProjectNow().catch((error) => setStatus(error.message, true)));
-  dom.workspaceProjectReloadBtn?.addEventListener("click", onWorkspaceProjectReload);
+  dom.workspaceProjectReloadBtn?.addEventListener("click", () => onWorkspaceProjectReload().catch((error) => setStatus(error.message, true)));
   dom.workspaceProjectSnapshotBtn?.addEventListener("click", () => onWorkspaceProjectSnapshot().catch((error) => setStatus(error.message, true)));
   dom.workspaceProjectDeleteBtn?.addEventListener("click", () => onWorkspaceProjectDelete().catch((error) => setStatus(error.message, true)));
   document.addEventListener("click", (e) => {
@@ -9815,6 +9915,7 @@ function wireEvents() {
 }
 
 function loadSettings() {
+  Object.assign(state.settings, cloneJsonValue(DEFAULT_SETTINGS_STATE));
   if (!canUsePersistentBrowserStorage()) {
     return;
   }
@@ -10050,6 +10151,11 @@ function persistMapStateNow() {
   const kmzItems = (payload.importedItems ?? []).filter((i) => !i.drawn && !i.tak);
   const drawnItems = (payload.importedItems ?? []).filter((i) => i.drawn || i.tak);
   const compactPayload = { ...payload, importedItems: drawnItems };
+  if (!workspacePolicy.shouldPersistLocalMapState(state.session.activeProjectId)) {
+    idbSaveKmzItems(state.session.activeProjectId, kmzItems).catch(() => {});
+    queueActiveProjectAutosave();
+    return;
+  }
 
   // Fire-and-forget â€” KMZ write is async but we don't need to await it here.
   idbSaveKmzItems(state.session.activeProjectId, kmzItems).catch(() => {});
@@ -10091,6 +10197,159 @@ function saveMapState() {
     state.session.localSaveTimerId = null;
     persistMapStateNow();
   }, 120);
+}
+
+function resetRenderedAiChatMessages() {
+  if (!dom.aiChatMessages) {
+    return;
+  }
+  dom.aiChatMessages.innerHTML = "";
+}
+
+function resetLoadedMapState() {
+  finishAssetRelocation(null);
+  finishTacticalRelocation(null);
+  finishImportedPointRelocation(null);
+  finishCircleRelocation(null);
+  cancelPendingTacticalPlacement();
+  cancelDrawing();
+  setAssetPlacementMode(false);
+  setTacticalPlacementMode(false);
+  state.pendingEmitterData = null;
+  state.pendingTacticalPlacement = null;
+
+  state.map?.closePopup?.();
+  state.assetMarkers.forEach((marker) => marker?.remove?.());
+  state.assetMarkers.clear();
+  state.assets = [];
+
+  state.tacticalLayers.forEach((layer) => layer?.remove?.());
+  state.tacticalLayers.clear();
+  state.tacticalObjects = [];
+
+  state.importedItems.forEach((item) => item?.layer?.remove?.());
+  state.importedItems = [];
+  state.draw.editingItemId = null;
+  state.draw.editingItemIds = null;
+  state.draw.preEditSnapshots = null;
+
+  state.viewsheds.forEach((viewshed) => viewshed?.layer?.remove?.());
+  state.viewsheds = [];
+  state.activeInspectionViewshedId = null;
+  state.editingViewshedId = null;
+  updateMetrics(null);
+
+  state.terrainCoverageLayers.forEach((layer) => layer?.remove?.());
+  state.terrainCoverageLayers.clear();
+  state.terrains = [];
+  state.activeTerrainId = null;
+  state.terrainReadyIds.clear();
+  invalidateDerivedTerrainCaches();
+  state.worker.postMessage({ type: "terrain:clear" });
+
+  state.planning.regionLayer?.remove?.();
+  state.planning.regionLayer = null;
+  state.planning.terrainId = null;
+  state.planning.recommendations = [];
+  state.planning.markersLayer.clearLayers();
+
+  state.siteStudy.markersLayer.clearLayers();
+  state.siteStudy.markerRefs = [];
+  state.siteStudy.results = [];
+  state.siteStudy.activeResultIndex = -1;
+  state.siteStudy.lastRunSummary = "";
+  state.siteStudy.lastRunElapsedMs = 0;
+  state.siteStudy.lastRunEngine = "";
+  state.siteStudy.type = DEFAULT_SITE_STUDY_STATE.type;
+  state.siteStudy.primaryAssetId = DEFAULT_SITE_STUDY_STATE.primaryAssetId;
+  state.siteStudy.secondaryAssetId = DEFAULT_SITE_STUDY_STATE.secondaryAssetId;
+  state.siteStudy.candidateContentId = DEFAULT_SITE_STUDY_STATE.candidateContentId;
+  state.siteStudy.objectiveContentId = DEFAULT_SITE_STUDY_STATE.objectiveContentId;
+  state.siteStudy.linkPreset = DEFAULT_SITE_STUDY_STATE.linkPreset;
+  state.siteStudy.clearancePolicy = DEFAULT_SITE_STUDY_STATE.clearancePolicy;
+  state.siteStudy.gridMeters = DEFAULT_SITE_STUDY_STATE.gridMeters;
+  state.siteStudy.maxMastHeightM = DEFAULT_SITE_STUDY_STATE.maxMastHeightM;
+  state.siteStudy.topCount = DEFAULT_SITE_STUDY_STATE.topCount;
+  state.siteStudy.terrainId = DEFAULT_SITE_STUDY_STATE.terrainId;
+
+  state.mapContentFolders = [];
+  state.mapContentOrder = [];
+  state.mapContentAssignments = new Map();
+  state.hiddenContentIds = new Set();
+  state.hiddenLabelContentIds = new Set();
+  state.ai.contextItemIds = [];
+  state.ai.autoContextItemIds = [];
+  state.ai.activeContextId = null;
+  state.weather = cloneJsonValue(DEFAULT_WEATHER_STATE);
+
+  _toState.units = [];
+  _toState.links = [];
+  _toState.nextId = 1;
+  _toState.selectedUnit = null;
+  _toState.editingUnitId = null;
+  _toState.linkMode = null;
+  _toState.panStart = null;
+  closeToEditModal();
+  cancelToLink();
+  clearToSelection();
+
+  _emittersWorkspaceState.selectedAssetId = "";
+  invalidateMapContentsSearchIndex();
+  renderTakContactsOverlay();
+}
+
+function renderWorkspaceState() {
+  renderAssets();
+  renderTerrains();
+  renderViewsheds();
+  renderPlanningResults();
+  syncSiteStudyUi();
+  renderMapContents();
+  refreshTakLiveFeed({ immediate: true });
+  renderMapTakDebugPanel();
+  refreshActionButtons();
+  updateTerrainSummary();
+  normalizeWeatherState();
+  applySettings();
+  syncGpsUi();
+  syncTakUi();
+  syncTakIdentityUi();
+  updateMapOverlayMetrics();
+  syncAiUi();
+  syncAttachmentBar();
+  renderAiEmptyState();
+}
+
+async function reloadWorkspaceState({ restoreAiHistory = false, statusMessage = "" } = {}) {
+  if (state.session.localSaveTimerId) {
+    window.clearTimeout(state.session.localSaveTimerId);
+    state.session.localSaveTimerId = null;
+  }
+  if (state.session.autosaveTimerId) {
+    window.clearTimeout(state.session.autosaveTimerId);
+    state.session.autosaveTimerId = null;
+  }
+  state.session.autosavePending = false;
+
+  let reloadError = null;
+  try {
+    await loadMapState();
+  } catch (error) {
+    reloadError = error;
+  }
+  renderWorkspaceState();
+  if (restoreAiHistory) {
+    resetRenderedAiChatMessages();
+    state.ai.messages = [];
+    loadAiChatHistory();
+    renderAiEmptyState();
+  }
+  if (reloadError) {
+    throw reloadError;
+  }
+  if (statusMessage) {
+    setStatus(statusMessage);
+  }
 }
 
 function applySavedMapState(rawSaved) {
@@ -10277,13 +10536,20 @@ function applySavedMapState(rawSaved) {
 }
 
 async function loadMapState() {
+  resetLoadedMapState();
   // Read localStorage first â€” it is the only place KMZ geometry is persisted.
   let localState = null;
-  try {
-    const raw = window.localStorage.getItem(getMapStateStorageKey());
-    if (raw) localState = JSON.parse(raw);
-  } catch {
-    window.localStorage.removeItem(getMapStateStorageKey());
+  const shouldHydrateLocalMapState = workspacePolicy.shouldHydrateLocalMapState({
+    hasSessionToken: Boolean(state.session.token),
+    activeProjectId: state.session.activeProjectId,
+  });
+  if (shouldHydrateLocalMapState) {
+    try {
+      const raw = window.localStorage.getItem(getMapStateStorageKey());
+      if (raw) localState = JSON.parse(raw);
+    } catch {
+      window.localStorage.removeItem(getMapStateStorageKey());
+    }
   }
 
   if (state.session.token && state.session.activeProjectId) {
@@ -10312,9 +10578,12 @@ async function loadMapState() {
         applySavedMapState(mergedState);
         return;
       }
+      applyCachedMapViewForCurrentScope();
+      return;
     } catch (error) {
       setActiveProjectRevision(null);
-      setStatus(`Server project load failed, falling back to browser state: ${error.message}`, true);
+      applyCachedMapViewForCurrentScope();
+      throw new Error(`Server project load failed: ${error.message}`);
     }
   }
 
@@ -36997,8 +37266,12 @@ function toAutoLayout() {
     const el = document.querySelector(`.to-unit[data-id="${u.id}"]`);
     if (el) { el.style.left = u.x + "px"; el.style.top = u.y + "px"; }
   });
-  renderToEdges();
-  saveMapState();
+  // Defer edge rendering until after the browser has completed layout so
+  // offsetHeight reads in getToUnitConnectorAnchors return accurate values.
+  requestAnimationFrame(() => {
+    renderToEdges();
+    saveMapState();
+  });
 }
 
 function toFitView() {

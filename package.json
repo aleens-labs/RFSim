@@ -6,7 +6,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "check": "node --check app.js && node --check simulation-worker.js && node --check rf-compute-wasm-loader.js",
+    "check": "node --check app.js && node --check simulation-worker.js && node --check rf-compute-wasm-loader.js && node --check src/workspace-policy.js",
+    "test": "node --test frontend-test/*.test.js",
     "wasm:build": "wasm-pack build rust/rf_sim_compute --target web --out-dir pkg --release",
     "wasm:dev": "wasm-pack build rust/rf_sim_compute --target web --out-dir pkg --dev"
   },
