@@ -722,7 +722,7 @@
         <div class="to-toolbar">
           <div class="to-toolbar-section">
             <span class="to-toolbar-label">Add Unit</span>
-            <select id="toAffiliation" class="to-select" title="Affiliation">
+            <select id="toAffiliation" class="to-select to-select-hidden" title="Affiliation" aria-hidden="true" tabindex="-1">
               <option value="friendly">Friendly</option>
               <option value="hostile">Hostile</option>
               <option value="neutral">Neutral</option>
@@ -874,9 +874,9 @@
               <span>Designator</span>
               <input id="toEditDesignator" type="text" maxlength="32" placeholder="V34 CMD">
             </label>
-            <label>
+            <label class="to-hidden-state-field">
               <span>Affiliation</span>
-              <select id="toEditAffiliation"></select>
+              <select id="toEditAffiliation" aria-hidden="true" tabindex="-1"></select>
             </label>
             <label>
               <span>Unit Type</span>
@@ -979,8 +979,8 @@
 
           <!-- Step 1: Affiliation -->
           <div id="tpalStep1" class="tpal-step-pane active">
-            <div class="tpal-divider">T/O-owned Tactical Units</div>
-            <div class="tpal-draw-grid">
+            <div class="tpal-divider tpal-placement-only">T/O-owned Tactical Units</div>
+            <div class="tpal-draw-grid tpal-placement-only">
               <button id="tpalPlaceToUnitBtn" class="tpal-draw-btn tpal-draw-btn--primary" type="button">Place Existing T/O Unit</button>
             </div>
             <div class="tpal-divider">Generic Tracks</div>
@@ -1003,8 +1003,8 @@
               </button>
             </div>
             <!-- Drawing tools section -->
-            <div class="tpal-divider">Control Measures &amp; Drawings</div>
-            <div class="tpal-draw-grid">
+            <div class="tpal-divider tpal-placement-only">Control Measures &amp; Drawings</div>
+            <div class="tpal-draw-grid tpal-placement-only">
               <button class="tpal-draw-btn" type="button" data-template-id="route" data-name="Route" data-object-class="route" data-domain="ground" data-unit-type="signal" data-cot-type="b-m-r" data-geometry-type="LineString" data-draw-mode="polyline">Route</button>
               <button class="tpal-draw-btn" type="button" data-template-id="waypoint" data-name="Waypoint" data-object-class="marker" data-domain="ground" data-unit-type="headquarters" data-cot-type="b-m-p-w" data-geometry-type="Point">Waypoint</button>
               <button class="tpal-draw-btn" type="button" data-template-id="geofence-circle" data-name="Circular Geofence" data-object-class="geofence" data-domain="ground" data-unit-type="headquarters" data-cot-type="b-m-p-c-cp" data-geometry-type="Polygon" data-shape-kind="circle" data-draw-mode="circle">Circ. Geofence</button>

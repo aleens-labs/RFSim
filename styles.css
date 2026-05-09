@@ -9028,7 +9028,7 @@ body.emitter-modal-open {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 5px 10px;
+  padding: 4px 10px;
   background: var(--bg-topbar);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
@@ -9095,11 +9095,12 @@ body.emitter-modal-open {
   flex-direction: column;
   align-items: flex-start;
   justify-content: center;
-  gap: 2px;
-  min-width: 240px;
-  min-height: 38px;
-  padding: 7px 12px;
-  border-radius: 10px;
+  gap: 0;
+  width: clamp(330px, 34vw, 520px);
+  min-width: 330px;
+  min-height: 30px;
+  padding: 3px 12px;
+  border-radius: 8px;
   border: 1px solid rgba(148, 163, 184, 0.22);
   background: linear-gradient(180deg, rgba(26, 31, 40, 0.98), rgba(17, 22, 30, 0.98));
   color: var(--text);
@@ -9113,19 +9114,29 @@ body.emitter-modal-open {
   transform: translateY(-1px);
 }
 .to-picker-button-caption {
-  font-size: 0.61rem;
+  font-size: 0.56rem;
+  line-height: 1;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-muted);
 }
 .to-picker-button > span:last-child {
-  font-size: 0.82rem;
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.76rem;
   font-weight: 700;
-  line-height: 1.2;
+  line-height: 1.08;
 }
 .to-picker-button--modal {
+  width: 100%;
   min-width: 100%;
   min-height: 42px;
+}
+.to-picker-button--modal > span:last-child {
+  white-space: normal;
 }
 #toAddUnitBtn,
 #toPlaceUnitBtn {
@@ -9133,7 +9144,10 @@ body.emitter-modal-open {
   height: 24px;
   padding: 0 10px;
   font-size: 0.71rem;
-  flex: 0 1 clamp(360px, 32vw, 560px);
+  flex: 0 0 auto;
+}
+.to-hidden-state-field {
+  display: none !important;
 }
 /* Canvas */
 .to-canvas {
@@ -9562,7 +9576,14 @@ body.emitter-modal-open {
   border-color: rgba(148, 163, 184, 0.5);
   background: rgba(148, 163, 184, 0.06);
 }
+.tpal-affil-btn.active {
+  border-color: rgba(56, 189, 248, 0.72);
+  background: rgba(56, 189, 248, 0.1);
+}
 .tpal-affil-btn svg { display: block; }
+.tactical-palette-modal--plan-picker .tpal-placement-only {
+  display: none;
+}
 
 /* Divider */
 .tpal-divider {

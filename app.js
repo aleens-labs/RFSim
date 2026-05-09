@@ -11,7 +11,9 @@ const FORCE_COLORS = {
 const FORCE_LABELS = {
   friendly:     "Friendly",
   enemy:        "Enemy",
+  hostile:      "Hostile",
   "host-nation":"Host Nation",
+  neutral:      "Neutral",
   civilian:     "Civilian",
   other:        "Other",
   unknown:      "Unknown",
@@ -913,6 +915,7 @@ function buildMilstdUnitCatalog() {
   for (const entry of MILSTD_SYMBOL_CATALOG) {
     if (String(entry?.objectClass || "") !== "unit") continue;
     if (shouldRenderStandaloneMilstd(entry)) continue;
+    if (!hasRenderableMilstdAssetPath(entry)) continue;
     const baseUniqueId = normalizeMilstdUniqueId(entry?.uniqueId || entry?.id || "");
     if (!baseUniqueId) continue;
     const label = cleanMilstdUnitLabel(entry.label || baseUniqueId);
@@ -989,7 +992,7 @@ function getMilstdSymbolCatalogEntry(value = null) {
 }
 
 function isMilstdLegacySidc(value = "") {
-  return /^[A-Z0-9_-]{15}$/i.test(String(value || "").trim());
+  return /^[A-Z0-9_*\-]{15}$/i.test(String(value || "").trim());
 }
 
 function isMilstdSidc20(value = "") {
@@ -1033,6 +1036,33 @@ function deriveTacticalAffiliationFromMilstdSidc(value = "", fallback = "friendl
   return normalizeTacticalAffiliation(fallback);
 }
 
+function getCotAffiliationCode(affiliation = "friendly") {
+  const aff = normalizeTacticalAffiliation(affiliation);
+  if (aff === "friendly") return "f";
+  if (aff === "hostile") return "h";
+  if (aff === "neutral") return "n";
+  return "u";
+}
+
+function buildCotTypeFromMilstdLegacySidc(legacySidc = "", affiliation = "friendly") {
+  const legacy = String(legacySidc || "").trim().toUpperCase();
+  if (!isMilstdLegacySidc(legacy) || !legacy.startsWith("S")) {
+    return "";
+  }
+  const dimension = legacy.charAt(2);
+  if (!/^[A-Z0-9]$/.test(dimension) || dimension === "Z") {
+    return "";
+  }
+  const functionCode = legacy.slice(4, 10).replace(/[\-*]+$/g, "");
+  const functionParts = functionCode
+    .split("")
+    .filter((part) => /^[A-Z0-9]$/.test(part));
+  if (!functionParts.length) {
+    return "";
+  }
+  return `a-${getCotAffiliationCode(affiliation)}-${[dimension, ...functionParts].join("-")}`;
+}
+
 function getMilstdSymbolDefaultCotType(entry, affiliation = "friendly") {
   const aff = normalizeTacticalAffiliation(affiliation);
   if (!entry) {
@@ -1041,6 +1071,8 @@ function getMilstdSymbolDefaultCotType(entry, affiliation = "friendly") {
   if (entry.familyKey === "control_measures") return "b-m-p-c";
   if (String(entry.familyKey || "").startsWith("metoc")) return "b-i-w";
   if (entry.objectClass === "marker") return buildDefaultCotTypeForTacticalObject("marker", aff, entry.domain || "ground");
+  const legacyCotType = buildCotTypeFromMilstdLegacySidc(entry.legacySidc || "", aff);
+  if (legacyCotType) return legacyCotType;
   return buildDefaultCotTypeForTacticalObject("unit", aff, entry.domain || "ground");
 }
 
@@ -1084,20 +1116,33 @@ function normalizeMilstdAssetPath(path = "") {
   return normalized;
 }
 
+function getRenderableMilstdAssetPath(entry, affiliation = "") {
+  if (!entry) return "";
+  const variants = entry.variantPaths && typeof entry.variantPaths === "object" ? entry.variantPaths : {};
+  const normalizedAffiliation = affiliation ? normalizeTacticalAffiliation(affiliation) : "";
+  return normalizeMilstdAssetPath(
+    (normalizedAffiliation ? variants[normalizedAffiliation] : "")
+    || entry.defaultPath
+    || variants.friendly
+    || variants.unknown
+    || variants.neutral
+    || variants.hostile
+    || Object.values(variants).find((path) => String(path || "").trim())
+    || ""
+  );
+}
+
+function hasRenderableMilstdAssetPath(entry, affiliation = "") {
+  return Boolean(getRenderableMilstdAssetPath(entry, affiliation));
+}
+
 function getMilstdMainPathForAffiliation(entry, affiliation = "friendly") {
   if (!entry) return "";
   const normalized = normalizeTacticalAffiliation(affiliation);
   const baseUniqueId = normalizeMilstdUniqueId(entry?.uniqueId || entry?.id || "");
   const preferredEntry = getPreferredMilstdSymbolEntryByBaseUniqueId(baseUniqueId, normalized) || entry;
-  return normalizeMilstdAssetPath(
-    preferredEntry.variantPaths?.[normalized]
-    || preferredEntry.defaultPath
-    || entry.variantPaths?.[normalized]
-    || entry.defaultPath
-    || preferredEntry.variantPaths?.unknown
-    || entry.variantPaths?.unknown
-    || ""
-  );
+  return getRenderableMilstdAssetPath(preferredEntry, normalized)
+    || getRenderableMilstdAssetPath(entry, normalized);
 }
 
 function getMilstdFramePathFromSidc(sidc = "") {
@@ -6462,16 +6507,32 @@ function formatWintakHierarchySegment(value = "", { selectionId = "", depth = 0 
   return mapped;
 }
 
+function isSofMilstdEntry(entry = null) {
+  const haystack = [
+    entry?.label || "",
+    entry?.cleanLabel || "",
+    entry?.searchText || "",
+    ...(Array.isArray(entry?.tags) ? entry.tags : []),
+  ].join(" ").toLowerCase();
+  return /\bsof\b/.test(haystack)
+    || haystack.includes("special operations forces")
+    || haystack.includes("special forces");
+}
+
 function getWintakHierarchyParts(entry, config) {
   const selectionId = String(config?.selectionId || "").trim() || "ground_track";
   const cleanLabel = String(entry?.cleanLabel || entry?.label || "").trim();
   const parts = cleanLabel.split(" : ").map((part) => part.trim()).filter(Boolean);
+  if (selectionId === "sof_unit") {
+    const sofIndex = parts.findIndex((part) => /\bSOF\b|Special Operations Forces|Special Forces/i.test(part));
+    const tail = (sofIndex >= 0 ? parts.slice(sofIndex + 1) : parts)
+      .map((part, index) => formatWintakHierarchySegment(part, { selectionId, depth: index + 1 }))
+      .filter(Boolean);
+    return ["Special operations forces (SOF)", ...tail];
+  }
   let normalizedParts = parts
     .map((part, index) => formatWintakHierarchySegment(part, { selectionId, depth: index }))
     .filter(Boolean);
-  if (selectionId === "sof_unit") {
-    return ["Special operations forces (SOF)"];
-  }
   if (["air_missile", "space_missile", "mine_warfare"].includes(String(config?.id || ""))) {
     if (normalizedParts[0] === "Weapon") {
       return normalizedParts;
@@ -6538,6 +6599,9 @@ function getTacticalNavSiblings(selectionId = "", path = []) {
 
 function buildTacticalNavRoots() {
   const byDomain = new Map();
+  TACTICAL_PALETTE_SELECTION_ORDER.forEach((selectionId) => {
+    byDomain.set(selectionId, []);
+  });
   Object.values(MILSTD_SYMBOL_SET_NAV_CONFIG).forEach(({ selectionId }) => {
     const normalizedSelection = String(selectionId || "").trim() || "ground";
     if (!byDomain.has(normalizedSelection)) {
@@ -6546,7 +6610,7 @@ function buildTacticalNavRoots() {
   });
 
   const rawEntries = MILSTD_SYMBOL_CATALOG
-    .filter((entry) => String(entry?.defaultPath || "").trim())
+    .filter((entry) => hasRenderableMilstdAssetPath(entry))
     .filter((entry) => /:\s*Main Icon$/i.test(String(entry?.category || "").trim()))
     .filter((entry) => !/^Frame$/i.test(String(entry?.category || "").trim()))
     .filter((entry) => !/^Amplifier/i.test(String(entry?.category || "").trim()))
@@ -6571,11 +6635,7 @@ function buildTacticalNavRoots() {
     }
   });
 
-  [...deduped.values()].forEach((entry) => {
-    const config = MILSTD_SYMBOL_SET_NAV_CONFIG[String(entry.symbolSetCode || "").padStart(2, "0")];
-    if (!config) {
-      return;
-    }
+  const insertEntry = (entry, config) => {
     const selectionKey = String(config.selectionId || "").trim() || "ground";
     const roots = byDomain.get(selectionKey) || [];
     if (!byDomain.has(selectionKey)) {
@@ -6618,6 +6678,22 @@ function buildTacticalNavRoots() {
       }
       cursor = child;
     });
+  };
+
+  [...deduped.values()].forEach((entry) => {
+    const config = MILSTD_SYMBOL_SET_NAV_CONFIG[String(entry.symbolSetCode || "").padStart(2, "0")];
+    if (config) {
+      insertEntry(entry, config);
+    }
+    if (isSofMilstdEntry(entry)) {
+      insertEntry(entry, {
+        selectionId: "sof_unit",
+        selectionLabel: TACTICAL_PALETTE_SELECTION_LABELS.sof_unit,
+        domain: entry.domain || "ground",
+        id: "sof_unit",
+        label: "Special operations forces (SOF)",
+      });
+    }
   });
 
   for (const roots of byDomain.values()) {
@@ -6648,9 +6724,41 @@ function findTacticalNavPath(selectionId = "", matcher = () => false) {
 }
 
 function isPlanPickableMilstdEntry(entry = null) {
+  const category = String(entry?.category || "").toLowerCase();
+  const searchText = String(entry?.searchText || "").toLowerCase();
   return Boolean(entry)
     && String(entry.objectClass || "") === "unit"
+    && hasRenderableMilstdAssetPath(entry, _tpalState.affiliation || "friendly")
+    && !category.includes("equipment")
+    && !category.includes("installation")
+    && !searchText.includes("land equipment")
+    && !searchText.includes("land installation")
     && !shouldRenderStandaloneMilstd(entry);
+}
+
+function isTpalEntryAllowed(entry = null) {
+  if (!entry || !hasRenderableMilstdAssetPath(entry, _tpalState.affiliation || "friendly")) {
+    return false;
+  }
+  if (_tpalState.mode === "plan-picker") {
+    return isPlanPickableMilstdEntry(entry);
+  }
+  return true;
+}
+
+function getTpalNodeDisplayEntry(node = null) {
+  if (!node) return null;
+  if (isTpalEntryAllowed(node.entry)) return node.entry;
+  if (isTpalEntryAllowed(node.preview)) return node.preview;
+  for (const child of getTacticalNavChildren(node)) {
+    const match = getTpalNodeDisplayEntry(child);
+    if (match) return match;
+  }
+  return null;
+}
+
+function isTpalNodeVisible(node = null) {
+  return Boolean(getTpalNodeDisplayEntry(node));
 }
 
 function getTpalFamilyChoices() {
@@ -6690,7 +6798,10 @@ function getTpalFamilyChoices() {
 
   let choices = [...grouped.values()];
   if (_tpalState.mode === "plan-picker") {
-    choices = choices.filter((entry) => TACTICAL_PALETTE_PRIMARY_SELECTIONS.has(entry.selectionId));
+    choices = choices.filter((entry) => (
+      TACTICAL_PALETTE_PRIMARY_SELECTIONS.has(entry.selectionId)
+      && getTacticalNavRootsForSelection(entry.selectionId).some((node) => isTpalNodeVisible(node))
+    ));
   }
   return choices.sort((a, b) => {
     const ai = TACTICAL_PALETTE_SELECTION_ORDER.indexOf(a.selectionId);
@@ -6741,7 +6852,7 @@ function getTpalSearchResults() {
       node.entry?.cleanLabel || node.preview?.cleanLabel || "",
       node.entry?.category || node.preview?.category || "",
     ].join(" ").toLowerCase();
-    if (node.entry && haystack.includes(query)) {
+    if (node.entry && isTpalEntryAllowed(node.entry) && haystack.includes(query)) {
       results.push({ node, path: nextTrail, exact: true, searchResult: true });
     }
     getTacticalNavChildren(node).forEach((child) => visit(child, nextTrail));
@@ -6757,15 +6868,17 @@ function getTpalVisibleItems() {
   }
   const currentNode = getTpalCurrentNode();
   if (!currentNode) {
-    return getTpalCurrentRoots().map((node) => ({ node, path: [node.id], exact: false, searchResult: false }));
+    return getTpalCurrentRoots()
+      .filter((node) => isTpalNodeVisible(node))
+      .map((node) => ({ node, path: [node.id], exact: false, searchResult: false }));
   }
   const children = getTacticalNavChildren(currentNode).map((node) => ({
     node,
     path: [..._tpalState.path, node.id],
     exact: false,
     searchResult: false,
-  }));
-  if (currentNode.entry) {
+  })).filter((item) => isTpalNodeVisible(item.node));
+  if (currentNode.entry && isTpalEntryAllowed(currentNode.entry)) {
     return [{
       node: currentNode,
       path: _tpalState.path.slice(),
@@ -6802,12 +6915,13 @@ function getTacticalPaletteCustomName(fallback = "") {
 }
 
 function renderTpalSymbol(entry, options = {}) {
+  const displayEntry = getTpalNodeDisplayEntry(entry) || entry?.preview || entry;
   const previewUnit = buildTpalPreviewUnit({
-    entry: entry?.preview || entry,
+    entry: displayEntry,
     affiliation: options.affiliation || "friendly",
     size: typeof entry?.size === "string"
       ? entry.size
-      : ((entry?.preview || entry)?.domain === "ground" && (entry?.preview || entry)?.echelonAllowed !== false ? "team" : ""),
+      : (displayEntry?.domain === "ground" && displayEntry?.echelonAllowed !== false ? "team" : ""),
   });
   return renderToUnitIcon(previewUnit);
 }
@@ -6836,8 +6950,26 @@ function renderTpalBreadcrumbs() {
   dom.tpalHierarchyBreadcrumbs.innerHTML = segments.join("");
 }
 
+function renderTpalAffiliationChoices() {
+  if (!dom.tpalStep1) {
+    return;
+  }
+  const activeAffiliation = normalizeTacticalAffiliation(_tpalState.affiliation || "friendly");
+  dom.tpalStep1.querySelectorAll(".tpal-affil-btn").forEach((button) => {
+    const isActive = normalizeTacticalAffiliation(button.dataset.affiliation || "") === activeAffiliation;
+    button.classList.toggle("active", isActive);
+    button.setAttribute("aria-pressed", isActive ? "true" : "false");
+  });
+}
+
 function _tpalSetStep(step) {
   _tpalState.step = step;
+  const isPlanPicker = _tpalState.mode === "plan-picker";
+  dom.tacticalPaletteModal?.classList.toggle("tactical-palette-modal--plan-picker", isPlanPicker);
+  const titleEl = document.getElementById("tacticalPaletteTitle");
+  if (titleEl) {
+    titleEl.textContent = isPlanPicker ? "Choose Unit Symbology" : "Add Tactical Item";
+  }
   [dom.tpalStep1, dom.tpalStep2, dom.tpalStep3].forEach((el, i) => {
     el?.classList.toggle("hidden", i + 1 !== step);
   });
@@ -6850,15 +6982,22 @@ function _tpalSetStep(step) {
     el.classList.toggle("done", s < step);
   });
   dom.tpalBackBtn?.classList.toggle("hidden", step === 1);
-  const subtitles = [
-    "Select affiliation to begin.",
-    "Choose the symbol family you want to browse.",
-    _tpalState.mode === "plan-picker"
-      ? "Navigate the hierarchy and select the exact symbol for this T/O unit."
-      : "Navigate the hierarchy and select the exact symbol to place on the map.",
-  ];
+  const subtitles = isPlanPicker
+    ? [
+        "Select the unit affiliation.",
+        "Choose the unit symbol family.",
+        "Navigate the hierarchy and select the exact symbol for this T/O unit.",
+      ]
+    : [
+        "Select affiliation to begin.",
+        "Choose the symbol family you want to browse.",
+        "Navigate the hierarchy and select the exact symbol to place on the map.",
+      ];
   if (dom.tacticalPaletteSubtitle) dom.tacticalPaletteSubtitle.textContent = subtitles[step - 1] || "";
   if (dom.tacticalPaletteStatus) dom.tacticalPaletteStatus.textContent = "";
+  if (step === 1) {
+    renderTpalAffiliationChoices();
+  }
   if (step === 3) {
     requestAnimationFrame(() => (_tpalState.mode === "plan-picker" ? dom.tacticalPaletteSearch : dom.tacticalPaletteName)?.focus());
   }
@@ -7001,7 +7140,9 @@ function openTacticalPaletteModal(options = {}) {
   _tpalState.step = 1;
   _tpalState.mode = options.mode === "plan-picker" ? "plan-picker" : "placement";
   _tpalState.planTarget = options.planTarget === "edit" ? "edit" : "create";
-  _tpalState.affiliation = null;
+  _tpalState.affiliation = options.affiliation
+    ? normalizeTacticalAffiliation(options.affiliation)
+    : (_tpalState.mode === "plan-picker" ? "friendly" : null);
   _tpalState.selection = null;
   _tpalState.path = [];
   _tpalState.search = "";
@@ -7018,6 +7159,7 @@ function openTacticalPaletteModal(options = {}) {
 
 function closeTacticalPaletteModal() {
   dom.tacticalPaletteModal?.classList.add("hidden");
+  dom.tacticalPaletteModal?.classList.remove("tactical-palette-modal--plan-picker");
   updateModalBodyState();
 }
 
@@ -10402,9 +10544,13 @@ function wireEvents() {
       renderTacticalPaletteStep3();
       return;
     }
+    const sizeSelect = _tpalState.mode === "plan-picker"
+      ? document.getElementById(_tpalState.planTarget === "edit" ? "toEditUnitSize" : "toUnitSize")
+      : null;
+    const currentSize = String(sizeSelect?.value || "").trim();
     commitTacticalPaletteSelection(entry, {
       affiliation: _tpalState.affiliation || "friendly",
-      size: entry?.domain === "ground" && milstdUnitEntryAllowsEchelon(entry) ? "team" : "",
+      size: currentSize || (entry?.domain === "ground" && milstdUnitEntryAllowsEchelon(entry) ? "team" : ""),
       mode: _tpalState.mode,
     });
   });
@@ -10424,17 +10570,11 @@ function wireEvents() {
   });
   dom.toUnitTypePickerBtn?.addEventListener("click", () => {
     const affiliation = document.getElementById("toAffiliation")?.value || "friendly";
-    openTacticalPaletteModal({ mode: "plan-picker", planTarget: "create" });
-    _tpalState.affiliation = affiliation;
-    _tpalRenderTrackChoices();
-    _tpalSetStep(2);
+    openTacticalPaletteModal({ mode: "plan-picker", planTarget: "create", affiliation });
   });
   dom.toEditUnitTypePickerBtn?.addEventListener("click", () => {
     const affiliation = document.getElementById("toEditAffiliation")?.value || "friendly";
-    openTacticalPaletteModal({ mode: "plan-picker", planTarget: "edit" });
-    _tpalState.affiliation = affiliation;
-    _tpalRenderTrackChoices();
-    _tpalSetStep(2);
+    openTacticalPaletteModal({ mode: "plan-picker", planTarget: "edit", affiliation });
   });
   initTacticalEditorFormOptions();
   [
