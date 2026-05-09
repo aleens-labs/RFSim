@@ -9837,6 +9837,50 @@ label:has(#tacticalEditorLon) {
   outline: none;
   border-color: var(--accent);
 }
+.tpal-hierarchy-breadcrumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 20px;
+  margin-bottom: 10px;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+.tpal-crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(15, 23, 42, 0.42);
+  color: var(--text);
+  cursor: pointer;
+}
+.tpal-crumb:hover,
+.tpal-crumb:focus-visible {
+  border-color: rgba(56, 189, 248, 0.42);
+  background: rgba(56, 189, 248, 0.08);
+}
+.tpal-crumb-sep {
+  align-self: center;
+  color: var(--text-muted);
+}
+.to-select-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 208px;
+  text-align: left;
+}
+.to-select-button::after {
+  content: "Browse";
+  margin-left: 12px;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
 .tactical-asset-link-panel {
   display: flex;
   flex-direction: column;

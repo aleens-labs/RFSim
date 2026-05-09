@@ -1050,8 +1050,7 @@ function shouldRenderStandaloneMilstd(entry) {
 function normalizeMilstdAssetPath(path = "") {
   const text = String(path || "").trim();
   if (!text) return "";
-  if (text.startsWith("images/milstd/")) return text;
-  return text.replace(/^\.cache\/joint-military-symbology-xml\/svg\//, "images/milstd/");
+  return text.replace(/\\/g, "/");
 }
 
 function getMilstdMainPathForAffiliation(entry, affiliation = "friendly") {
@@ -1462,6 +1461,21 @@ function generateId() {
 const EMPTY_EMITTER_LIBRARY = Object.freeze({});
 let EMITTER_LIBRARY = EMPTY_EMITTER_LIBRARY;
 let emitterLibraryLoadPromise = null;
+const RADAR_PROFILE_PRESETS = Object.freeze({
+  "long-range-early-warning-radar": { pulseWidthUs: 6.5, prfHz: 320, scanType: "360 Search" },
+  "vhf-early-warning-radar": { pulseWidthUs: 12, prfHz: 220, scanType: "360 Search" },
+  "3d-acquisition-radar": { pulseWidthUs: 4.5, prfHz: 650, scanType: "3D Search" },
+  "mobile-sector-search-radar": { pulseWidthUs: 3.2, prfHz: 900, scanType: "Sector Search" },
+  "long-range-aesa-surveillance-radar": { pulseWidthUs: 2.2, prfHz: 1500, scanType: "AESA Search" },
+  "sam-target-acquisition-radar": { pulseWidthUs: 3.5, prfHz: 850, scanType: "Acquisition Search" },
+  "sam-engagement-radar": { pulseWidthUs: 1.2, prfHz: 1800, scanType: "Track" },
+  "missile-track-illumination-radar": { pulseWidthUs: null, prfHz: null, scanType: "Illumination" },
+  "shorad-fire-control-radar": { pulseWidthUs: 1, prfHz: 2200, scanType: "Track" },
+  "low-altitude-gap-filler-radar": { pulseWidthUs: 2.8, prfHz: 1100, scanType: "360 Search" },
+  "counter-uas-surveillance-radar": { pulseWidthUs: 1.1, prfHz: 2600, scanType: "360 Search" },
+  "passive-air-surveillance-receiver-site": { pulseWidthUs: null, prfHz: null, scanType: "Passive" },
+});
+const RADAR_EMITTER_TYPES = new Set(Object.keys(RADAR_PROFILE_PRESETS));
 
 async function ensureEmitterLibraryLoaded() {
   if (EMITTER_LIBRARY !== EMPTY_EMITTER_LIBRARY) {
@@ -1474,6 +1488,40 @@ async function ensureEmitterLibraryLoaded() {
     });
   }
   return emitterLibraryLoadPromise;
+}
+
+function isRadarEmitterType(emitterType = "") {
+  return RADAR_EMITTER_TYPES.has(String(emitterType || "").trim());
+}
+
+function inferRadarScanType(mode = "") {
+  const normalized = String(mode || "").trim().toLowerCase();
+  if (!normalized) return "";
+  if (normalized.includes("passive")) return "Passive";
+  if (normalized.includes("illum")) return "Illumination";
+  if (normalized.includes("track")) return "Track";
+  if (normalized.includes("sector")) return "Sector Search";
+  if (normalized.includes("3d")) return "3D Search";
+  if (normalized.includes("acquisition")) return "Acquisition Search";
+  if (normalized.includes("aesa")) return "AESA Search";
+  return "360 Search";
+}
+
+function getRadarProfileDefaults(emitterType = "", { program = null, fallbackMode = "" } = {}) {
+  const preset = RADAR_PROFILE_PRESETS[emitterType] || {};
+  const mode = String(
+    preset.mode
+    || program?.rf?.waveform
+    || program?.label
+    || fallbackMode
+    || "",
+  ).trim();
+  return {
+    mode,
+    pulseWidthUs: preset.pulseWidthUs ?? null,
+    prfHz: preset.prfHz ?? null,
+    scanType: String(preset.scanType || inferRadarScanType(mode)).trim(),
+  };
 }
 
 function wattsToDbm(w) { return 10 * Math.log10(w * 1000); }
@@ -2152,9 +2200,12 @@ const dom = {
   tpalStep2: document.querySelector("#tpalStep2"),
   tpalStep3: document.querySelector("#tpalStep3"),
   tpalBackBtn: document.querySelector("#tpalBackBtn"),
+  tpalHierarchyBreadcrumbs: document.querySelector("#tpalHierarchyBreadcrumbs"),
   tpalCategoryList: document.querySelector("#tpalCategoryList"),
   tpalTypeGrid: document.querySelector("#tpalTypeGrid"),
   tacticalPaletteName: document.querySelector("#tacticalPaletteName"),
+  toUnitTypePickerBtn: document.querySelector("#toUnitTypePickerBtn"),
+  toUnitTypePickerLabel: document.querySelector("#toUnitTypePickerLabel"),
   tacticalEditorModal: document.querySelector("#tacticalEditorModal"),
   tacticalEditorCloseBtn: document.querySelector("#tacticalEditorCloseBtn"),
   tacticalEditorCancelBtn: document.querySelector("#tacticalEditorCancelBtn"),
@@ -2822,6 +2873,12 @@ function createDefaultEmitterProfilePayload() {
       gridLocation: "",
       colocateAssetId: "",
     },
+    radar: {
+      mode: "",
+      pulseWidthUs: null,
+      prfHz: null,
+      scanType: "",
+    },
   };
 }
 
@@ -2832,8 +2889,12 @@ function normalizeEmitterProfilePayload(value) {
   const str = (entry, fallback = "") => typeof entry === "string" ? entry : fallback;
   const bool = (entry, fallback = false) => typeof entry === "boolean" ? entry : fallback;
   const num = (entry, fallback = null) => Number.isFinite(Number(entry)) ? Number(entry) : fallback;
+  const emitterType = str(src.emitterType || src.radioType, base.emitterType);
+  const radarDefaults = isRadarEmitterType(emitterType)
+    ? getRadarProfileDefaults(emitterType, { fallbackMode: str(obj(src.rf).waveform, "") })
+    : base.radar;
   return {
-    emitterType: str(src.emitterType || src.radioType, base.emitterType),
+    emitterType,
     programKey: str(src.programKey, base.programKey),
     type: EMITTER_ICONS[str(src.type, base.type)] ? str(src.type, base.type) : base.type,
     emitterLabel: str(src.emitterLabel, base.emitterLabel),
@@ -2899,6 +2960,12 @@ function normalizeEmitterProfilePayload(value) {
       gridLocation: str(obj(src.locationDefaults).gridLocation, base.locationDefaults.gridLocation),
       colocateAssetId: str(obj(src.locationDefaults).colocateAssetId, base.locationDefaults.colocateAssetId),
     },
+    radar: {
+      mode: str(obj(src.radar).mode, radarDefaults.mode),
+      pulseWidthUs: num(obj(src.radar).pulseWidthUs, radarDefaults.pulseWidthUs),
+      prfHz: num(obj(src.radar).prfHz, radarDefaults.prfHz),
+      scanType: str(obj(src.radar).scanType, radarDefaults.scanType),
+    },
   };
 }
 
@@ -2907,6 +2974,9 @@ function buildEmitterProfilePayloadFromProgram(emitterType = "", programKey = ""
   if (!program) {
     return createDefaultEmitterProfilePayload();
   }
+  const radarDefaults = isRadarEmitterType(emitterType)
+    ? getRadarProfileDefaults(emitterType, { program })
+    : null;
   return normalizeEmitterProfilePayload({
     emitterType,
     programKey,
@@ -2968,6 +3038,7 @@ function buildEmitterProfilePayloadFromProgram(emitterType = "", programKey = ""
       satDownlinkMHz: program.net?.satDownlinkMHz,
       satGainDbi: program.net?.satGainDbi,
     },
+    radar: radarDefaults,
   });
 }
 
@@ -2977,8 +3048,12 @@ function getDefaultEmitterProgramKey(emitterType = "") {
 
 function buildEmitterProfilePayloadFromAsset(asset) {
   const ext = asset?.ext && typeof asset.ext === "object" ? asset.ext : {};
+  const emitterType = ext.emitterType || ext.radioType || "";
+  const radarDefaults = isRadarEmitterType(emitterType)
+    ? getRadarProfileDefaults(emitterType, { fallbackMode: asset?.waveform ?? ext.waveform ?? "" })
+    : null;
   return normalizeEmitterProfilePayload({
-    emitterType: ext.emitterType || ext.radioType || "",
+    emitterType,
     programKey: ext.programKey || "",
     type: asset?.type || "radio",
     emitterLabel: asset?.emitterLabel || asset?.name || "radio",
@@ -3044,6 +3119,14 @@ function buildEmitterProfilePayloadFromAsset(asset) {
       gridLocation: ext.locationGrid || "",
       colocateAssetId: ext.colocateAssetId || "",
     },
+    radar: radarDefaults
+      ? {
+          mode: asset?.radarMode ?? ext.radarMode ?? radarDefaults.mode,
+          pulseWidthUs: asset?.pulseWidthUs ?? ext.pulseWidthUs ?? radarDefaults.pulseWidthUs,
+          prfHz: asset?.prfHz ?? ext.prfHz ?? radarDefaults.prfHz,
+          scanType: asset?.scanType ?? ext.scanType ?? radarDefaults.scanType,
+        }
+      : undefined,
   });
 }
 
@@ -3088,7 +3171,7 @@ function normalizeEmitterProfileRecord(value) {
     color: typeof src.color === "string" && src.color ? src.color : profile.color,
     frequencyMHz: Number.isFinite(Number(src.frequencyMHz)) ? Number(src.frequencyMHz) : profile.rf.frequencyMHz,
     powerW: Number.isFinite(Number(src.powerW)) ? Number(src.powerW) : profile.tx.powerW,
-    waveform: typeof src.waveform === "string" ? src.waveform : profile.rf.waveform,
+    waveform: typeof src.waveform === "string" ? src.waveform : (profile.radar?.mode || profile.rf.waveform),
     updatedAt: typeof src.updatedAt === "string" ? src.updatedAt : nowIso(),
     createdAt: typeof src.createdAt === "string" ? src.createdAt : nowIso(),
     profile,
@@ -3158,11 +3241,14 @@ function syncPrimaryEmitterNetToAsset(asset) {
 
 function buildEmitterAssetFromProfilePayload(payload, { profileRef = null } = {}) {
   const normalized = normalizeEmitterProfilePayload(payload);
+  const waveformLabel = isRadarEmitterType(normalized.emitterType)
+    ? (normalized.radar.mode || normalized.rf.waveform)
+    : normalized.rf.waveform;
   const primaryNet = buildEmitterNetRecord({
-    name: normalized.rf.waveform || normalized.name || normalized.emitterType || "Net 1",
+    name: waveformLabel || normalized.name || normalized.emitterType || "Net 1",
     frequencyMHz: normalized.rf.frequencyMHz,
     bandwidthKHz: normalized.rf.bandwidthKHz,
-    waveform: normalized.rf.waveform,
+    waveform: waveformLabel,
   }, 0);
   const asset = {
     type: normalized.type,
@@ -3175,10 +3261,14 @@ function buildEmitterAssetFromProfilePayload(payload, { profileRef = null } = {}
     notes: normalized.notes || "",
     frequencyMHz: normalized.rf.frequencyMHz,
     bandwidthKHz: normalized.rf.bandwidthKHz,
-    waveform: normalized.rf.waveform,
+    waveform: waveformLabel,
     modulation: normalized.rf.modulation,
     duplex: normalized.rf.duplex,
     channelSpacingKHz: normalized.rf.channelSpacingKHz,
+    radarMode: normalized.radar.mode,
+    pulseWidthUs: normalized.radar.pulseWidthUs,
+    prfHz: normalized.radar.prfHz,
+    scanType: normalized.radar.scanType,
     powerW: normalized.tx.powerW,
     dutyCycle: normalized.tx.dutyCycle,
     papr: normalized.tx.papr,
@@ -3218,9 +3308,13 @@ function buildEmitterAssetFromProfilePayload(payload, { profileRef = null } = {}
       programKey: normalized.programKey,
       bandwidthKHz: normalized.rf.bandwidthKHz,
       modulation: normalized.rf.modulation,
-      waveform: normalized.rf.waveform,
+      waveform: waveformLabel,
       duplex: normalized.rf.duplex,
       channelSpacingKHz: normalized.rf.channelSpacingKHz,
+      radarMode: normalized.radar.mode,
+      pulseWidthUs: normalized.radar.pulseWidthUs,
+      prfHz: normalized.radar.prfHz,
+      scanType: normalized.radar.scanType,
       dutyCycle: normalized.tx.dutyCycle,
       papr: normalized.tx.papr,
       spectralEfficiency: normalized.tx.spectralEfficiency,
@@ -6046,7 +6140,16 @@ function saveTacticalEditor() {
 
 // â”€â”€ Tactical palette wizard state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const TPAL_AFFIL_COT = { friendly: "f", hostile: "h", neutral: "n", unknown: "u" };
-const _tpalState = { step: 1, affiliation: null, domain: null, selection: null, category: null, search: "" };
+const _tpalState = {
+  step: 1,
+  mode: "placement",
+  affiliation: null,
+  domain: null,
+  selection: null,
+  path: [],
+  nodes: [],
+  search: "",
+};
 const TACTICAL_PALETTE_DOMAIN_ORDER = ["ground", "air", "sea_surface", "subsurface", "space"];
 const TACTICAL_PALETTE_DOMAIN_LABELS = {
   ground: "Land",
@@ -6055,10 +6158,181 @@ const TACTICAL_PALETTE_DOMAIN_LABELS = {
   subsurface: "Sea Subsurface",
   space: "Space",
 };
+const MILSTD_SYMBOL_SET_NAV_CONFIG = Object.freeze({
+  "01": { domain: "air", id: "air", label: "Air Track" },
+  "02": { domain: "air", id: "air_missile", label: "Air Missile" },
+  "05": { domain: "space", id: "space", label: "Space Track" },
+  "06": { domain: "space", id: "space_missile", label: "Space Missile" },
+  "10": { domain: "ground", id: "land_unit", label: "Unit" },
+  "11": { domain: "ground", id: "land_civilian", label: "Civilian" },
+  "15": { domain: "ground", id: "land_equipment", label: "Equipment" },
+  "20": { domain: "ground", id: "land_installation", label: "Installation" },
+  "30": { domain: "sea_surface", id: "sea_surface", label: "Sea Surface" },
+  "35": { domain: "subsurface", id: "sea_subsurface", label: "Subsurface" },
+  "36": { domain: "subsurface", id: "mine_warfare", label: "Mine Warfare" },
+  "40": { domain: "ground", id: "activities", label: "Activities" },
+  "45": { domain: "ground", id: "atmospheric", label: "Atmospheric" },
+  "46": { domain: "sea_surface", id: "oceanographic", label: "Oceanographic" },
+  "47": { domain: "space", id: "metoc_space", label: "METOC Space" },
+  "50": { domain: "ground", id: "sigint_space", label: "SIGINT Space" },
+  "51": { domain: "air", id: "sigint_air", label: "SIGINT Air" },
+  "52": { domain: "ground", id: "sigint_land", label: "SIGINT Land" },
+  "53": { domain: "sea_surface", id: "sigint_surface", label: "SIGINT Sea Surface" },
+  "54": { domain: "subsurface", id: "sigint_subsurface", label: "SIGINT Subsurface" },
+  "60": { domain: "ground", id: "cyberspace", label: "Cyberspace" },
+});
+let TACTICAL_NAV_ROOTS = null;
+
+function sanitizeTacticalHierarchyLabel(value = "") {
+  return String(value || "")
+    .replace(/\s*:\s*(Friend|Hostile|Neutral|Unknown|Original)\s*$/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function makeTacticalNavNode({ id = "", label = "", preview = null, symbolSetCode = "", entry = null } = {}) {
+  return {
+    id,
+    label,
+    preview,
+    symbolSetCode,
+    entry,
+    children: [],
+    childMap: new Map(),
+  };
+}
+
+function getTacticalNavChildren(node = null) {
+  return Array.isArray(node?.children) ? node.children : [];
+}
+
+function getTacticalNavNodeAtPath(domain = "", path = []) {
+  const roots = getTacticalNavRootsForDomain(domain);
+  let children = roots;
+  let current = null;
+  for (const segment of path) {
+    current = children.find((node) => node.id === segment) || null;
+    if (!current) {
+      return null;
+    }
+    children = getTacticalNavChildren(current);
+  }
+  return current;
+}
+
+function getTacticalNavRootsForDomain(domain = "") {
+  const normalizedDomain = normalizeTacticalDomain(domain || "ground");
+  if (!TACTICAL_NAV_ROOTS) {
+    TACTICAL_NAV_ROOTS = buildTacticalNavRoots();
+  }
+  return TACTICAL_NAV_ROOTS.get(normalizedDomain) || [];
+}
+
+function getTacticalNavSiblings(domain = "", path = []) {
+  if (!path.length) {
+    return getTacticalNavRootsForDomain(domain);
+  }
+  const parent = getTacticalNavNodeAtPath(domain, path.slice(0, -1));
+  return parent ? getTacticalNavChildren(parent) : getTacticalNavRootsForDomain(domain);
+}
+
+function buildTacticalNavRoots() {
+  const byDomain = new Map();
+  Object.values(MILSTD_SYMBOL_SET_NAV_CONFIG).forEach(({ domain }) => {
+    const normalizedDomain = normalizeTacticalDomain(domain);
+    if (!byDomain.has(normalizedDomain)) {
+      byDomain.set(normalizedDomain, []);
+    }
+  });
+
+  const rawEntries = MILSTD_SYMBOL_CATALOG
+    .filter((entry) => String(entry?.defaultPath || "").trim())
+    .filter((entry) => /:\s*Main Icon$/i.test(String(entry?.category || "").trim()))
+    .filter((entry) => !/^Frame$/i.test(String(entry?.category || "").trim()))
+    .filter((entry) => !/^Amplifier/i.test(String(entry?.category || "").trim()))
+    .map((entry) => ({
+      ...entry,
+      cleanLabel: sanitizeTacticalHierarchyLabel(entry.label || ""),
+    }))
+    .filter((entry) => entry.cleanLabel);
+
+  const deduped = new Map();
+  rawEntries.forEach((entry) => {
+    const key = `${entry.symbolSetCode || ""}|${entry.cleanLabel.toLowerCase()}`;
+    if (!deduped.has(key)) {
+      deduped.set(key, entry);
+      return;
+    }
+    const existing = deduped.get(key);
+    const existingScore = String(existing.defaultPath || "").includes("_1.svg") ? 1 : 0;
+    const nextScore = String(entry.defaultPath || "").includes("_1.svg") ? 1 : 0;
+    if (nextScore > existingScore) {
+      deduped.set(key, entry);
+    }
+  });
+
+  [...deduped.values()].forEach((entry) => {
+    const config = MILSTD_SYMBOL_SET_NAV_CONFIG[String(entry.symbolSetCode || "").padStart(2, "0")];
+    if (!config) {
+      return;
+    }
+    const domainKey = normalizeTacticalDomain(config.domain);
+    const roots = byDomain.get(domainKey) || [];
+    if (!byDomain.has(domainKey)) {
+      byDomain.set(domainKey, roots);
+    }
+    let root = roots.find((node) => node.id === config.id);
+    if (!root) {
+      root = makeTacticalNavNode({
+        id: config.id,
+        label: config.label,
+        preview: entry,
+        symbolSetCode: entry.symbolSetCode || "",
+      });
+      roots.push(root);
+    }
+
+    const parts = entry.cleanLabel.split(" : ").map((part) => part.trim()).filter(Boolean);
+    let cursor = root;
+    parts.forEach((part, index) => {
+      const nodeId = `${cursor.id}/${slugify(part)}`;
+      let child = cursor.childMap.get(nodeId);
+      if (!child) {
+        child = makeTacticalNavNode({
+          id: nodeId,
+          label: part,
+          preview: entry,
+          symbolSetCode: entry.symbolSetCode || "",
+        });
+        cursor.childMap.set(nodeId, child);
+        cursor.children.push(child);
+      }
+      if (!child.preview) {
+        child.preview = entry;
+      }
+      if (index === parts.length - 1) {
+        child.entry = entry;
+        child.symbolSetCode = entry.symbolSetCode || child.symbolSetCode;
+      }
+      cursor = child;
+    });
+  });
+
+  for (const roots of byDomain.values()) {
+    const sortTree = (nodes) => {
+      nodes.sort((left, right) => String(left.label || "").localeCompare(String(right.label || "")));
+      nodes.forEach((node) => sortTree(node.children));
+    };
+    sortTree(roots);
+  }
+  return byDomain;
+}
 
 function getTpalFamilyChoices() {
-  const grouped = TACTICAL_UNIT_CATALOG.reduce((map, entry) => {
-    const domain = normalizeTacticalDomain(entry?.domain || "ground");
+  const grouped = MILSTD_SYMBOL_CATALOG.reduce((map, entry) => {
+    const config = MILSTD_SYMBOL_SET_NAV_CONFIG[String(entry?.symbolSetCode || "").padStart(2, "0")];
+    if (!config) return map;
+    const domain = normalizeTacticalDomain(config.domain || entry?.domain || "ground");
     if (!map.has(domain)) {
       map.set(domain, {
         id: domain,
@@ -6082,35 +6356,30 @@ function getTpalFamilyChoices() {
 }
 
 function getTpalCategories(selectionId = "") {
-  const domain = normalizeTacticalDomain(selectionId || "ground");
-  const grouped = TACTICAL_UNIT_CATALOG
-    .filter((entry) => normalizeTacticalDomain(entry?.domain || "ground") === domain)
-    .reduce((map, entry) => {
-      const key = `${domain}::${entry.group}`;
-      const bucket = map.get(key) || {
-        id: key,
-        label: entry.group,
-        domain,
-        preview: entry,
-        entries: [],
-      };
-      bucket.entries.push(entry);
-      map.set(key, bucket);
-      return map;
-    }, new Map());
-  return [...grouped.values()].sort((a, b) => a.label.localeCompare(b.label));
+  const domain = normalizeTacticalDomain(selectionId || _tpalState.domain || "ground");
+  return getTacticalNavSiblings(domain, _tpalState.path);
 }
 
 function getTpalSymbolsForCategory(categoryId = "") {
-  const [domain, groupLabel] = String(categoryId || "").split("::");
+  const domain = normalizeTacticalDomain(_tpalState.domain || "ground");
+  const nodes = getTacticalNavSiblings(domain, _tpalState.path);
   const search = String(_tpalState.search || "").trim().toLowerCase();
-  return TACTICAL_UNIT_CATALOG
-    .filter((entry) => (!domain || normalizeTacticalDomain(entry?.domain || "ground") === domain) && (!groupLabel || entry.group === groupLabel))
-    .filter((entry) => !search || `${entry.label} ${entry.group} ${entry.cotTail}`.toLowerCase().includes(search));
+  const filtered = !search
+    ? nodes
+    : nodes.filter((node) => `${node.label} ${(node.entry?.cleanLabel || "")} ${(node.entry?.category || "")}`.toLowerCase().includes(search));
+  return categoryId
+    ? filtered.filter((node) => node.id === categoryId)
+    : filtered;
 }
 
 function buildTpalPreviewUnit({ entry = null, affiliation = "friendly", size = "" } = {}) {
-  const catalogId = normalizeToUnitType(entry?.id || entry?.catalogId || entry?.type || deriveTacticalUnitTypeFromDomain(entry?.domain || "ground"));
+  const catalogId = normalizeToUnitType(
+    entry?.id
+    || entry?.catalogId
+    || entry?.type
+    || entry?.uniqueId
+    || deriveTacticalUnitTypeFromDomain(entry?.domain || "ground"),
+  );
   const previewSize = entry?.echelonAllowed === false ? "" : size;
   return normalizeToUnit({
     affiliation,
@@ -6139,6 +6408,30 @@ function renderTpalSymbol(entry, options = {}) {
   return renderToUnitIcon(previewUnit);
 }
 
+function renderTpalBreadcrumbs() {
+  if (!dom.tpalHierarchyBreadcrumbs) {
+    return;
+  }
+  if (!_tpalState.path.length) {
+    dom.tpalHierarchyBreadcrumbs.innerHTML = "";
+    return;
+  }
+  const segments = [];
+  let runningPath = [];
+  _tpalState.path.forEach((nodeId, index) => {
+    const node = getTacticalNavNodeAtPath(_tpalState.domain, [...runningPath, nodeId]);
+    if (!node) {
+      return;
+    }
+    runningPath = [...runningPath, nodeId];
+    if (index > 0) {
+      segments.push('<span class="tpal-crumb-sep" aria-hidden="true">/</span>');
+    }
+    segments.push(`<button class="tpal-crumb" type="button" data-depth="${index + 1}">${escapeHtml(node.label)}</button>`);
+  });
+  dom.tpalHierarchyBreadcrumbs.innerHTML = segments.join("");
+}
+
 function _tpalSetStep(step) {
   _tpalState.step = step;
   [dom.tpalStep1, dom.tpalStep2, dom.tpalStep3].forEach((el, i) => {
@@ -6151,7 +6444,11 @@ function _tpalSetStep(step) {
     el.classList.toggle("done", s < step);
   });
   dom.tpalBackBtn?.classList.toggle("hidden", step === 1);
-  const subtitles = ["Select affiliation to begin.", "Select a CoT track family.", "Select the schema branch and symbol."];
+  const subtitles = [
+    "Select affiliation to begin.",
+    "Select a CoT track family.",
+    "Traverse the MIL-STD-2525D symbol hierarchy until you reach the exact icon.",
+  ];
   if (dom.tacticalPaletteSubtitle) dom.tacticalPaletteSubtitle.textContent = subtitles[step - 1] || "";
   if (dom.tacticalPaletteStatus) dom.tacticalPaletteStatus.textContent = "";
   if (step === 3) {
@@ -6177,52 +6474,111 @@ function _tpalRenderTrackChoices() {
 function _tpalRenderCategories(selectionId) {
   if (!dom.tpalCategoryList) return;
   const aff = _tpalState.affiliation || "friendly";
-  const selectedTrack = getTpalFamilyChoices().find((entry) => entry.id === selectionId);
+  const selectedTrack = getTpalFamilyChoices().find((entry) => entry.id === selectionId) || null;
   const cats = getTpalCategories(selectionId);
-  const header = selectedTrack ? `<div class="tpal-category-heading">${escapeHtml(selectedTrack.label)}</div>` : "";
-  dom.tpalCategoryList.innerHTML = `${header}${cats.map((c) => `
-    <button class="tpal-cat-btn" type="button" data-cat="${c.id}">
-      <span class="tpal-cat-symbol">${renderTpalSymbol(c, { affiliation: aff, domain: selectedTrack?.domain || _tpalState.domain })}</span>
-      <span>${escapeHtml(c.label)}</span>
+  const headingLabel = _tpalState.path.length
+    ? getTacticalNavNodeAtPath(_tpalState.domain, _tpalState.path.slice(0, -1))?.label || selectedTrack?.label || ""
+    : selectedTrack?.label || "";
+  const header = headingLabel ? `<div class="tpal-category-heading">${escapeHtml(headingLabel)}</div>` : "";
+  dom.tpalCategoryList.innerHTML = `${header}${cats.map((node) => `
+    <button class="tpal-cat-btn${_tpalState.path[_tpalState.path.length - 1] === node.id ? " active" : ""}" type="button" data-cat="${node.id}">
+      <span class="tpal-cat-symbol">${renderTpalSymbol(node, { affiliation: aff, domain: selectedTrack?.domain || _tpalState.domain })}</span>
+      <span>${escapeHtml(node.label)}</span>
       <span class="tpal-nav-arrow" aria-hidden="true">&#8594;</span>
     </button>
   `).join("")}`;
-  const first = dom.tpalCategoryList.querySelector(".tpal-cat-btn");
-  if (first) {
-    first.classList.add("active");
-    _tpalState.category = first.dataset.cat;
-    _tpalRenderTypes(_tpalState.category);
-  }
+  renderTpalBreadcrumbs();
 }
 
 function _tpalRenderTypes(catId) {
   if (!dom.tpalTypeGrid) return;
-  const types = getTpalSymbolsForCategory(catId);
+  const types = getTpalCategories(_tpalState.selection);
   const aff = _tpalState.affiliation || "friendly";
-  dom.tpalTypeGrid.innerHTML = types.map((t) => {
-    const defaultSize = t.domain === "ground" && t.echelonAllowed !== false ? "team" : "";
+  dom.tpalTypeGrid.innerHTML = types.map((node) => {
+    const entry = node.entry || node.preview;
+    const hasChildren = getTacticalNavChildren(node).length > 0;
+    const defaultSize = entry?.domain === "ground" && entry?.echelonAllowed !== false ? "team" : "";
     return `<button class="tpal-type-btn" type="button"
-      data-catalog-id="${escapeHtml(t.id)}"
-      data-name="${escapeHtml(t.label)}"
-      data-domain="${escapeHtml(t.domain || _tpalState.domain || "ground")}"
-      data-object-class="unit"
+      data-node-id="${escapeHtml(node.id)}"
+      data-catalog-id="${escapeHtml(entry?.id || entry?.uniqueId || "")}"
+      data-name="${escapeHtml(node.label)}"
+      data-domain="${escapeHtml(entry?.domain || _tpalState.domain || "ground")}"
+      data-object-class="${escapeHtml(entry?.objectClass || "unit")}"
       data-size="${escapeHtml(defaultSize)}"
       data-geometry-type="Point">
-      <span class="tpal-type-symbol">${renderTpalSymbol(t, { affiliation: aff, domain: _tpalState.domain })}</span>
-      <span>${escapeHtml(t.label)}</span>
+      <span class="tpal-type-symbol">${renderTpalSymbol(node, { affiliation: aff, domain: _tpalState.domain })}</span>
+      <span>${escapeHtml(node.label)}</span>
+      ${hasChildren ? '<span class="tpal-nav-arrow" aria-hidden="true">&#8594;</span>' : ""}
     </button>`;
   }).join("");
   if (!types.length) {
     dom.tpalTypeGrid.innerHTML = '<div class="tpal-empty-state">No symbols match the current filter.</div>';
   }
+  renderTpalBreadcrumbs();
 }
 
-function openTacticalPaletteModal() {
+function updatePlanUnitTypePickerLabel(catalogId = "", affiliation = "friendly") {
+  if (!dom.toUnitTypePickerLabel) {
+    return;
+  }
+  const entry = getDoctrinalCatalogEntryById(catalogId);
+  const affLabel = FORCE_LABELS?.[affiliation] || formatToUnitLabelPart(affiliation || "friendly");
+  dom.toUnitTypePickerLabel.textContent = entry ? `${affLabel} • ${entry.label}` : `${affLabel} • Land Unit`;
+}
+
+function commitTacticalPaletteSelection(entry, { affiliation, size = "", mode = "placement" } = {}) {
+  if (!entry) {
+    return;
+  }
+  const aff = normalizeTacticalAffiliation(affiliation || _tpalState.affiliation || "friendly");
+  if (mode === "plan-picker") {
+    const typeInput = document.getElementById("toUnitType");
+    const sizeSelect = document.getElementById("toUnitSize");
+    const nextSize = catalogAllowsEchelon(entry.id) ? (size || sizeSelect?.value || "battalion") : "";
+    if (typeInput) {
+      typeInput.value = entry.id;
+    }
+    const affiliationSelect = document.getElementById("toAffiliation");
+    if (affiliationSelect) {
+      affiliationSelect.value = aff;
+    }
+    if (sizeSelect) {
+      if (nextSize && sizeSelect.querySelector(`option[value="${nextSize}"]`)) {
+        sizeSelect.value = nextSize;
+      }
+      sizeSelect.disabled = !catalogAllowsEchelon(entry.id);
+    }
+    updatePlanUnitTypePickerLabel(entry.id, aff);
+    closeTacticalPaletteModal();
+    setStatus(`Selected ${entry.label} for the T/O builder.`);
+    return;
+  }
+  beginTacticalPlacement({
+    id: generateId(),
+    name: getTacticalPaletteCustomName(entry.cleanLabel || entry.label || "Tactical Item"),
+    objectClass: entry.objectClass || "unit",
+    domain: entry.domain || _tpalState.domain || "ground",
+    unitType: entry.id || entry.uniqueId,
+    catalogId: entry.id || entry.uniqueId,
+    size,
+    affiliation: aff,
+    cotType: buildCatalogCotType(entry.id || entry.uniqueId, aff) || getMilstdSymbolDefaultCotType(entry, aff),
+    sidc: "",
+    detail: {},
+    geometryType: "Point",
+    drawMode: "",
+    shapeKind: "",
+  });
+}
+
+function openTacticalPaletteModal(options = {}) {
   _tpalState.step = 1;
+  _tpalState.mode = options.mode === "plan-picker" ? "plan-picker" : "placement";
   _tpalState.affiliation = null;
   _tpalState.domain = null;
   _tpalState.selection = null;
-  _tpalState.category = null;
+  _tpalState.path = [];
+  _tpalState.nodes = [];
   _tpalState.search = "";
   if (dom.tacticalPaletteName) {
     dom.tacticalPaletteName.value = "";
@@ -8170,6 +8526,7 @@ const emitterModal = {
   panels: null,
   fields: {},
   linkBudgetEls: {},
+  typeSpecificFields: {},
   currentSavedProfileLink: null,
   originalAssetProfileLink: null,
   originalAssetPayload: null,
@@ -8194,6 +8551,7 @@ const emitterModal = {
     const ids = [
       "emName","emUnit","emForce","emIcon","emColor","emNotes",
       "emFreqMHz","emBandwidthKHz","emModulation","emWaveform","emDuplex","emChannelSpacingKHz",
+      "emRadarMode","emPulseWidthUs","emPrfHz","emScanType",
       "emPowerW","emPowerDbm","emDutyCycle","emPapr","emSpectralEff","emEirpDbm",
       "emRxSensDbm","emNoiseFigDb","emReqSnrDb","emAcrDb","emBdrDb",
       "emAntennaType","emAntennaGainDbi","emRadPattern","emPolarization","emAntennaHeightM","emCableLossDb","emSystemLossDb",
@@ -8208,6 +8566,15 @@ const emitterModal = {
       this.fields[id]?.addEventListener("input", () => this.onFormChanged());
       this.fields[id]?.addEventListener("change", () => this.onFormChanged());
     });
+    this.typeSpecificFields = {
+      waveform: document.querySelector("#emWaveformField"),
+      duplex: document.querySelector("#emDuplexField"),
+      channelSpacing: document.querySelector("#emChannelSpacingField"),
+      radarMode: document.querySelector("#emRadarModeField"),
+      pulseWidthUs: document.querySelector("#emPulseWidthUsField"),
+      prfHz: document.querySelector("#emPrfHzField"),
+      scanType: document.querySelector("#emScanTypeField"),
+    };
 
     const lbIds = ["lb_txPower","lb_antennaGain","lb_cableLoss","lb_eirp","lb_fspl10","lb_rxPower10","lb_rxSens","lb_margin10","lb_maxRange"];
     lbIds.forEach((id) => { this.linkBudgetEls[id] = document.querySelector(`#${id}`); });
@@ -8370,6 +8737,19 @@ const emitterModal = {
   onFormChanged() {
     this.validateInputs();
     this.updateSavedProfileStatus();
+  },
+
+  updateEmitterTypeSpecificFields(profile = null) {
+    const emitterType = profile?.emitterType || this.emitterTypeSelect?.value || "";
+    const isRadar = isRadarEmitterType(emitterType);
+    const toggle = (key, show) => this.typeSpecificFields[key]?.classList.toggle("hidden", !show);
+    toggle("waveform", !isRadar);
+    toggle("duplex", !isRadar);
+    toggle("channelSpacing", !isRadar);
+    toggle("radarMode", isRadar);
+    toggle("pulseWidthUs", isRadar);
+    toggle("prfHz", isRadar);
+    toggle("scanType", isRadar);
   },
 
   renderSavedProfileLibrary() {
@@ -8565,9 +8945,10 @@ const emitterModal = {
     if (!emitter) {
       if (sel) {
         sel.disabled = true;
-        sel.innerHTML = '<option value="">— Manual —</option>';
+        sel.innerHTML = '<option value="">- Manual -</option>';
       }
       this.libSummary.innerHTML = "<p>Configure all parameters manually.</p>";
+      this.updateEmitterTypeSpecificFields({ emitterType: "" });
       this.onFormChanged();
       return;
     }
@@ -8645,6 +9026,10 @@ const emitterModal = {
     set("emWaveform",         profile.rf.waveform);
     set("emDuplex",           profile.rf.duplex);
     set("emChannelSpacingKHz",profile.rf.channelSpacingKHz);
+    set("emRadarMode",        profile.radar.mode || profile.rf.waveform);
+    set("emPulseWidthUs",     profile.radar.pulseWidthUs);
+    set("emPrfHz",            profile.radar.prfHz);
+    set("emScanType",         profile.radar.scanType);
     // TX
     set("emPowerW",           profile.tx.powerW);
     set("emDutyCycle",        profile.tx.dutyCycle);
@@ -8687,6 +9072,7 @@ const emitterModal = {
     set("emGridLocation",     profile.locationDefaults.gridLocation);
     set("emColocateAsset",    profile.locationDefaults.colocateAssetId);
 
+    this.updateEmitterTypeSpecificFields(profile);
     this.updateDerivedFields();
     this.updateLinkBudget();
     this.validateInputs();
@@ -8814,10 +9200,16 @@ const emitterModal = {
     const f = this.fields;
     const v = (id) => f[id]?.value;
     const n = (id) => parseFloat(f[id]?.value);
+    const numOr = (id, fallback) => {
+      const parsed = n(id);
+      return Number.isFinite(parsed) ? parsed : fallback;
+    };
     const b = (id) => f[id]?.checked ?? false;
     const iconVal = v("emIcon") || "radio";
     const emitterType = this.emitterTypeSelect?.value || "";
     const programKey = this.programSelect?.value || getDefaultEmitterProgramKey(emitterType);
+    const isRadar = isRadarEmitterType(emitterType);
+    const radarMode = isRadar ? String(v("emRadarMode") || v("emWaveform") || "").trim() : "";
     return normalizeEmitterProfilePayload({
       emitterType,
       programKey,
@@ -8832,21 +9224,27 @@ const emitterModal = {
       color: v("emColor") || FORCE_COLORS["friendly"],
       notes: v("emNotes") || "",
       rf: {
-        frequencyMHz: n("emFreqMHz") || 150,
+        frequencyMHz: numOr("emFreqMHz", 150),
         bandwidthKHz: n("emBandwidthKHz"),
         modulation: v("emModulation"),
-        waveform: v("emWaveform"),
+        waveform: isRadar ? radarMode : v("emWaveform"),
         duplex: v("emDuplex"),
         channelSpacingKHz: n("emChannelSpacingKHz"),
       },
+      radar: {
+        mode: radarMode,
+        pulseWidthUs: isRadar ? n("emPulseWidthUs") : null,
+        prfHz: isRadar ? n("emPrfHz") : null,
+        scanType: isRadar ? (v("emScanType") || "") : "",
+      },
       tx: {
-        powerW: n("emPowerW") || 5,
+        powerW: numOr("emPowerW", 5),
         dutyCycle: n("emDutyCycle"),
         papr: n("emPapr"),
         spectralEfficiency: n("emSpectralEff"),
       },
       rx: {
-        sensitivityDbm: n("emRxSensDbm") || -107,
+        sensitivityDbm: numOr("emRxSensDbm", -107),
         noiseFigDb: n("emNoiseFigDb"),
         requiredSnrDb: n("emReqSnrDb"),
         acrDb: n("emAcrDb"),
@@ -8854,12 +9252,12 @@ const emitterModal = {
       },
       antenna: {
         type: v("emAntennaType"),
-        gainDbi: n("emAntennaGainDbi") || 2.15,
+        gainDbi: numOr("emAntennaGainDbi", 2.15),
         pattern: v("emRadPattern"),
         polarization: v("emPolarization"),
-        heightM: n("emAntennaHeightM") || 2,
+        heightM: numOr("emAntennaHeightM", 2),
         cableLossDb: n("emCableLossDb"),
-        systemLossDb: n("emSystemLossDb") || 3,
+        systemLossDb: numOr("emSystemLossDb", 3),
       },
       prop: {
         model: v("emPropModel"),

@@ -788,6 +788,9 @@
                 <option value="coast_guard">Coast Guard</option>
               </optgroup>
             </select>
+            <button id="toUnitTypePickerBtn" class="to-select to-select-button" type="button" title="Unit Type">
+              <span id="toUnitTypePickerLabel">Land Unit</span>
+            </button>
             <select id="toUnitSize" class="to-select" title="Unit Size">
               <option value="team">Team (2-4)</option>
               <option value="fireteam">Fire Team (4)</option>
@@ -1016,6 +1019,7 @@
               <span>Track Name</span>
               <input id="tacticalPaletteName" type="text" maxlength="80" placeholder="Enter track name">
             </label>
+            <div id="tpalHierarchyBreadcrumbs" class="tpal-hierarchy-breadcrumbs"></div>
             <div class="tpal-type-layout">
               <div class="tpal-category-list" id="tpalCategoryList"></div>
               <div class="tpal-type-grid" id="tpalTypeGrid"></div>
@@ -1841,7 +1845,7 @@
                   <option value="other">Other</option>
                 </select>
               </label>
-              <label>
+              <label id="emWaveformField">
                 <span>Waveform</span>
                 <select id="emWaveform">
                   <option value="analog">Analog Voice</option>
@@ -1860,22 +1864,10 @@
                   <option value="DMR">DMR (ETSI TS 102 361)</option>
                   <option value="TETRA">TETRA</option>
                   <option value="LTE">LTE / FirstNet</option>
-                  <option value="Volume Search">Volume Search</option>
-                  <option value="Low-Band Search">Low-Band Search</option>
-                  <option value="3D Search">3D Search</option>
-                  <option value="Sector Search">Sector Search</option>
-                  <option value="AESA Search">AESA Search</option>
-                  <option value="Acquisition Search">Acquisition Search</option>
-                  <option value="Target Track">Target Track</option>
-                  <option value="CW Illumination">CW Illumination</option>
-                  <option value="SHORAD Track">SHORAD Track</option>
-                  <option value="Gap Filler Search">Gap Filler Search</option>
-                  <option value="Counter-UAS Search">Counter-UAS Search</option>
-                  <option value="Passive DF">Passive DF</option>
                   <option value="other">Other</option>
                 </select>
               </label>
-              <label>
+              <label id="emDuplexField">
                 <span>Duplex Mode</span>
                 <select id="emDuplex">
                   <option value="simplex">Simplex</option>
@@ -1883,9 +1875,25 @@
                   <option value="full-duplex">Full-Duplex</option>
                 </select>
               </label>
-              <label>
+              <label id="emChannelSpacingField">
                 <span>Channel Spacing (kHz)</span>
                 <input id="emChannelSpacingKHz" type="number" min="1" step="0.5">
+              </label>
+              <label id="emRadarModeField" class="hidden">
+                <span>Radar Mode</span>
+                <input id="emRadarMode" type="text" maxlength="80" placeholder="Volume Search, Track, Passive DF">
+              </label>
+              <label id="emPulseWidthUsField" class="hidden">
+                <span>Pulse Width (us)</span>
+                <input id="emPulseWidthUs" type="number" min="0" step="0.1">
+              </label>
+              <label id="emPrfHzField" class="hidden">
+                <span>PRF (Hz)</span>
+                <input id="emPrfHz" type="number" min="0" step="1">
+              </label>
+              <label id="emScanTypeField" class="hidden">
+                <span>Scan Type</span>
+                <input id="emScanType" type="text" maxlength="80" placeholder="360 search, sector search, track">
               </label>
             </div>
           </div>
