@@ -37042,8 +37042,12 @@ function renderToUnit(unit) {
         }
         return;
       }
-      renderToEdges();
-      saveMapState();
+      if (result.linked) {
+        toAutoLayout();
+      } else {
+        renderToEdges();
+        saveMapState();
+      }
       setStatus(
         result.linked
           ? `Linked ${normalized.label || normalized.designator || "unit"} as ${type === "parent" ? "parent" : "child"}.`

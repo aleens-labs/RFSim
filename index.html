@@ -119,15 +119,15 @@
               <div class="two-column workspace-auth-grid">
                 <label class="span-2">
                   Display Name
-                  <input id="workspaceFullName" type="text" placeholder="Optional">
+                  <input id="workspaceFullName" type="text" placeholder="Optional" autocomplete="off">
                 </label>
                 <label class="span-2">
                   Username
-                  <input id="workspaceEmail" type="text" placeholder="Enter username">
+                  <input id="workspaceEmail" type="text" placeholder="Enter username" autocomplete="off">
                 </label>
                 <label class="span-2">
                   Password
-                  <input id="workspacePassword" type="password" placeholder="Minimum 12 characters">
+                  <input id="workspacePassword" type="password" placeholder="Minimum 12 characters" autocomplete="new-password">
                 </label>
               </div>
               <div class="button-row compact-button-row workspace-auth-actions">
@@ -2313,7 +2313,7 @@
                 <span>Cesium Ion Token</span>
                 <a class="inline-link" href="https://ion.cesium.com/signup/" target="_blank" rel="noreferrer noopener">Create token</a>
               </span>
-              <input id="cesiumIonToken" type="password" placeholder="Paste Cesium Ion access token">
+              <input id="cesiumIonToken" type="password" placeholder="Paste Cesium Ion access token" autocomplete="off">
             </label>
             <label>
               3D City Mesh
@@ -2418,7 +2418,7 @@
             </label>
             <label class="settings-span-2">
               Saved Key Label
-              <input id="aiSavedConfigLabelInput" type="text" placeholder="Optional display name">
+              <input id="aiSavedConfigLabelInput" type="text" placeholder="Optional display name" autocomplete="off">
             </label>
             <label>
               Provider
@@ -2431,7 +2431,7 @@
             </label>
             <label id="aiApiKeyLabel">
               <span id="aiApiKeyLabelText">API Key</span>
-              <input id="aiApiKeyInput" type="password" placeholder="Paste API key">
+              <input id="aiApiKeyInput" type="password" placeholder="Paste API key" autocomplete="off">
             </label>
             <label class="settings-span-2">
               Model
@@ -2747,7 +2747,7 @@
                   <div id="takCaCertSummary" class="tak-cert-summary">No CA certificate stored.</div>
                   <label id="takCaCertPasswordRow" class="tak-cert-password-row hidden">
                     <span>Certificate Password</span>
-                    <input id="takCaCertPasswordInput" type="password" placeholder="Leave blank to keep stored certificate password">
+                    <input id="takCaCertPasswordInput" type="password" placeholder="Leave blank to keep stored certificate password" autocomplete="off">
                   </label>
                   <button id="takDeleteCaCertBtn" class="ghost-button small" type="button">Delete CA</button>
                 </div>
@@ -2758,7 +2758,7 @@
                   <div id="takClientCertSummary" class="tak-cert-summary">No client certificate stored.</div>
                   <label id="takClientCertPasswordRow" class="tak-cert-password-row hidden">
                     <span>Certificate Password</span>
-                    <input id="takClientCertPasswordInput" type="password" placeholder="Leave blank to keep stored certificate password">
+                    <input id="takClientCertPasswordInput" type="password" placeholder="Leave blank to keep stored certificate password" autocomplete="off">
                   </label>
                   <button id="takDeleteClientCertBtn" class="ghost-button small" type="button">Delete Certificate</button>
                 </div>
@@ -2774,11 +2774,11 @@
               </label>
               <label id="takUsernameRow" class="settings-span-2 hidden">
                 Username
-                <input id="takUsernameInput" type="text" placeholder="Username">
+                <input id="takUsernameInput" type="text" placeholder="Username" autocomplete="off">
               </label>
               <label id="takPasswordRow" class="settings-span-2 hidden">
                 Password
-                <input id="takAuthSecretInput" type="password" placeholder="Leave blank to keep stored password">
+                <input id="takAuthSecretInput" type="password" placeholder="Leave blank to keep stored password" autocomplete="off">
               </label>
 
               <div class="settings-span-2 tak-project-shell">
@@ -2909,7 +2909,7 @@
           </label>
           <label class="settings-span-2">
             Password
-            <input id="takCertPasswordInputModal" type="password" placeholder="Enter certificate password">
+            <input id="takCertPasswordInputModal" type="password" placeholder="Enter certificate password" autocomplete="off">
           </label>
         </div>
       </div>
