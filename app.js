@@ -6190,6 +6190,13 @@ function sanitizeTacticalHierarchyLabel(value = "") {
     .trim();
 }
 
+function slugifyTacticalNavSegment(value = "") {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "") || "item";
+}
+
 function makeTacticalNavNode({ id = "", label = "", preview = null, symbolSetCode = "", entry = null } = {}) {
   return {
     id,
@@ -6295,7 +6302,7 @@ function buildTacticalNavRoots() {
     const parts = entry.cleanLabel.split(" : ").map((part) => part.trim()).filter(Boolean);
     let cursor = root;
     parts.forEach((part, index) => {
-      const nodeId = `${cursor.id}/${slugify(part)}`;
+      const nodeId = `${cursor.id}/${slugifyTacticalNavSegment(part)}`;
       let child = cursor.childMap.get(nodeId);
       if (!child) {
         child = makeTacticalNavNode({
