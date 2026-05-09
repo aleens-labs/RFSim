@@ -1047,24 +1047,33 @@ function shouldRenderStandaloneMilstd(entry) {
   return entry.familyKey === "control_measures" || String(entry.familyKey || "").startsWith("metoc");
 }
 
+function normalizeMilstdAssetPath(path = "") {
+  const text = String(path || "").trim();
+  if (!text) return "";
+  if (text.startsWith("images/milstd/")) return text;
+  return text.replace(/^\.cache\/joint-military-symbology-xml\/svg\//, "images/milstd/");
+}
+
 function getMilstdMainPathForAffiliation(entry, affiliation = "friendly") {
   if (!entry) return "";
   const normalized = normalizeTacticalAffiliation(affiliation);
   const baseUniqueId = normalizeMilstdUniqueId(entry?.uniqueId || entry?.id || "");
   const preferredEntry = getPreferredMilstdSymbolEntryByBaseUniqueId(baseUniqueId, normalized) || entry;
-  return preferredEntry.variantPaths?.[normalized]
+  return normalizeMilstdAssetPath(
+    preferredEntry.variantPaths?.[normalized]
     || preferredEntry.defaultPath
     || entry.variantPaths?.[normalized]
     || entry.defaultPath
     || preferredEntry.variantPaths?.unknown
     || entry.variantPaths?.unknown
-    || "";
+    || ""
+  );
 }
 
 function getMilstdFramePathFromSidc(sidc = "") {
   if (!isMilstdSidc20(sidc)) return "";
   const text = String(sidc).trim();
-  return `.cache/joint-military-symbology-xml/svg/Frames/${text.slice(2, 3)}_${text.slice(3, 6)}_${text.slice(6, 7)}.svg`;
+  return `images/milstd/Frames/${text.slice(2, 3)}_${text.slice(3, 6)}_${text.slice(6, 7)}.svg`;
 }
 
 function getMilstdEchelonPathFromSidc(sidc = "") {
@@ -1073,7 +1082,7 @@ function getMilstdEchelonPathFromSidc(sidc = "") {
   const ampGroup = text.charAt(8);
   const amp = text.charAt(9);
   if (!["1", "2"].includes(ampGroup) || amp === "0") return "";
-  return `.cache/joint-military-symbology-xml/svg/Echelon/${text.charAt(3)}${ampGroup}${amp}.svg`;
+  return `images/milstd/Echelon/${text.charAt(3)}${ampGroup}${amp}.svg`;
 }
 
 function getMilstdSymbolInfo(value = {}) {
