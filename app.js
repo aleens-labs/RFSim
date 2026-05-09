@@ -27429,7 +27429,7 @@ async function initCesiumIfNeeded() {
     timeline: false,
     baseLayerPicker: false,
     geocoder: false,
-    homeButton: true,
+    homeButton: false,
     sceneModePicker: false,
     navigationHelpButton: false,
     fullscreenButton: false,

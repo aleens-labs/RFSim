@@ -8283,7 +8283,7 @@ body.emitter-modal-open {
 .map-tak-identity-btn {
   position: absolute;
   top: var(--map-overlay-top);
-  left: calc(var(--map-overlay-left) + var(--map-view-toggle-w) + var(--map-overlay-gap) + var(--map-geo-search-w) + var(--map-overlay-gap) + var(--map-offline-w) + var(--map-overlay-gap) + 128px);
+  left: calc(var(--map-overlay-left) + var(--map-view-toggle-w) + var(--map-overlay-gap) + var(--map-geo-search-w) + var(--map-overlay-gap) + var(--map-offline-w) + var(--map-overlay-gap) + 104px);
   z-index: 650;
   height: var(--map-overlay-control-h);
   padding: 0 10px;
