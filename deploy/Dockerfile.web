@@ -33,4 +33,5 @@ COPY og-image.png /usr/share/nginx/html/og-image.png
 COPY genai-proxy.js /usr/share/nginx/html/genai-proxy.js
 COPY images /usr/share/nginx/html/images
 COPY launchers /usr/share/nginx/html/launchers
+COPY src /usr/share/nginx/html/src
 COPY --from=wasm-builder /build/rust/rf_sim_compute/pkg /usr/share/nginx/html/rust/rf_sim_compute/pkg
