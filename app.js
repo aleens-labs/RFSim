@@ -37158,16 +37158,20 @@ function clearToSelection() {
   document.querySelectorAll(".to-unit.selected").forEach((el) => el.classList.remove("selected"));
 }
 
-function getToUnitConnectorAnchors(unit, world) {
-  if (!unit || !world) return null;
-  // .to-unit uses transform: translate(-50%, -50%), so unit.x/y is the visual center.
-  // Use offsetHeight to get the actual rendered card height; fall back to 143.
-  const unitEl = Array.from(world.querySelectorAll(".to-unit")).find((entry) => String(entry.dataset.id) === String(unit.id));
-  const halfH = unitEl ? unitEl.offsetHeight / 2 : 72;
+function getToUnitConnectorAnchors(unit, world, svg) {
+  if (!unit || !world || !svg) return null;
+  const unitEl = world.querySelector(`.to-unit[data-id="${unit.id}"]`);
+  if (!unitEl) return null;
+  // Anchor hierarchy lines to the rendered unit symbol instead of the full card.
+  // Labels and badges can grow independently, but the connector should stay centered
+  // on the icon that represents the unit.
+  const anchorEl = unitEl.querySelector(".to-unit-icon") || unitEl;
+  const anchorRect = anchorEl.getBoundingClientRect();
+  const svgRect = svg.getBoundingClientRect();
   return {
-    centerX: unit.x,
-    topY: unit.y - halfH,
-    bottomY: unit.y + halfH,
+    centerX: anchorRect.left - svgRect.left + (anchorRect.width / 2),
+    topY: anchorRect.top - svgRect.top,
+    bottomY: anchorRect.bottom - svgRect.top,
   };
 }
 
@@ -37180,13 +37184,13 @@ function renderToEdges() {
     const parent = _toState.units.find(u => u.id === link.parentId);
     const child  = _toState.units.find(u => u.id === link.childId);
     if (!parent || !child) continue;
-    const parentAnchor = getToUnitConnectorAnchors(parent, world);
-    const childAnchor = getToUnitConnectorAnchors(child, world);
+    const parentAnchor = getToUnitConnectorAnchors(parent, world, svg);
+    const childAnchor = getToUnitConnectorAnchors(child, world, svg);
     if (!parentAnchor || !childAnchor) continue;
-    const x1 = parentAnchor.centerX * _toState.zoom + _toState.panX;
-    const y1 = parentAnchor.bottomY * _toState.zoom + _toState.panY;
-    const x2 = childAnchor.centerX * _toState.zoom + _toState.panX;
-    const y2 = childAnchor.topY * _toState.zoom + _toState.panY;
+    const x1 = parentAnchor.centerX;
+    const y1 = parentAnchor.bottomY;
+    const x2 = childAnchor.centerX;
+    const y2 = childAnchor.topY;
     const midY = (y1 + y2) / 2;
     // Orthogonal elbow: down â†’ horizontal â†’ down
     const d = `M${x1},${y1} L${x1},${midY} L${x2},${midY} L${x2},${y2}`;
