@@ -1202,6 +1202,19 @@ function getMilstdSymbolInfo(value = {}) {
 }
 
 function getMilstdLayerSpec(value = {}) {
+  const unit = value && typeof value === "object" ? value : {};
+  if (unit?.frameOnly) {
+    const framePath = resolveMilstdFramePath(unit);
+    return {
+      domain: resolveMilstdDomain(unit),
+      framePath,
+      mainPath: "",
+      modifierPaths: [],
+      echelonPath: "",
+      fallbackText: String(unit?.fallbackText || "").trim(),
+    };
+  }
+
   const symbolInfo = getMilstdSymbolInfo(value);
   if (symbolInfo.entry && symbolInfo.sidc) {
     const standalone = shouldRenderStandaloneMilstd(symbolInfo.entry);
@@ -1215,18 +1228,7 @@ function getMilstdLayerSpec(value = {}) {
     };
   }
 
-  const unit = value && typeof value === "object" ? value : {};
   const framePath = resolveMilstdFramePath(unit);
-  if (unit?.frameOnly) {
-    return {
-      domain: resolveMilstdDomain(unit),
-      framePath,
-      mainPath: "",
-      modifierPaths: [],
-      echelonPath: "",
-      fallbackText: "",
-    };
-  }
   const mainPath = resolveMilstdMainPath(unit) || "";
   const modifierPaths = resolveMilstdModifierPaths(unit);
   return {
@@ -6461,6 +6463,29 @@ const TACTICAL_PALETTE_SPECIALIZED_SELECTIONS = new Set([
   "metoc_oceanographic",
   "metoc_space",
 ]);
+const TPAL_SELECTION_FRAME_DOMAINS = Object.freeze({
+  air_track: "air",
+  ground_track: "ground",
+  sea_surface_track: "sea_surface",
+  space_track: "space",
+  subsurface_track: "subsurface",
+  sof_unit: "ground",
+  activities: "ground",
+  cyberspace: "ground",
+  sigint: "ground",
+  metoc_atmospheric: "air",
+  metoc_oceanographic: "sea_surface",
+  metoc_space: "space",
+});
+const TPAL_GROUND_FOLDER_TYPES = Object.freeze({
+  Equipment: "ground_equipment",
+  Unit: DEFAULT_MILSTD_UNIT_BY_DOMAIN.ground,
+});
+const TPAL_GROUND_UNIT_GROUP_BADGES = Object.freeze({
+  Combat: "CBT",
+  "Combat support": "CS",
+  "Combat service support": "CSS",
+});
 const MILSTD_SYMBOL_SET_NAV_CONFIG = Object.freeze({
   "01": { selectionId: "air_track", selectionLabel: "Air track", domain: "air", id: "air", label: "Air track" },
   "02": { selectionId: "air_track", selectionLabel: "Air track", domain: "air", id: "air_missile", label: "Air missile" },
@@ -6744,13 +6769,23 @@ function getWintakHierarchyParts(entry, config) {
   return normalizedParts;
 }
 
-function makeTacticalNavNode({ id = "", label = "", preview = null, symbolSetCode = "", entry = null } = {}) {
+function makeTacticalNavNode({
+  id = "",
+  label = "",
+  preview = null,
+  symbolSetCode = "",
+  entry = null,
+  selectionId = "",
+  pathLabels = [],
+} = {}) {
   return {
     id,
     label,
     preview,
     symbolSetCode,
     entry,
+    selectionId,
+    pathLabels: Array.isArray(pathLabels) ? pathLabels.slice() : [],
     children: [],
     childMap: new Map(),
   };
@@ -6854,6 +6889,8 @@ function buildTacticalNavRoots() {
           label: part,
           preview: entry,
           symbolSetCode: entry.symbolSetCode || "",
+          selectionId: selectionKey,
+          pathLabels: parts.slice(0, index + 1),
         });
         if (cursor) {
           cursor.childMap.set(nodeId, child);
@@ -6861,6 +6898,12 @@ function buildTacticalNavRoots() {
         } else {
           roots.push(child);
         }
+      }
+      if (!child.selectionId) {
+        child.selectionId = selectionKey;
+      }
+      if (!child.pathLabels?.length) {
+        child.pathLabels = parts.slice(0, index + 1);
       }
       if (!child.preview) {
         child.preview = entry;
@@ -6971,6 +7014,7 @@ function getTpalFamilyChoices() {
         id: selectionId,
         label: config.selectionLabel || TACTICAL_PALETTE_SELECTION_LABELS[selectionId] || formatToUnitLabelPart(selectionId),
         selectionId,
+        domain: config.domain || TPAL_SELECTION_FRAME_DOMAINS[selectionId] || entry.domain || "ground",
         count: 0,
         preview: entry,
       });
@@ -6987,6 +7031,7 @@ function getTpalFamilyChoices() {
         id: "sof_unit",
         label: TACTICAL_PALETTE_SELECTION_LABELS.sof_unit,
         selectionId: "sof_unit",
+        domain: "ground",
         count: 1,
         preview: sofPreview,
       });
@@ -7129,6 +7174,109 @@ function getTpalVisibleItems() {
   return children;
 }
 
+function isMilstdCatalogEntryLike(value = null) {
+  return Boolean(value && typeof value === "object" && (
+    value.uniqueId
+    || value.symbolSetCode
+    || value.legacySidc
+    || value.defaultPath
+    || value.variantPaths
+  ));
+}
+
+function getTpalSelectionIdForSymbol(value = null, fallback = "") {
+  const direct = String(value?.selectionId || "").trim();
+  if (direct) return direct;
+  const id = String(value?.id || "").trim();
+  if (id.includes("/")) {
+    return id.split("/")[0] || fallback;
+  }
+  const symbolSetCode = String(
+    value?.symbolSetCode
+    || value?.entry?.symbolSetCode
+    || value?.preview?.symbolSetCode
+    || "",
+  ).padStart(2, "0");
+  return MILSTD_SYMBOL_SET_NAV_CONFIG[symbolSetCode]?.selectionId
+    || String(fallback || "").trim()
+    || "";
+}
+
+function getTpalSymbolDomain(value = null, selectionId = "") {
+  const symbolSetCode = String(
+    value?.symbolSetCode
+    || value?.entry?.symbolSetCode
+    || value?.preview?.symbolSetCode
+    || "",
+  ).padStart(2, "0");
+  return normalizeTacticalDomain(
+    value?.domain
+    || value?.entry?.domain
+    || value?.preview?.domain
+    || MILSTD_SYMBOL_SET_NAV_CONFIG[symbolSetCode]?.domain
+    || TPAL_SELECTION_FRAME_DOMAINS[selectionId]
+    || "ground",
+  );
+}
+
+function getTpalFramePreviewType(value = null, selectionId = "", domain = "ground") {
+  if (selectionId === "ground_track") {
+    const label = String(value?.label || "").trim();
+    if (TPAL_GROUND_FOLDER_TYPES[label]) {
+      return TPAL_GROUND_FOLDER_TYPES[label];
+    }
+  }
+  if (selectionId === "sof_unit") {
+    return "10121700";
+  }
+  return deriveTacticalUnitTypeFromDomain(domain);
+}
+
+function getTpalFramePreviewBadge(value = null, selectionId = "") {
+  if (selectionId !== "ground_track") {
+    return selectionId === "sof_unit" ? "SF" : "";
+  }
+  const pathLabels = Array.isArray(value?.pathLabels) ? value.pathLabels : [];
+  const label = String(value?.label || "").trim();
+  if (pathLabels[0] === "Unit" && pathLabels.length === 2) {
+    return TPAL_GROUND_UNIT_GROUP_BADGES[label] || "";
+  }
+  return "";
+}
+
+function buildTpalFramePreviewUnit({ value = null, selectionId = "", domain = "", affiliation = "friendly" } = {}) {
+  const resolvedSelection = selectionId || getTpalSelectionIdForSymbol(value, _tpalState.selection || "");
+  const resolvedDomain = normalizeTacticalDomain(domain || getTpalSymbolDomain(value, resolvedSelection));
+  const aff = normalizeTacticalAffiliation(affiliation || "friendly");
+  const previewType = getTpalFramePreviewType(value, resolvedSelection, resolvedDomain);
+  return normalizeToUnit({
+    affiliation: aff,
+    type: previewType,
+    catalogId: previewType,
+    cotType: buildCatalogCotType(previewType, aff) || buildDefaultCotTypeForTacticalObject("unit", aff, resolvedDomain),
+    size: "",
+    sidc: "",
+    detail: {},
+    frameOnly: true,
+    fallbackText: getTpalFramePreviewBadge(value, resolvedSelection),
+  });
+}
+
+function getTpalExactSymbolEntry(value = null) {
+  if (isTpalEntryAllowed(value?.entry)) return value.entry;
+  if (isMilstdCatalogEntryLike(value) && isTpalEntryAllowed(value)) return value;
+  return null;
+}
+
+function shouldRenderTpalFramePreview(value = null, selectionId = "") {
+  if (!value || getTpalExactSymbolEntry(value)) return false;
+  const resolvedSelection = selectionId || getTpalSelectionIdForSymbol(value, _tpalState.selection || "");
+  if (TACTICAL_PALETTE_PRIMARY_SELECTIONS.has(resolvedSelection)) {
+    return Boolean(value.selectionId || getTacticalNavChildren(value).length);
+  }
+  return Boolean(getTacticalNavChildren(value).length && !isTpalEntryAllowed(value.entry));
+}
+
 function buildTpalPreviewUnit({ entry = null, affiliation = "friendly", size = "" } = {}) {
   const catalogId = normalizeToUnitType(
     entry?.id
@@ -7155,13 +7303,25 @@ function getTacticalPaletteCustomName(fallback = "") {
 }
 
 function renderTpalSymbol(entry, options = {}) {
-  const displayEntry = getTpalNodeDisplayEntry(entry) || entry?.preview || entry;
+  const aff = options.affiliation || "friendly";
+  const selectionId = getTpalSelectionIdForSymbol(entry, options.selectionId || _tpalState.selection || "");
+  if (shouldRenderTpalFramePreview(entry, selectionId)) {
+    return renderToUnitIcon(buildTpalFramePreviewUnit({
+      value: entry,
+      selectionId,
+      affiliation: aff,
+    }));
+  }
+  const displayEntry = getTpalExactSymbolEntry(entry)
+    || getTpalNodeDisplayEntry(entry)
+    || entry?.preview
+    || entry;
   const previewUnit = buildTpalPreviewUnit({
     entry: displayEntry,
-    affiliation: options.affiliation || "friendly",
-    size: typeof entry?.size === "string"
-      ? entry.size
-      : (displayEntry?.domain === "ground" && displayEntry?.echelonAllowed !== false ? "team" : ""),
+    affiliation: aff,
+    size: typeof options.size === "string"
+      ? options.size
+      : (typeof entry?.size === "string" ? entry.size : ""),
   });
   return renderToUnitIcon(previewUnit);
 }
@@ -7279,8 +7439,11 @@ function _tpalRenderTrackChoices() {
     `).join("");
     const primaryChoices = choices.filter((entry) => TACTICAL_PALETTE_PRIMARY_SELECTIONS.has(entry.selectionId));
     const specializedChoices = choices.filter((entry) => TACTICAL_PALETTE_SPECIALIZED_SELECTIONS.has(entry.selectionId));
+    const suggestionsMarkup = suggestions.length
+      ? `<div class="tpal-section-title">Suggestions</div><div class="tpal-suggestion-list">${renderTpalSearchSuggestionRows(suggestions)}</div>`
+      : "";
     grid.innerHTML = choices.length
-      ? `${suggestions.length ? `<div class="tpal-section-title">Suggestions</div>${renderTpalSearchSuggestionRows(suggestions)}` : ""}${primaryChoices.length ? `<div class="tpal-section-title">Tracks</div>${renderRows(primaryChoices)}` : ""}${specializedChoices.length && _tpalState.mode !== "plan-picker" ? `<div class="tpal-section-title">Specialized</div>${renderRows(specializedChoices)}` : ""}`
+      ? `${suggestionsMarkup}${primaryChoices.length ? `<div class="tpal-section-title">Tracks</div>${renderRows(primaryChoices)}` : ""}${specializedChoices.length && _tpalState.mode !== "plan-picker" ? `<div class="tpal-section-title">Specialized</div>${renderRows(specializedChoices)}` : ""}`
       : '<div class="tpal-empty-state">No symbol families are available for this workflow.</div>';
   }
 }
@@ -7307,7 +7470,7 @@ function _tpalRenderTypes() {
           .filter(Boolean)
       : [];
     const displayPath = item.searchResult ? [item.selectionLabel, ...pathLabels.slice(0, -1)].filter(Boolean).join(" / ") : "";
-    return `<button class="tpal-type-btn" type="button"
+    return `<button class="tpal-type-btn${item.searchResult ? " tpal-type-btn--suggestion" : ""}" type="button"
       data-selection="${escapeHtml(selectionId)}"
       data-node-id="${escapeHtml(node.id)}"
       data-path="${escapeHtml(item.path.join("|"))}"
@@ -11795,6 +11958,7 @@ function resetLoadedMapState() {
   _toState.editingUnitId = null;
   _toState.linkMode = null;
   _toState.panStart = null;
+  clearPendingToAutoLayoutAndFit();
   closeToEditModal();
   cancelToLink();
   clearToSelection();
@@ -11925,6 +12089,7 @@ function applySavedMapState(rawSaved) {
     clearToSelection();
     closeToEditModal();
     cancelToLink();
+    requestToAutoLayoutAndFit({ reason: "workspace-restore" });
   }
 
   state.tacticalObjects = [];
@@ -13186,6 +13351,7 @@ function refreshCurrentViewLayout() {
   }
   if (state.ui?.currentView === "plan" && _toState?._initialized) {
     renderToView();
+    runPendingToAutoLayoutAndFit();
     return;
   }
   settleMapViewportAfterLayoutChange();
@@ -13310,7 +13476,22 @@ function applyPanelMode() {
 }
 
 /* â”€â”€â”€ Multi-view switching â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-const VIEW_ORDER = ["plan", "emitters", "map", "topology", "analyze"];
+const VIEW_ORDER = ["plan", "emitters", "topology", "map", "analyze"];
+const VIEW_NAV_INDEX = Object.freeze({
+  plan: 0,
+  emitters: 1,
+  topology: 1,
+  map: 2,
+  analyze: 3,
+});
+
+function getViewNavIndex(view = "") {
+  const navIndex = VIEW_NAV_INDEX[view];
+  if (Number.isFinite(navIndex)) {
+    return navIndex;
+  }
+  return VIEW_ORDER.indexOf(view);
+}
 
 function getViewEl(view) {
   if (view === "map") return dom.workspaceShell;
@@ -13329,24 +13510,28 @@ function switchView(view, skipAnimation) {
   const nextEl = getViewEl(view);
   if (!nextEl) return;
 
-  // Determine slide direction: higher index = slide rightâ†’left (to the right)
-  const prevIdx = VIEW_ORDER.indexOf(prev);
-  const nextIdx = VIEW_ORDER.indexOf(view);
-  const goingRight = nextIdx > prevIdx; // user moves forward â†’ new view enters from right
+  // Visible tab order is T/O -> Emitters -> Map -> Analysis.
+  // Moving forward makes the current view leave left while the next view enters from the right.
+  const prevIdx = getViewNavIndex(prev);
+  const nextIdx = getViewNavIndex(view);
+  const prevInternalIdx = VIEW_ORDER.indexOf(prev);
+  const nextInternalIdx = VIEW_ORDER.indexOf(view);
+  const goingRight = nextIdx === prevIdx
+    ? nextInternalIdx > prevInternalIdx
+    : nextIdx > prevIdx;
 
   state.ui.currentView = view;
   syncAiUi();
 
   // Update toggle UI immediately
   if (dom.viewModeToggle) {
-    const viewIndex = { plan: 0, emitters: 1, topology: 1, map: 2, analyze: 3 };
     dom.viewModeToggle.querySelectorAll(".view-mode-tab").forEach(tab => {
       const isActiveTab = tab.dataset.view === view || (view === "emitters" && tab.dataset.view === "topology");
       tab.classList.toggle("active", isActiveTab);
       tab.setAttribute("aria-selected", String(isActiveTab));
     });
     dom.viewModeToggle.setAttribute("data-active", view);
-    dom.viewModeToggle.style.setProperty("--view-active-index", String(viewIndex[view] ?? 0));
+    dom.viewModeToggle.style.setProperty("--view-active-index", String(getViewNavIndex(view) || 0));
   }
 
   if (skipAnimation || !prevEl) {
@@ -13397,7 +13582,10 @@ function afterSwitchView(view) {
   if (view === "emitters") renderEmittersView();
   if (view === "topology") renderTopologyView();
   if (view === "analyze")  renderAnalyzeView();
-  if (view === "plan")     initPlanViewIfNeeded();
+  if (view === "plan") {
+    initPlanViewIfNeeded();
+    runPendingToAutoLayoutAndFit();
+  }
   renderMapTakDebugPanel();
   updateRssiLegendVisibility();
   updateTerrainHeatmapLegendVisibility();
@@ -13405,7 +13593,6 @@ function afterSwitchView(view) {
 
 function initViewModeToggle() {
   if (!dom.viewModeToggle) return;
-  const viewIndex = { plan: 0, emitters: 1, topology: 1, map: 2, analyze: 3 };
   dom.viewModeToggle.addEventListener("click", (e) => {
     const tab = e.target.closest(".view-mode-tab");
     if (!tab) return;
@@ -13425,7 +13612,7 @@ function initViewModeToggle() {
       tab.setAttribute("aria-selected", String(isMap));
     });
     dom.viewModeToggle.setAttribute("data-active", "map");
-    dom.viewModeToggle.style.setProperty("--view-active-index", String(viewIndex.map));
+    dom.viewModeToggle.style.setProperty("--view-active-index", String(getViewNavIndex("map")));
   }
   document.body.dataset.currentView = "map";
   syncAiUi();
@@ -14692,446 +14879,7 @@ function renderDocumentMarkdown(text) {
   return out.join("\n");
 }
 
-const SETTINGS_DOCUMENTATION_MD = `
-# RF SIM Operator Guide
-
-## Purpose and workflow
-
-RF SIM is organized around four views selected from the top navigation bar:
-
-1. **T/O** is where you build the Table of Organization, define command relationships, and assign unit symbols and hierarchy.
-2. **EMITTERS** is a dedicated workspace for creating, organizing, and configuring RF emitter cards — independent of map placement.
-3. **MAP** is where you place emitters on terrain, import overlays, and inspect the physical battlespace.
-4. **ANALYSIS** turns terrain, geometry, emitter settings, and environment into RF findings. The **Topology** sub-view inside ANALYSIS lets you inspect link structure and connection quality between emitters or units.
-
-If you use the site in that order, the rest of the workflow becomes much easier to reason about.
-
-## Core concepts
-
-### Units and emitters
-
-- A **unit** is an organizational node in the Table of Organization — it has a label, symbol, size, and command relationships.
-- An **emitter** is an RF asset with technical parameters: frequency, waveform, power, antenna, and optionally a map location.
-- A unit can have zero, one, or multiple emitters linked to it.
-- Emitters can live in the **EMITTERS workspace** without a map location, or be placed on the **MAP** for geographic analysis.
-- In Topology, RF SIM can show either:
-  - a **unit card** grouping all emitters linked to that unit, or
-  - **individual emitter nodes** for per-link inspection.
-
-### Why the T/O matters
-
-- The T/O controls how units are grouped on Topology cards.
-- It gives the AI and analysis workflows structure for command relationships and network reasoning.
-- It lets you explain why one unit can or cannot communicate with another by tying emitters to a hierarchy.
-
----
-
-## T/O
-
-## What T/O is for
-
-T/O is where you define force structure before worrying about map placement or RF parameters.
-
-Use T/O to:
-
-- create units
-- assign unit type, size, and label
-- build parent-child command relationships
-- auto-layout the formation tree
-- link emitters to the correct units
-
-## Recommended sequence in T/O
-
-### 1. Build the hierarchy first
-
-- Start with the top-level headquarters or command node.
-- Add subordinate companies, platoons, detachments, relay teams, logistics elements, and special-purpose nodes.
-- Use the hierarchy links to reflect real command or support relationships, not just visual convenience.
-
-### 2. Name units clearly
-
-Good labels make the rest of the site much easier to use. Prefer labels such as:
-
-- \`V34\`
-- \`I CO\`
-- \`K CO\`
-- \`L2\`
-- \`Fires Cell\`
-- \`Relay Team Alpha\`
-
-### 3. Keep the TO operationally meaningful
-
-The TO should answer:
-
-- who reports to whom
-- which units are maneuver elements
-- which are sustainment, ISR, EW, retransmission, or headquarters nodes
-- which units should eventually receive linked emitters
-
-### 4. Use Auto Layout after hierarchy edits
-
-- Auto Layout restores a clean formation tree.
-- Manual drag is useful for cleanup, but Auto Layout should be your baseline reset after major changes.
-- If the tree becomes messy after many link changes, run Auto Layout again before moving on.
-
-## Linking emitters to T/O units
-
-- Emitters can be linked to T/O units from the EMITTERS workspace right-click menu (**Link to T/O Unit**) or from the emitter edit modal.
-- This is what allows Topology to group multiple radios onto one unit card.
-- If a unit has multiple linked emitters, Topology will show them as stacked emitter rows under the unit identity.
-
-Best practice:
-
-- Link every operational radio to a unit unless it is intentionally a standalone node.
-- Keep standalone emitters for infrastructure, temporary relays, or devices that truly should not belong to a unit card.
-
----
-
-## EMITTERS
-
-## What EMITTERS is for
-
-EMITTERS is a dedicated workspace for creating, organizing, and configuring RF emitter cards — independent of map placement.
-
-Use EMITTERS to:
-
-- create new emitter cards for each radio in the scenario
-- configure waveform, frequency, power, antenna, and net assignments
-- organize emitters visually before placing them on the map
-- review device graphics and net structure at a glance
-- duplicate, edit, delete, or relink emitters without leaving the workspace
-
-Emitters added from this view are **workspace-only** until you explicitly place them on the map from MAP. They appear in Topology and can participate in link analysis even without a map location, but will show as **Not On Map** in the link quality legend.
-
-## Emitter cards
-
-Each emitter card in the workspace shows:
-
-- the device graphic for the selected radio model
-- the emitter name and label
-- configured nets and frequencies
-- the linked T/O unit (if assigned)
-- map visibility status
-
-## Right-click context menu
-
-Right-clicking an emitter card opens a context menu with:
-
-- **Edit** — opens the emitter configuration modal
-- **Add Net** — adds a new net to this emitter
-- **Configure Nets** — opens net configuration for this emitter
-- **Duplicate** — creates a copy of the emitter card in the workspace
-- **Link to T/O Unit** — assigns the emitter to a unit in the Table of Organization
-- **Show on Map** — pans the map to this emitter’s location (only available if the emitter has been placed on the map)
-- **Delete** — removes the emitter from the workspace and map
-
-## Adding an emitter from EMITTERS
-
-1. Click **+ Add Emitter** in the EMITTERS toolbar.
-2. Configure the radio model, waveform, frequency, and nets.
-3. Click **Add to Workspace** to drop a card into the workspace without creating a map marker.
-4. Right-click the card later to edit, duplicate, or place it on the map.
-
-## Waveform matching
-
-Two emitters will only draw a topology link if they share **both** the same waveform and the same frequency channel. Supported waveforms include:
-
-- **MIMO** — default for Silvus SC4200 and SC4400
-- **Wave Relay** — default for Persistent Systems MPU-5
-- **TSM-X** — default for Trellisware TW-950
-- SINCGARS, P25, DMR, and others
-
-If two radios are on the same frequency but different waveforms, no link will be drawn.
-
----
-
-## MAP
-
-## What MAP is for
-
-MAP is the geographic workspace. This is where you place, import, edit, and inspect spatial data.
-
-Use MAP to:
-
-- place emitters on terrain
-- import operational overlays
-- load terrain data
-- manage imagery
-- inspect coordinate positions
-- edit tactical graphics and measurement geometry
-
-## Data sources
-
-### Basemap and imagery
-
-RF SIM can use configured map tiles and imagery providers for the 2D/3D map background. Depending on configuration, this may include:
-
-- OpenStreetMap-derived layers
-- CARTO-style base maps
-- Cesium imagery and globe services
-- custom tile services you configure
-
-### Terrain
-
-RF SIM uses terrain from one or both of these sources:
-
-- **local DTED / terrain files** that you load into the app
-- **Cesium terrain services** when configured and enabled
-
-Local terrain is preferred for deterministic work in a specific AO. Cesium terrain is useful for quick broader-area setup.
-
-### Imported overlays
-
-RF SIM supports:
-
-- KML / KMZ
-- GeoJSON
-- ATAK data package ZIP
-- tactical shapes drawn directly in the map
-
-## How to import KML, KMZ, and GeoJSON
-
-Recommended use cases:
-
-- phase lines, routes, boundaries
-- operating areas and named landmarks
-- infrastructure overlays
-- prior ISR or terrain products
-
-After import, confirm the geometry loaded into the correct location and that naming is readable.
-
-## How to load DTED and local terrain
-
-Load local terrain when:
-
-- you need an authoritative terrain surface for the AO
-- line-of-sight, masking, and relief are central to the problem
-
-Best practice: load terrain before running propagation studies, verify full AO coverage, and re-run analysis after new terrain is loaded.
-
-## Working with emitters in MAP
-
-Each emitter should be configured with realistic technical data. Key fields that affect analysis:
-
-- frequency and waveform
-- radio model
-- power, antenna gain and pattern, cable/system losses
-- height or placement
-- relay and SATCOM capability
-
-### Why exact placement matters
-
-Small terrain changes can alter line of sight, masking, obstruction clearance, relay utility, and intervisibility between maneuver elements. Place emitters where the asset would really operate.
-
----
-
-## ANALYSIS
-
-## What ANALYSIS is for
-
-ANALYSIS turns terrain, geometry, emitter settings, and environment into RF conclusions.
-
-Typical uses:
-
-- propagation review
-- LOS and masking checks
-- coverage comparison
-- relay and command-post siting
-- risk and vulnerability analysis
-
-### Topology (inside ANALYSIS)
-
-The **Topology** sub-view shows the RF network structure — who can talk, why, and how radios are grouped.
-
-#### Unit Cards mode
-
-- each T/O-linked unit appears as a single card
-- all emitters linked to that unit are grouped on the card
-- link lines connect between unit cards
-- best for command-network review and organizational RF briefing
-
-#### Emitters mode
-
-- each emitter is shown as a separate node
-- links are evaluated between individual devices
-- best for equipment-level debugging
-
-#### Link quality legend
-
-| Color | Meaning |
-|---|---|
-| Green | Strong link |
-| Yellow | Marginal link |
-| Red | Poor or failed link |
-| Grey | Not on map (workspace-only emitter) |
-
-#### How topology links are built
-
-Two emitters will link in Topology only when they share **the same waveform AND the same frequency**. SATCOM versus LOS behavior is also evaluated. Emitters without a map location appear with grey links labeled **Not On Map**.
-
-#### Best practices in Topology
-
-- Use **Unit Cards** for briefing or organization-level network review.
-- Use **Emitters** when debugging a specific radio or waveform issue.
-- Use **Auto Layout** to reset to a clean arrangement.
-- Use **Fit View** after switching display modes or making major changes.
-
-## RF propagation workflow
-
-1. Build the T/O in T/O.
-2. Create and configure emitters in EMITTERS.
-3. Place emitters accurately in MAP.
-4. Load terrain and import overlays.
-5. Verify frequencies, waveforms, power, antenna, and height.
-6. Open ANALYSIS > Topology to inspect relationships.
-7. Run RF studies with the scenario in a clean, consistent state.
-
-## What affects propagation outcomes
-
-- terrain elevation, relief, and obstruction
-- separation distance and antenna height
-- antenna gain, pattern, and frequency band
-- system and cable loss
-- whether the path is LOS, diffracted, SATCOM, or relay-assisted
-
----
-
-## AI INTEGRATION
-
-## What AI integration is for
-
-AI in RF SIM helps interpret the scenario and generate planning outputs faster. It does not replace disciplined RF engineering or terrain validation.
-
-Use AI for:
-
-- planning assistance and structured reports
-- RF reasoning and network explanation
-- scenario documentation and COA comparison
-
-## Supported providers
-
-- Hosted providers such as Anthropic
-- GenAI.mil via the supported relay flow
-- Local models through the included local relay
-
-## How to connect an AI provider
-
-### Hosted provider
-
-1. Open **Settings → AI Integration**.
-2. Choose a provider.
-3. Paste the API key.
-4. Select the target model.
-5. Click **Test Connection** before operational use.
-
-### Local model
-
-1. Run the local relay.
-2. Ensure your model server is running.
-3. Detect available models and select the active model.
-4. Test the connection.
-
-### GenAI.mil
-
-Follow the hosted-site relay guidance in the AI Integration tab. Relay and certificate setup are required where direct network access is restricted.
-
-## How to use AI well
-
-- Ask scenario-specific questions, not generic ones.
-- Build the T/O and configure emitters first — AI output quality depends on input quality.
-- Treat AI output as planning support and verify critical claims against terrain, parameters, and mission requirements.
-
----
-
-## TAK INTEGRATION
-
-## What TAK integration is for
-
-TAK integration connects RF SIM planning to external TAK environments and project-backed workflows.
-
-Use it when you need to:
-
-- connect RF SIM to TAK-hosted operational data
-- stream RF SIM objects into TAK
-- manage certificates and authentication for TAK servers
-
-## How to connect a TAK server
-
-1. Open **Settings → TAK**.
-2. Create or select a saved TAK server profile.
-3. Enter the server address, port, and protocol.
-4. If connecting by IP but the certificate is issued to DNS, enter the certificate hostname in **TLS Server Name**.
-5. Load CA and client certificates if required.
-6. Save the server profile.
-7. Click **Test Connection** to verify network and TLS.
-
-## Certificate handling
-
-- Use the CA certificate when the server requires trust establishment.
-- Use the client certificate when the server requires mutual TLS.
-- Provide the certificate password if required.
-
----
-
-## Recommended operator flow
-
-## Phase 1: Structure the force
-
-- Build the T/O in T/O.
-- Create a hierarchy that mirrors how the formation actually operates.
-- Name units clearly.
-
-## Phase 2: Build the emitter layer
-
-- Open EMITTERS and create emitter cards for each radio in the scenario.
-- Configure waveform, frequency, power, antenna, and nets.
-- Right-click cards to duplicate, edit, or link to T/O units.
-
-## Phase 3: Place emitters on terrain
-
-- Switch to MAP.
-- Place emitters at their actual operating locations.
-- Load terrain and import overlays for the AO.
-
-## Phase 4: Inspect the network
-
-- Open ANALYSIS > Topology.
-- Check unit card grouping and individual emitter links.
-- Look for orphan emitters, overloaded hubs, and fragile paths.
-- Use Auto Layout and Fit View to clean up the display.
-
-## Phase 5: Analyze and iterate
-
-- Run the relevant RF studies.
-- Compare locations and configurations.
-- Adjust power, antenna, placement, or hierarchy as needed.
-- Re-run analysis after meaningful changes.
-
----
-
-## Troubleshooting checklist
-
-## If topology looks wrong
-
-- Confirm emitters are linked to the intended T/O units.
-- Switch between Unit Cards and Emitters to isolate whether the issue is grouping or RF matching.
-- Use Auto Layout, then Fit View.
-
-## If an expected link is missing
-
-- Verify both emitters share the same waveform AND frequency.
-- Verify SATCOM capability versus LOS assumptions.
-- Verify both emitters are visible in the current topology filters.
-- Re-check location, elevation, and terrain masking.
-- Check whether either emitter is workspace-only (Not On Map) — workspace-only emitters show grey links.
-
-## If analysis results look unrealistic
-
-- Verify terrain source coverage for the full AO.
-- Verify emitter power and antenna settings.
-- Check for placeholder frequencies or unintentional defaults.
-- Confirm the scenario was built in the correct order.
-`;
+const SETTINGS_DOCUMENTATION_MD = "# RF SIM Operator Guide\n\n## Quick Start\n\n### Recommended operator flow\n\nRF SIM works best when you build the scenario in this order:\n\n```text\nT/O -\u003e EMITTERS -\u003e MAP -\u003e ANALYSIS\n```\n\n1. Build the unit structure in **T/O**.\n2. Create and configure radios in **EMITTERS**.\n3. Place emitters and tactical items in **MAP**.\n4. Review conclusions, metrics, links, terrain, and correlation in **ANALYSIS**.\n\n\u003e **Operator habit:** build structure first, then radios, then geography, then conclusions. Most confusing results come from skipping one of those layers.\n\n### Fast setup checklist\n\n- In **T/O**, click **Select Unit Type** and use **Choose Unit Symbology** to pick accurate unit symbols.\n- Add units, set size, and connect the hierarchy.\n- Use **Auto Layout** and **Fit View** after meaningful hierarchy edits.\n- In **EMITTERS**, create emitter cards and configure nets, frequency, waveform, power, antenna, and linked unit.\n- In **MAP**, use **Map Contents** to add emitters, tactical items, folders, overlays, terrain heatmap, contour lines, and imports.\n- Use **Place on Map** or map placement workflows when an emitter needs a geographic location.\n- In **ANALYSIS**, read operational conclusions first, then inspect the detailed relationship, link, terrain, and T/O correlation panels.\n\n### What each top tab is for\n\n| Tab | Primary job | Best used for |\n|---|---|---|\n| T/O | Force structure | Unit hierarchy, symbology, size, command relationships |\n| EMITTERS | RF/network workspace | Emitter cards, topology controls, Unit Cards vs Emitters, nets, filters |\n| MAP | Geographic workspace | Placement, overlays, terrain, weather, tactical items, Map Contents |\n| ANALYSIS | Insight workspace | Operational conclusions, metrics, link health, terrain coverage, T/O correlation |\n\n## Core Concepts\n\n### Units\n\nA **unit** is an organizational node in the T/O. It has a name, designator, affiliation, symbol, size, and parent-child relationships.\n\nUse units for:\n\n- headquarters, companies, platoons, teams, relays, sustainment nodes, ISR, EW, fires, logistics, and command posts\n- showing who reports to whom\n- giving AI and ANALYSIS a command structure to reason over\n- grouping linked emitters into **Unit Cards** in EMITTERS\n\n### Emitters\n\nAn **emitter** is an RF asset: a radio, relay, antenna system, SATCOM terminal, sensor link, or other communications node.\n\nEmitters carry technical details such as:\n\n- frequency and band\n- waveform and channel spacing\n- transmit power and losses\n- antenna type, gain, height, and pattern\n- linked T/O unit\n- map placement status\n\n\u003e **Important:** EMITTERS can hold cards that are not yet on the map. Those are valid workspace emitters, but terrain and distance analysis only becomes meaningful after placement.\n\n### Map contents\n\n**Map Contents** is the left-panel inventory for placed and imported map objects. It includes emitters that have been placed, tactical items, folders, imported overlays, shapes, routes, and other map-managed content.\n\nUse it to:\n\n- search map contents\n- add or import layers\n- organize content into folders\n- toggle heatmap and contour overlays\n- manage tactical items and placed emitters\n\n### Terrain, elevation, and environment\n\nTerrain affects line of sight, Fresnel clearance, masking, relay utility, and likely coverage. RF SIM can use local terrain data and configured 3D terrain services depending on settings.\n\nWeather and environmental context can also shape planning assumptions, especially for SATCOM, higher-frequency links, aviation, and terrain-dependent relay planning.\n\n### Analysis and AI\n\n**ANALYSIS** turns the scenario into conclusions. It looks across emitters, units, locations, terrain, and relationships. **AI Chat** helps explain and document what is in the scenario, but it should be treated as planning support, not a substitute for RF validation.\n\n## T/O\n\n### Purpose\n\nT/O is where the operator builds the Table of Organization before placing equipment on terrain.\n\nUse T/O to:\n\n- create units\n- choose accurate symbology\n- assign unit size\n- define command hierarchy\n- link emitters to units\n- keep the operational structure readable\n\n### Unit hierarchy\n\nCreate a hierarchy that reflects how the force actually operates. A clean hierarchy helps the EMITTERS view group radios correctly and helps ANALYSIS explain relationships.\n\nRecommended sequence:\n\n1. Add the highest command node first.\n2. Add subordinate units.\n3. Link parent and child units.\n4. Add support, sustainment, relay, fires, ISR, EW, and logistics nodes where they matter.\n5. Run **Auto Layout**.\n6. Run **Fit View**.\n\n### Symbology picker\n\nClick **Select Unit Type** to open **Choose Unit Symbology**. The picker follows the current track workflow and lets you search at every level.\n\nUse the picker to choose:\n\n- affiliation: Friendly, Hostile, Neutral, or Unknown\n- track family: air, ground, sea surface, space, subsurface, SOF, and specialized sets\n- unit category and branch\n- deeper modifiers where available\n\nThe rendered preview should become more specific as you traverse deeper. Root tracks show base frames. Specific branches and leaf units add the correct main icon or modifier.\n\n### Sizing and labels\n\nUnit size affects the displayed echelon indicator and the default label. Keep size and name aligned:\n\n| Size | Common use |\n|---|---|\n| Team | Small element, relay team, sensor team |\n| Squad / Section | Small tactical element |\n| Platoon | Maneuver or support platoon |\n| Company | Company, battery, troop, detachment |\n| Battalion / Squadron | Larger command or aviation-style formation |\n\nUse short labels that work visually in the T/O tree, such as `V34`, `I CO`, `K2`, `S6`, `Fires`, or `Relay A`.\n\n### Linking emitters\n\nLink emitters to T/O units when the radio belongs to an organizational element. Linked emitters can appear grouped under **Unit Cards** in EMITTERS and can be interpreted by ANALYSIS as part of the force structure.\n\nWays to link:\n\n- from an emitter card context menu in EMITTERS\n- from the add/edit emitter modal\n- from workflows that expose **Link to T/O Unit**\n\n### Auto Layout and Fit View\n\nUse **Auto Layout** after adding or changing hierarchy links. Use **Fit View** after layout, reload, login, or whenever the tree is off-screen.\n\nBest practice:\n\n```text\nEdit hierarchy -\u003e Auto Layout -\u003e Fit View -\u003e review labels and symbols\n```\n\n## EMITTERS\n\n### Purpose\n\nEMITTERS is the emitter and network workspace. It is not a sub-view inside ANALYSIS. It is where RF assets are created, organized, linked, filtered, and inspected before or after map placement.\n\nUse EMITTERS for:\n\n- emitter cards\n- network topology controls\n- filters by band or workspace state\n- Unit Cards vs Emitters display modes\n- right-click emitter workflows\n- linking radios to T/O units\n- preparing radios before they are placed on the map\n\n### Emitter workspace and topology controls\n\nThe workspace can show the RF network in two useful ways:\n\n| Mode | Meaning | Use when |\n|---|---|---|\n| Unit Cards | Groups emitters by linked T/O unit | Briefing command relationships or unit-level network health |\n| Emitters | Shows each radio as its own node | Debugging exact radio-to-radio links |\n\nUse filters when the workspace gets busy. Band filters such as HF, VHF, UHF, and SATCOM control which links are visible.\n\n### Add-emitter modal\n\nUse the add-emitter modal to configure a radio before it enters the workspace.\n\nImportant areas:\n\n- emitter library and saved profiles\n- identity: emitter name, unit/callsign, affiliation, icon, marker color\n- RF tab: frequency, bandwidth, modulation, waveform\n- transmitter and receiver parameters\n- antenna settings\n- link budget settings\n- network and location tabs\n\nClick **Add to Workspace** when the emitter should become a workspace card. Place it on the map later when geography matters.\n\n### Nets and frequencies\n\nA link requires compatible RF settings. In practical terms, check:\n\n- same waveform\n- same frequency or compatible channel\n- band visibility filter is enabled\n- both nodes are present in the current workspace mode\n- placement exists when terrain analysis is expected\n\n### Unit Cards vs Emitters\n\nUse **Unit Cards** when the question is organizational: which units can communicate and where the weak command paths are.\n\nUse **Emitters** when the question is technical: which radio, waveform, antenna, or placement is causing the problem.\n\n### Workspace-only vs placed emitters\n\nAn emitter can exist in EMITTERS without being placed on the map. This is useful for planning, but distance, terrain, and elevation findings depend on placement.\n\nTypical statuses:\n\n| Status | Meaning |\n|---|---|\n| In workspace | Emitter card exists |\n| Linked to T/O | Emitter belongs to a unit |\n| Placed on map | Emitter has coordinates |\n| Not placed | Emitter is not ready for terrain analysis |\n\n## MAP\n\n### Purpose\n\nMAP is the geographic workspace. It is where you place RF assets, manage overlays, draw tactical items, inspect terrain, and switch between 2D and 3D context.\n\nUse MAP for:\n\n- placing emitters\n- drawing tactical graphics\n- importing KML, KMZ, GeoJSON, and supported packages\n- organizing **Map Contents**\n- terrain heatmap and contour overlays\n- 2D/3D controls\n- weather and GPS context\n- TAK identity and stream readiness\n\n### Map Contents\n\nThe **Map Contents** panel is the operator inventory for geographic objects. It is intentionally separate from EMITTERS: a radio card can exist in EMITTERS before it is placed into Map Contents.\n\nUse Map Contents to:\n\n- search placed objects and overlays\n- create folders\n- add emitters or tactical items\n- import files\n- toggle terrain heatmap and contour overlays\n- manage shape visibility and selection\n\n### Tactical items\n\nUse tactical items for non-radio map graphics and tracks. The current workflow uses **Choose Unit Symbology** so track frames, affiliations, branches, and modifiers stay consistent with the T/O picker.\n\nCommon uses:\n\n- friendly, hostile, neutral, or unknown tracks\n- routes and control measures\n- tactical overlays\n- markers for command posts, relays, or points of interest\n\n### Placing emitters\n\nUse **Place on Map** or the map add workflow when a workspace emitter needs coordinates.\n\nPlacement matters because it drives:\n\n- distance\n- terrain obstruction\n- elevation and antenna height context\n- link quality\n- coverage interpretation\n- relay recommendations\n\n### 2D and 3D controls\n\nUse 2D for fast editing, searches, overlays, and flat planning.\n\nUse 3D for:\n\n- terrain awareness\n- line-of-sight intuition\n- elevation context\n- siting emitters on ridges, valleys, slopes, or urban terrain\n\nThe 3D overlay includes subtle orientation tools and an inclinometer for terrain-aware review.\n\n### Terrain and weather\n\nTerrain heatmap and contour overlays help reveal elevation patterns. Weather settings provide planning context for environmental effects.\n\nBefore running analysis, confirm:\n\n- terrain source is loaded or configured\n- overlays are aligned\n- emitter locations are realistic\n- weather assumptions are appropriate for the scenario\n\n### TAK identity\n\nTAK identity and streaming controls live in Settings and top-bar status areas. On the map, TAK-related context matters when RF SIM objects need to correspond to operational TAK tracks or be streamed outward.\n\n## ANALYSIS\n\n### Purpose\n\nANALYSIS is the insight workspace. It summarizes what the current scenario implies across emitters, units, terrain, location, and relationships.\n\nStart with **Operational Conclusions**, then use the detailed panels to understand the evidence behind the conclusion.\n\n### Operational conclusions\n\nOperational conclusions are the first read. They should answer:\n\n- what is ready\n- what is missing\n- where the network is fragile\n- which links or units need attention\n- whether the scenario has enough placement and RF data to support analysis\n\n### Metrics and visuals\n\nMetrics are designed to show readiness and risk without requiring the operator to inspect every item manually.\n\nLook for:\n\n- emitter readiness\n- link health\n- terrain coverage quality\n- T/O correlation\n- placement completeness\n- configuration gaps\n\n### Relationship and link panels\n\nRelationship/link panels explain which emitters or units can communicate, which links are weak, and which relationships are missing enough information.\n\nUse these panels to answer:\n\n- which units are isolated\n- which emitters are acting as hubs\n- where alternate paths exist\n- whether link failures are caused by RF mismatch, terrain, distance, or missing placement\n\n### Terrain and elevation panels\n\nTerrain/elevation panels focus on physical placement quality.\n\nThey help identify:\n\n- low-ground placements\n- likely masked links\n- ridge or relay opportunities\n- elevation-driven risks\n- terrain data gaps\n\n### T/O correlation panels\n\nT/O correlation explains whether the RF layer matches the organizational layer.\n\nCommon findings:\n\n- emitter exists but is not linked to a unit\n- unit exists but has no emitter\n- map item exists but does not correlate to T/O\n- critical command node has weak or missing RF support\n\n## AI Chat and Documents\n\n### AI Chat\n\nAI Chat can reason over the current scenario, selected context, map contents, T/O units, emitters, and analysis findings.\n\nGood prompts are specific:\n\n```text\nExplain why K CO cannot reach S6 through the current relay plan.\nList emitters that are placed on low terrain and recommend better relay positions.\nGenerate a PACE plan from the current emitter frequencies and unit hierarchy.\n```\n\n### Context selection\n\nAttach relevant map contents or scenario objects when asking focused questions. The AI performs best when the scenario has clean names, linked units, configured emitters, and realistic placement.\n\n### Document generation\n\nUse document generation for:\n\n- RF plans\n- PACE plans\n- SOI/CEOI drafts\n- AARs\n- spectrum management plans\n- terrain and relay recommendations\n\nAlways verify generated documents against the current scenario before operational use.\n\n## Settings\n\n### General, imagery, terrain, and weather\n\nSettings controls configure the environment around the workflow.\n\nCommon tasks:\n\n- choose imagery providers\n- configure terrain sources\n- set weather context\n- adjust marker and tactical display settings\n- manage workspace behavior\n\n### AI Integration\n\nUse **Settings \u003e AI Integration** to configure provider, model, relay, and connection testing.\n\nRecommended sequence:\n\n1. Choose provider.\n2. Enter credentials or relay configuration.\n3. Select model.\n4. Test connection.\n5. Run a small scenario-specific prompt before relying on long reports.\n\n### Documentation tab\n\nThe **Documentation** tab is this operator guide. It is meant to be used in-app while building and checking a scenario.\n\n## TAK\n\n### TAK settings\n\nUse **Settings \u003e TAK** to configure TAK servers, certificates, TLS server name, and streaming behavior.\n\nTypical flow:\n\n1. Create or select a TAK server profile.\n2. Set host, port, and protocol.\n3. Load required CA/client certificates.\n4. Set TLS server name when the certificate hostname differs from the IP you connect to.\n5. Test connection.\n6. Enable streaming only when the scenario is ready.\n\n### Certificates\n\nTAK certificate setup depends on your server requirements. Keep CA trust, client certificate, and password handling consistent with the TAK environment you are connecting to.\n\n### Streaming discipline\n\nBefore streaming, confirm:\n\n- object names are clean\n- affiliations are correct\n- coordinates are intentional\n- tactical symbols are appropriate\n- test objects have been removed or isolated\n\n## Site Analytics\n\n### Purpose\n\nSite Analytics is an admin-only view for usage monitoring. It helps workspace admins understand activity, provider usage, AI requests, token spend, logins, projects, and active users.\n\n### What to look for\n\nUse Site Analytics to answer:\n\n- which users are active\n- which AI providers are being used\n- how token spend is trending\n- which projects or use cases are generating load\n- whether admin-visible activity looks expected\n\n### Operational note\n\nSite Analytics is not part of RF planning. It is a workspace administration tool.\n\n## Troubleshooting\n\n### T/O problems\n\n| Symptom | Check |\n|---|---|\n| Tree is off-screen | Run **Fit View** |\n| Tree is messy | Run **Auto Layout**, then **Fit View** |\n| Unit symbol is wrong | Reopen **Select Unit Type** and choose from **Choose Unit Symbology** |\n| Unit label is confusing | Shorten name or use designator field |\n| Emitter grouping looks wrong | Confirm emitters are linked to the intended units |\n\n### EMITTERS problems\n\n| Symptom | Check |\n|---|---|\n| Expected link missing | Same waveform and same frequency |\n| Link is hidden | Band filter or workspace filter may be off |\n| Unit Card missing radio | Emitter may not be linked to the T/O unit |\n| Radio cannot be terrain-analyzed | It may not be placed on the map |\n| Workspace is cluttered | Switch between **Unit Cards** and **Emitters**, then use filters |\n\n### MAP problems\n\n| Symptom | Check |\n|---|---|\n| Imported overlay is misplaced | Confirm source projection and coordinates |\n| Terrain result looks wrong | Confirm terrain source coverage |\n| Emitter does not appear in Map Contents | It may only exist in EMITTERS |\n| 3D view looks unexpected | Check terrain provider and camera position |\n| TAK object is wrong | Check affiliation, name, symbol, and stream setting |\n\n### ANALYSIS problems\n\n| Symptom | Check |\n|---|---|\n| Conclusions say not ready | Missing emitters, placement, terrain, links, or T/O correlation |\n| Link findings look unrealistic | Check frequency, waveform, power, antenna, height, and location |\n| Terrain panels are sparse | Load or configure terrain source |\n| T/O correlation is weak | Link emitters to units and clean names/designators |\n\n### Pre-brief checklist\n\n```text\nT/O clean? Symbols and sizes correct?\nEmitters configured? Nets and waveforms checked?\nMap placements realistic? Terrain loaded?\nAnalysis ready? Weak links explained?\nAI/document output verified against scenario data?\n```";
 
 let _settingsDocumentationRendered = false;
 
@@ -15147,12 +14895,19 @@ function slugifySettingsDocHeading(text) {
 function renderSettingsDocumentation() {
   if (!dom.settingsDocumentationContent || !dom.settingsDocumentationNav) return;
   if (_settingsDocumentationRendered) return;
-  dom.settingsDocumentationContent.innerHTML = renderDocumentMarkdown(SETTINGS_DOCUMENTATION_MD);
-  const headings = [...dom.settingsDocumentationContent.querySelectorAll("h1, h2, h3")];
+  const content = dom.settingsDocumentationContent;
+  const nav = dom.settingsDocumentationNav;
+  content.innerHTML = renderDocumentMarkdown(SETTINGS_DOCUMENTATION_MD);
+  content.querySelectorAll("p").forEach((paragraph) => {
+    if (!paragraph.innerHTML.trim().startsWith("&gt;")) return;
+    const callout = document.createElement("blockquote");
+    callout.innerHTML = paragraph.innerHTML.replace(/^&gt;\s*/, "");
+    paragraph.replaceWith(callout);
+  });
+  const headings = [...content.querySelectorAll("h1, h2, h3")];
   const slugCounts = new Map();
-  dom.settingsDocumentationNav.innerHTML = "";
+  nav.innerHTML = "";
 
-  // Assign IDs to all headings
   headings.forEach((heading) => {
     const baseSlug = slugifySettingsDocHeading(heading.textContent);
     const nextCount = (slugCounts.get(baseSlug) || 0) + 1;
@@ -15160,69 +14915,95 @@ function renderSettingsDocumentation() {
     heading.id = `settings-doc-${nextCount > 1 ? `${baseSlug}-${nextCount}` : baseSlug}`;
   });
 
-  // Section color palette for h1/h2 section cards
-  const SECTION_COLORS = ["#38bdf8", "#22d3ee", "#34d399", "#facc15", "#fb923c", "#f87171", "#c084fc"];
-  let sectionIndex = 0;
-  let currentCard = null;
-  let currentSubList = null;
+  const tocHeadings = headings.filter((heading) => ["H2", "H3"].includes(heading.tagName));
+  const tocRoot = document.createElement("ul");
+  tocRoot.className = "settings-docs-toc";
+  nav.appendChild(tocRoot);
   const allLinks = [];
+  const linkByHeadingId = new Map();
+
+  function setActiveLink(activeLink) {
+    allLinks.forEach((link) => {
+      const active = link === activeLink;
+      link.classList.toggle("is-active", active);
+      if (active) {
+        link.setAttribute("aria-current", "location");
+      } else {
+        link.removeAttribute("aria-current");
+      }
+    });
+    activeLink?.scrollIntoView({ block: "nearest" });
+  }
 
   function makeLink(heading) {
     const link = document.createElement("a");
     link.href = `#${heading.id}`;
     link.textContent = heading.textContent || "Section";
+    link.className = `settings-docs-toc-link settings-docs-toc-link--${heading.tagName.toLowerCase()}`;
     link.addEventListener("click", (event) => {
       event.preventDefault();
-      heading.scrollIntoView({ block: "start", behavior: "smooth" });
-      allLinks.forEach((l) => l.classList.remove("is-active"));
-      link.classList.add("is-active");
+      content.scrollTo({
+        top: Math.max(0, heading.offsetTop - 10),
+        behavior: "smooth",
+      });
+      setActiveLink(link);
     });
     allLinks.push(link);
+    linkByHeadingId.set(heading.id, link);
     return link;
   }
 
-  headings.forEach((heading) => {
-    const depth = heading.tagName === "H1" ? 1 : heading.tagName === "H2" ? 2 : 3;
-    if (depth <= 2) {
-      // New section card
-      currentCard = document.createElement("div");
-      currentCard.className = "docs-nav-section";
-      const color = SECTION_COLORS[sectionIndex % SECTION_COLORS.length];
-      sectionIndex++;
-      currentCard.style.setProperty("--section-color", color);
-      const header = document.createElement("div");
-      header.className = "docs-nav-section-header";
-      const link = makeLink(heading);
-      link.className = "docs-nav-section-link";
-      header.appendChild(link);
-      currentCard.appendChild(header);
-      currentSubList = null;
-      dom.settingsDocumentationNav.appendChild(currentCard);
+  let currentPrimaryItem = null;
+  let currentChildren = null;
+  tocHeadings.forEach((heading) => {
+    if (heading.tagName === "H2") {
+      currentPrimaryItem = document.createElement("li");
+      currentPrimaryItem.className = "settings-docs-toc-item settings-docs-toc-item--primary";
+      currentPrimaryItem.appendChild(makeLink(heading));
+      tocRoot.appendChild(currentPrimaryItem);
+      currentChildren = null;
     } else {
-      // h3 â€” sub-item under current section card
-      if (!currentCard) {
-        currentCard = document.createElement("div");
-        currentCard.className = "docs-nav-section";
-        currentCard.style.setProperty("--section-color", SECTION_COLORS[0]);
-        dom.settingsDocumentationNav.appendChild(currentCard);
+      if (!currentPrimaryItem) {
+        currentPrimaryItem = document.createElement("li");
+        currentPrimaryItem.className = "settings-docs-toc-item settings-docs-toc-item--primary";
+        tocRoot.appendChild(currentPrimaryItem);
       }
-      if (!currentSubList) {
-        currentSubList = document.createElement("ul");
-        currentSubList.className = "docs-nav-sub-list";
-        currentCard.appendChild(currentSubList);
+      if (!currentChildren) {
+        currentChildren = document.createElement("ul");
+        currentChildren.className = "settings-docs-toc-children";
+        currentPrimaryItem.appendChild(currentChildren);
       }
       const li = document.createElement("li");
-      const link = makeLink(heading);
-      link.className = "docs-nav-sub-link";
-      li.appendChild(link);
-      currentSubList.appendChild(li);
+      li.className = "settings-docs-toc-item settings-docs-toc-item--child";
+      li.appendChild(makeLink(heading));
+      currentChildren.appendChild(li);
     }
   });
 
-  allLinks[0]?.classList.add("is-active");
+  let activeRafId = null;
+  const updateActiveSection = () => {
+    activeRafId = null;
+    if (!tocHeadings.length) return;
+    const contentTop = content.getBoundingClientRect().top;
+    let activeHeading = tocHeadings[0];
+    for (const heading of tocHeadings) {
+      const relativeTop = heading.getBoundingClientRect().top - contentTop;
+      if (relativeTop <= 72) {
+        activeHeading = heading;
+      } else {
+        break;
+      }
+    }
+    setActiveLink(linkByHeadingId.get(activeHeading.id));
+  };
+  content.addEventListener("scroll", () => {
+    if (activeRafId) return;
+    activeRafId = requestAnimationFrame(updateActiveSection);
+  }, { passive: true });
+
+  setActiveLink(allLinks[0]);
   _settingsDocumentationRendered = true;
 }
-
 function setSettingsModalTab(tab = "general") {
   state.settingsModalTab = ["general", "imagery", "terrain", "weather", "ai", "tak", "documentation"].includes(tab) ? tab : "general";
   dom.settingsTabButtons?.forEach((button) => {
@@ -37751,6 +37532,9 @@ const _toState = {
   editingUnitId: null,
   linkMode: null,  // null | { type: "parent"|"child", fromId }
   _initialized: false,
+  pendingAutoLayoutFit: false,
+  autoLayoutFitRafId: null,
+  autoLayoutFitTimeoutId: null,
 };
 
 const _emittersWorkspaceState = {
@@ -37825,39 +37609,39 @@ const TO_UNIT_TYPE_ALIASES = {
 const MILSTD_FRAME_PATHS = {
   unknown: {
     ground: "images/milstd/Frames/0_110_0.svg",
-    air: "images/milstd/Frames/0_105_0.svg",
-    sea_surface: "images/milstd/Frames/0_115_0.svg",
+    air: "images/milstd/Frames/0_101_0.svg",
+    sea_surface: "images/milstd/Frames/0_130_0.svg",
     subsurface: "images/milstd/Frames/0_135_0.svg",
-    space: "images/milstd/Frames/0_130_0.svg",
+    space: "images/milstd/Frames/0_105_0.svg",
   },
   friendly: {
     ground: "images/milstd/Frames/0_310_0.svg",
-    air: "images/milstd/Frames/0_305_0.svg",
-    sea_surface: "images/milstd/Frames/0_315_0.svg",
+    air: "images/milstd/Frames/0_301_0.svg",
+    sea_surface: "images/milstd/Frames/0_330_0.svg",
     subsurface: "images/milstd/Frames/0_335_0.svg",
-    space: "images/milstd/Frames/0_330_0.svg",
+    space: "images/milstd/Frames/0_305_0.svg",
   },
   neutral: {
     ground: "images/milstd/Frames/0_410_0.svg",
-    air: "images/milstd/Frames/0_405_0.svg",
-    sea_surface: "images/milstd/Frames/0_415_0.svg",
+    air: "images/milstd/Frames/0_401_0.svg",
+    sea_surface: "images/milstd/Frames/0_430_0.svg",
     subsurface: "images/milstd/Frames/0_435_0.svg",
-    space: "images/milstd/Frames/0_430_0.svg",
+    space: "images/milstd/Frames/0_405_0.svg",
   },
   hostile: {
     ground: "images/milstd/Frames/0_610_0.svg",
-    air: "images/milstd/Frames/0_605_0.svg",
-    sea_surface: "images/milstd/Frames/0_615_0.svg",
+    air: "images/milstd/Frames/0_601_0.svg",
+    sea_surface: "images/milstd/Frames/0_630_0.svg",
     subsurface: "images/milstd/Frames/0_635_0.svg",
-    space: "images/milstd/Frames/0_630_0.svg",
+    space: "images/milstd/Frames/0_605_0.svg",
   },
 };
 
 const MILSTD_EQUIPMENT_FRAME_PATHS = {
-  unknown: "images/milstd/Frames/0_101_0.svg",
+  unknown: "images/milstd/Frames/0_115_0.svg",
   friendly: "images/milstd/Frames/0_315_0.svg",
-  neutral: "images/milstd/Frames/0_410_0.svg",
-  hostile: "images/milstd/Frames/0_610_0.svg",
+  neutral: "images/milstd/Frames/0_415_0.svg",
+  hostile: "images/milstd/Frames/0_615_0.svg",
 };
 
 const MILSTD_ECHELON_PATHS = {
@@ -38662,6 +38446,7 @@ function initPlanViewIfNeeded() {
 
   // â”€â”€ AI form â”€â”€
   renderToView();
+  runPendingToAutoLayoutAndFit();
 }
 
 function addToUnit(props) {
@@ -38958,8 +38743,59 @@ function setToZoom(z) {
   applyToTransform();
 }
 
-function toAutoLayout() {
+function clearPendingToAutoLayoutAndFit() {
+  if (_toState.autoLayoutFitRafId) {
+    cancelAnimationFrame(_toState.autoLayoutFitRafId);
+    _toState.autoLayoutFitRafId = null;
+  }
+  if (_toState.autoLayoutFitTimeoutId) {
+    clearTimeout(_toState.autoLayoutFitTimeoutId);
+    _toState.autoLayoutFitTimeoutId = null;
+  }
+  _toState.pendingAutoLayoutFit = false;
+}
+
+function requestToAutoLayoutAndFit() {
+  _toState.pendingAutoLayoutFit = Boolean(_toState.units.length);
+  runPendingToAutoLayoutAndFit();
+}
+
+function runPendingToAutoLayoutAndFit(attemptsRemaining = 8) {
+  if (!_toState.pendingAutoLayoutFit || !_toState.units.length || !_toState._initialized) {
+    return;
+  }
+  if (_toState.autoLayoutFitRafId) {
+    cancelAnimationFrame(_toState.autoLayoutFitRafId);
+  }
+  _toState.autoLayoutFitRafId = requestAnimationFrame(() => {
+    _toState.autoLayoutFitRafId = null;
+    const canvas = document.getElementById("toCanvas");
+    const planVisible = state.ui?.currentView === "plan" && !dom.planView?.classList.contains("hidden");
+    const hasCanvasSize = Boolean(canvas && canvas.clientWidth > 24 && canvas.clientHeight > 24);
+    if (!planVisible || !hasCanvasSize) {
+      if (planVisible && attemptsRemaining > 0) {
+        if (_toState.autoLayoutFitTimeoutId) clearTimeout(_toState.autoLayoutFitTimeoutId);
+        _toState.autoLayoutFitTimeoutId = setTimeout(() => {
+          _toState.autoLayoutFitTimeoutId = null;
+          runPendingToAutoLayoutAndFit(attemptsRemaining - 1);
+        }, 80);
+      }
+      return;
+    }
+    _toState.pendingAutoLayoutFit = false;
+    if (_toState.links.length) {
+      toAutoLayout({ persist: false });
+    }
+    requestAnimationFrame(() => {
+      toFitView();
+      renderToEdges();
+    });
+  });
+}
+
+function toAutoLayout(options = {}) {
   if (!_toState.links.length || !_toState.units.length) return;
+  const persist = options?.persist !== false;
 
   // Build adjacency: find roots (nodes with no parent)
   const childSet = new Set(_toState.links.map(l => l.childId));
@@ -39006,7 +38842,7 @@ function toAutoLayout() {
   // offsetHeight reads in getToUnitConnectorAnchors return accurate values.
   requestAnimationFrame(() => {
     renderToEdges();
-    saveMapState();
+    if (persist) saveMapState();
   });
 }
 

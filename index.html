@@ -218,7 +218,11 @@
         </button>
         <div class="settings-menu-shell">
           <button id="settingsMenuBtn" class="status-chip status-chip-button settings-chip-button settings-chip-icon-only" type="button" aria-label="Open map settings" aria-expanded="false">
-            <span class="settings-gear-icon">&#9881;</span>
+            <span class="settings-gear-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false">
+                <path fill="currentColor" fill-rule="evenodd" clip-rule="evenodd" d="M10.35 2.75h3.3l.42 3.02c.58.18 1.13.41 1.64.69l2.45-1.83 2.33 2.33-1.83 2.45c.28.51.51 1.06.69 1.64l3.02.42v3.3l-3.02.42c-.18.58-.41 1.13-.69 1.64l1.83 2.45-2.33 2.33-2.45-1.83c-.51.28-1.06.51-1.64.69l-.42 3.02h-3.3l-.42-3.02a8.2 8.2 0 0 1-1.64-.69l-2.45 1.83-2.33-2.33 1.83-2.45a8.2 8.2 0 0 1-.69-1.64l-3.02-.42v-3.3l3.02-.42c.18-.58.41-1.13.69-1.64L3.51 6.96l2.33-2.33 2.45 1.83c.51-.28 1.06-.51 1.64-.69l.42-3.02ZM12 15.7a3.7 3.7 0 1 0 0-7.4 3.7 3.7 0 0 0 0 7.4Z"/>
+              </svg>
+            </span>
           </button>
         </div>
       </div>
@@ -1705,7 +1709,7 @@
   <!-- ADD EMITTER MODAL                                          -->
   <!-- ═══════════════════════════════════════════════════════════ -->
   <div id="emitterModal" class="emitter-modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="emitterModalTitle">
-    <div class="emitter-modal">
+    <div class="emitter-modal emitter-config-modal">
 
       <!-- Header -->
       <div class="emitter-modal-header">
@@ -1723,6 +1727,7 @@
 
         <!-- LEFT COLUMN: Emitter Library -->
         <div class="emitter-modal-library">
+          <section class="emitter-library-card emitter-library-preset-card">
           <div class="emitter-library-header">
             <span class="emitter-section-label">Emitter Library</span>
             <button id="emitterSaveCustomBtn" class="ghost-button small" type="button">Save as Custom</button>
@@ -1795,8 +1800,9 @@
           <div class="emitter-lib-summary" id="emitterLibSummary">
             <p>Select an emitter type and program to auto-fill parameters, or configure manually below.</p>
           </div>
+          </section>
 
-          <div class="emitter-saved-profiles">
+          <section class="emitter-library-card emitter-saved-profiles">
             <div class="emitter-library-header emitter-library-header-tight">
               <span class="emitter-section-label">Saved Profiles</span>
               <button id="emitterProfileNewBtn" class="ghost-button small" type="button">New Draft</button>
@@ -1821,10 +1827,11 @@
               <button id="emitterProfileSaveCopyBtn" class="ghost-button small" type="button">Save Copy</button>
               <button id="emitterProfileDeleteBtn" class="ghost-button small" type="button" disabled>Delete</button>
             </div>
-          </div>
+          </section>
 
           <!-- Identity fields -->
-          <div class="emitter-section-label" style="margin-top:16px">Identity</div>
+          <section class="emitter-library-card emitter-identity-card">
+          <div class="emitter-section-label">Identity</div>
           <!-- TO Link badge — shown when linked -->
           <div id="emToLinkBadge" class="em-to-link-badge hidden">
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
@@ -1876,6 +1883,7 @@
               </div>
             </label>
           </div>
+          </section>
         </div>
 
         <!-- RIGHT COLUMN: RF Parameters (tabbed) -->
