@@ -550,6 +550,128 @@ const EMITTER_LIBRARY = {
 
   // â”€â”€ MANET / Mesh Radios â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
+  // FPV / UAS Control and Data Links
+
+  "expresslrs": {
+    label: "ExpressLRS",
+    programs: {
+      "2p4-high-rate": {
+        label: "2.4 GHz High-Rate RC Link",
+        notes: "ExpressLRS control-link profile tuned for low-latency FPV/UAS control on the 2.4 GHz family.",
+        rf: { frequencyMHz: 2440, bandwidthKHz: 80000, modulation: "FHSS", waveform: "ELRS 2.4", duplex: "half-duplex", channelSpacingKHz: 1000 },
+        tx: { powerW: 1, dutyCycle: 0.5, papr: 2, spectralEfficiency: 1.2 },
+        rx: { sensitivityDbm: -105, noiseFigDb: 6, requiredSnrDb: 7, acrDb: 45, bdrDb: 70 },
+        antenna: { type: "whip", gainDbi: 2.15, pattern: "omnidirectional", polarization: "vertical", heightM: 1.5, cableLossDb: 0.3, systemLossDb: 2 },
+        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true },
+        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 8, adaptiveDataRate: false },
+      },
+      "915-long-range": {
+        label: "915 MHz Long-Range RC Link",
+        notes: "ExpressLRS long-range control-link profile for 915 MHz class systems.",
+        rf: { frequencyMHz: 915, bandwidthKHz: 26000, modulation: "FHSS", waveform: "ELRS 900", duplex: "half-duplex", channelSpacingKHz: 500 },
+        tx: { powerW: 1, dutyCycle: 0.5, papr: 2, spectralEfficiency: 0.9 },
+        rx: { sensitivityDbm: -118, noiseFigDb: 5, requiredSnrDb: 5, acrDb: 50, bdrDb: 75 },
+        antenna: { type: "whip", gainDbi: 2.15, pattern: "omnidirectional", polarization: "vertical", heightM: 1.5, cableLossDb: 0.3, systemLossDb: 2 },
+        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true },
+        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 15, adaptiveDataRate: false },
+      },
+    },
+  },
+
+  "skydio-x10d": {
+    label: "Skydio X10D",
+    programs: {
+      "mh-control-link": {
+        label: "MH Control Link",
+        notes: "Approximate default for the Microhard-backed X10D MH control and telemetry family.",
+        rf: { frequencyMHz: 1430, bandwidthKHz: 5000, modulation: "OFDM", waveform: "Skydio X10D MH", duplex: "full-duplex", channelSpacingKHz: 5000 },
+        tx: { powerW: 1, dutyCycle: 1, papr: 7, spectralEfficiency: 2 },
+        rx: { sensitivityDbm: -97, noiseFigDb: 6, requiredSnrDb: 8, acrDb: 35, bdrDb: 60 },
+        antenna: { type: "patch", gainDbi: 3, pattern: "directional", polarization: "dual", heightM: 1.5, cableLossDb: 0.5, systemLossDb: 2 },
+        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true },
+        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 40, adaptiveDataRate: true },
+      },
+      "sl-control-link": {
+        label: "SkydioLink Control Link",
+        notes: "Approximate default for the SkydioLink 5 GHz control-link family.",
+        rf: { frequencyMHz: 5800, bandwidthKHz: 20000, modulation: "OFDM", waveform: "SkydioLink", duplex: "full-duplex", channelSpacingKHz: 20000 },
+        tx: { powerW: 1, dutyCycle: 1, papr: 7, spectralEfficiency: 3 },
+        rx: { sensitivityDbm: -95, noiseFigDb: 6, requiredSnrDb: 8, acrDb: 35, bdrDb: 60 },
+        antenna: { type: "patch", gainDbi: 3, pattern: "directional", polarization: "dual", heightM: 1.5, cableLossDb: 0.5, systemLossDb: 2 },
+        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true },
+        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 30, adaptiveDataRate: true },
+      },
+    },
+  },
+
+  "microhard-fdr3025": {
+    label: "Microhard FDR3025",
+    programs: {
+      "l-band-fhss": {
+        label: "MDDL L-Band FHSS",
+        notes: "Approximate single-band view of a multiband Microhard UAS digital data link.",
+        rf: { frequencyMHz: 1350, bandwidthKHz: 5000, modulation: "OFDM", waveform: "Microhard MDDL", duplex: "full-duplex", channelSpacingKHz: 5000 },
+        tx: { powerW: 1, dutyCycle: 1, papr: 8, spectralEfficiency: 2.5 },
+        rx: { sensitivityDbm: -97, noiseFigDb: 6, requiredSnrDb: 8, acrDb: 35, bdrDb: 60 },
+        antenna: { type: "omni_dipole", gainDbi: 2, pattern: "omnidirectional", polarization: "vertical", heightM: 1.5, cableLossDb: 0.4, systemLossDb: 2 },
+        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true },
+        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 25, adaptiveDataRate: true },
+      },
+      "s-band-fhss": {
+        label: "MDDL S-Band FHSS",
+        notes: "Approximate single-band view of a multiband Microhard UAS digital data link.",
+        rf: { frequencyMHz: 2400, bandwidthKHz: 10000, modulation: "OFDM", waveform: "Microhard MDDL", duplex: "full-duplex", channelSpacingKHz: 10000 },
+        tx: { powerW: 1, dutyCycle: 1, papr: 8, spectralEfficiency: 3 },
+        rx: { sensitivityDbm: -95, noiseFigDb: 6, requiredSnrDb: 8, acrDb: 35, bdrDb: 60 },
+        antenna: { type: "omni_dipole", gainDbi: 3, pattern: "omnidirectional", polarization: "vertical", heightM: 1.5, cableLossDb: 0.4, systemLossDb: 2 },
+        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true },
+        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 25, adaptiveDataRate: true },
+      },
+    },
+  },
+
+  "doodle-labs-mesh-rider": {
+    label: "Doodle Labs Mesh Rider",
+    programs: {
+      "915-mesh": {
+        label: "Mesh Rider 915 MHz",
+        notes: "Approximate Doodle Labs Mesh Rider 915 MHz MANET profile for UAS and robotic backhaul.",
+        rf: { frequencyMHz: 915, bandwidthKHz: 10000, modulation: "COFDM", waveform: "Mesh Rider", duplex: "full-duplex", channelSpacingKHz: 10000 },
+        tx: { powerW: 1, dutyCycle: 1, papr: 8, spectralEfficiency: 2 },
+        rx: { sensitivityDbm: -98, noiseFigDb: 6, requiredSnrDb: 8, acrDb: 35, bdrDb: 60 },
+        antenna: { type: "omni_dipole", gainDbi: 2, pattern: "omnidirectional", polarization: "vertical", heightM: 1.5, cableLossDb: 0.3, systemLossDb: 1.5 },
+        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true },
+        net: { isManet: true, relayCapable: true, maxHops: 10, latencyMs: 20, adaptiveDataRate: true, dataRateMbps: 20, meshProtocol: "Mesh Rider" },
+      },
+      "2450-mesh": {
+        label: "Mesh Rider 2.45 GHz",
+        notes: "Approximate Doodle Labs Mesh Rider 2.45 GHz MANET profile for higher-capacity UAS backhaul.",
+        rf: { frequencyMHz: 2450, bandwidthKHz: 20000, modulation: "COFDM", waveform: "Mesh Rider", duplex: "full-duplex", channelSpacingKHz: 20000 },
+        tx: { powerW: 1, dutyCycle: 1, papr: 8, spectralEfficiency: 4 },
+        rx: { sensitivityDbm: -95, noiseFigDb: 6, requiredSnrDb: 8, acrDb: 35, bdrDb: 60 },
+        antenna: { type: "omni_dipole", gainDbi: 3, pattern: "omnidirectional", polarization: "vertical", heightM: 1.5, cableLossDb: 0.3, systemLossDb: 1.5 },
+        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true },
+        net: { isManet: true, relayCapable: true, maxHops: 10, latencyMs: 15, adaptiveDataRate: true, dataRateMbps: 60, meshProtocol: "Mesh Rider" },
+      },
+    },
+  },
+
+  "neros-archer": {
+    label: "Neros Archer",
+    programs: {
+      "anti-jam-c2-placeholder": {
+        label: "Anti-Jam C2 Placeholder",
+        notes: "Approximate inferred placeholder for the Neros Archer control link pending public RF disclosure.",
+        rf: { frequencyMHz: 2400, bandwidthKHz: 5000, modulation: "FHSS", waveform: "Archer Anti-Jam C2", duplex: "half-duplex", channelSpacingKHz: 5000 },
+        tx: { powerW: 1, dutyCycle: 0.5, papr: 3, spectralEfficiency: 1.2 },
+        rx: { sensitivityDbm: -100, noiseFigDb: 6, requiredSnrDb: 7, acrDb: 40, bdrDb: 65 },
+        antenna: { type: "omni_dipole", gainDbi: 2, pattern: "omnidirectional", polarization: "vertical", heightM: 1.5, cableLossDb: 0.3, systemLossDb: 2 },
+        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true },
+        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 15, adaptiveDataRate: true },
+      },
+    },
+  },
+
   "silvus-sc4200": {
     label: "Silvus StreamCaster 4200",
     programs: {
