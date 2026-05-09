@@ -621,8 +621,8 @@ body[data-current-view="analyze"] .top-bar-left {
 }
 
 .workspace-menu {
-  width: min(760px, calc(100vw - 24px));
-  min-width: min(520px, calc(100vw - 24px));
+  width: min(640px, calc(100vw - 24px));
+  min-width: min(500px, calc(100vw - 24px));
 }
 
 .workspace-menu-title-row {
@@ -643,6 +643,7 @@ body[data-current-view="analyze"] .top-bar-left {
 
 .workspace-project-actions {
   gap: 6px;
+  justify-content: flex-start;
 }
 
 .danger-button {
@@ -1114,7 +1115,7 @@ body.panel-collapsed .control-panel {
   flex-wrap: wrap;
   gap: 8px;
   min-width: 0;
-  padding: 0 8px 8px;
+  padding: 0 0 8px;
 }
 
 .map-panel-mode-toggle {
@@ -1201,7 +1202,7 @@ body.panel-collapsed .control-panel {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 8px;
+  padding: 6px 0 10px;
   border-bottom: 1px solid var(--border);
   background: transparent;
 }
@@ -1545,6 +1546,12 @@ body.is-resizing {
   -webkit-user-select: none;
   user-select: none;
   cursor: col-resize;
+}
+
+body.ai-prompt-resizing {
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: ns-resize;
 }
 
 body:not(.ai-panel-open) .panel-divider-right {
@@ -2718,23 +2725,72 @@ body.theme-light .ai-agent-mode-indicator {
   align-self: end;
 }
 
-/* Flip wrapper: scaleY(-1) moves the resize handle to the top-right so
-   the user can drag upward to expand. The textarea is counter-flipped so
-   text stays readable. Only applies inside the main AI panel. */
+/* Main chat prompt wrapper with a top-right drag handle. */
 .ai-textarea-flip {
-  transform: scaleY(-1);
+  position: relative;
 }
-/* Only flip textareas that are inside the flip wrapper */
+
 .ai-textarea-flip textarea {
-  transform: scaleY(-1);
+  padding-right: 30px;
+  transform: none;
 }
 .ai-chat-form textarea {
   width: 100%;
   min-height: 88px;
-  resize: vertical;
+  resize: none;
 }
 .ai-chat-form textarea::placeholder {
   color: rgba(255, 255, 255, 0.45);
+}
+
+.ai-textarea-resize-handle {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  z-index: 2;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  background: linear-gradient(225deg, rgba(var(--accent-rgb), 0.16), transparent 58%);
+  color: var(--text-muted);
+  cursor: ns-resize;
+  opacity: 0.82;
+}
+
+.ai-textarea-resize-handle::before,
+.ai-textarea-resize-handle::after {
+  content: "";
+  position: absolute;
+  border-top: 2px solid currentColor;
+  border-right: 2px solid currentColor;
+  pointer-events: none;
+}
+
+.ai-textarea-resize-handle::before {
+  top: 6px;
+  right: 6px;
+  width: 11px;
+  height: 11px;
+}
+
+.ai-textarea-resize-handle::after {
+  top: 11px;
+  right: 11px;
+  width: 6px;
+  height: 6px;
+  opacity: 0.58;
+}
+
+.ai-textarea-resize-handle:hover,
+.ai-textarea-resize-handle:focus-visible {
+  color: var(--accent-strong);
+  opacity: 1;
+  outline: none;
+}
+
+.ai-textarea-flip textarea:disabled + .ai-textarea-resize-handle {
+  opacity: 0.48;
 }
 /* Secondary view textareas — no flip, normal resize */
 .plan-ai-form textarea,
@@ -3456,6 +3512,13 @@ body.theme-light .ai-agent-mode-indicator {
 }
 
 .map-stage {
+  --map-overlay-top: 10px;
+  --map-overlay-left: 60px;
+  --map-overlay-gap: 10px;
+  --map-overlay-control-h: 34px;
+  --map-view-toggle-w: 104px;
+  --map-geo-search-w: clamp(320px, 44vw, 480px);
+  --map-offline-w: 104px;
   position: relative;
   min-width: 0;
   min-height: 0;
@@ -3472,31 +3535,59 @@ body.theme-light .ai-agent-mode-indicator {
   display: none;
 }
 
+.map-stage .leaflet-top.leaflet-left {
+  top: var(--map-overlay-top);
+  left: 14px;
+}
+
+.map-stage .leaflet-top .leaflet-control {
+  margin: 0;
+}
+
+.map-stage .leaflet-control-zoom {
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  border-radius: 6px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+  overflow: hidden;
+}
+
+.map-stage .leaflet-control-zoom a {
+  width: 38px;
+  height: 37px;
+  line-height: 37px;
+  border-color: rgba(148, 163, 184, 0.28);
+  background: color-mix(in srgb, var(--bg-overlay) 88%, transparent);
+  backdrop-filter: blur(8px);
+}
+
 .map-view-toggle {
   position: absolute;
-  top: 14px;
-  left: 52px;
+  top: var(--map-overlay-top);
+  left: var(--map-overlay-left);
   z-index: 650;
-  width: 76px;
-  min-width: 76px;
-  height: 32px;
-  padding: 0 10px;
-  background: var(--bg-overlay);
-  box-shadow: var(--shadow);
-  border-radius: 4px;
+  width: var(--map-view-toggle-w);
+  min-width: var(--map-view-toggle-w);
+  height: var(--map-overlay-control-h);
+  padding: 0 14px;
+  background: color-mix(in srgb, var(--bg-overlay) 88%, transparent);
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+  border-radius: 6px;
+  backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
+  font-size: 0.82rem;
+  font-weight: 750;
 }
 
 /* ── Map geo search bar (to the right of 2D/3D toggle) ─────────────────────── */
 .map-geo-search-wrap {
   position: absolute;
-  top: 14px;
-  left: 138px;        /* 52px toggle left + 76px width + 10px gap */
+  top: var(--map-overlay-top);
+  left: calc(var(--map-overlay-left) + var(--map-view-toggle-w) + var(--map-overlay-gap));
   z-index: 650;
-  width: 340px;
+  width: var(--map-geo-search-w);
 }
 
 .map-geo-search-shell {
@@ -3504,12 +3595,13 @@ body.theme-light .ai-agent-mode-indicator {
   align-items: center;
   flex-direction: row;
   gap: 8px;
-  padding: 0 10px;
-  height: 32px;
-  background: var(--bg-overlay, rgba(15,20,30,0.92));
-  border: 1px solid rgba(120,140,168,0.35);
-  border-radius: 4px;
-  box-shadow: var(--shadow);
+  padding: 0 14px;
+  height: var(--map-overlay-control-h);
+  background: color-mix(in srgb, var(--bg-overlay) 88%, transparent);
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  border-radius: 6px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(8px);
   cursor: text;
   box-sizing: border-box;
   width: 100%;
@@ -3539,7 +3631,7 @@ body.theme-light .ai-agent-mode-indicator {
   border: none;
   background: transparent;
   color: var(--text);
-  font-size: 12px;
+  font-size: 0.82rem;
   height: 100%;
   padding: 0;
   margin: 0;
@@ -3572,6 +3664,7 @@ body.theme-light .ai-agent-mode-indicator {
 
 .map-geo-search-wrap .map-search-geocoder-results {
   top: calc(100% + 4px);
+  border-radius: 6px;
 }
 
 .center-grid-crosshair {
@@ -3627,16 +3720,18 @@ body.theme-light .ai-agent-mode-indicator {
 
 .cesium-compass {
   position: absolute;
-  top: 54px;
-  left: 72px;
+  top: calc(var(--map-overlay-top) + var(--map-overlay-control-h) + 10px);
+  left: var(--map-overlay-left);
   right: auto;
   z-index: 650;
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
   padding: 0;
-  border: 1px solid var(--border);
-  background: var(--bg-overlay);
-  box-shadow: var(--shadow);
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  background: color-mix(in srgb, var(--bg-overlay) 84%, transparent);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.20);
+  border-radius: 6px;
+  backdrop-filter: blur(8px);
   cursor: pointer;
 }
 
@@ -3654,7 +3749,7 @@ body.theme-light .ai-agent-mode-indicator {
 
 .cesium-compass-ring {
   position: absolute;
-  inset: 5px;
+  inset: 6px;
   border: 1px solid var(--border-compass);
   border-radius: 999px;
 }
@@ -3662,7 +3757,7 @@ body.theme-light .ai-agent-mode-indicator {
 .cesium-compass-arrow {
   position: absolute;
   left: 50%;
-  top: 5px;
+  top: 6px;
   width: 0;
   height: 0;
   margin-left: -4px;
@@ -3675,11 +3770,115 @@ body.theme-light .ai-agent-mode-indicator {
 .cesium-compass-north {
   position: absolute;
   left: 50%;
-  bottom: 3px;
+  bottom: 4px;
   transform: translateX(-50%);
   font-size: 0.5rem;
   letter-spacing: 0.08em;
   color: var(--text);
+}
+
+.cesium-inclinometer {
+  --tilt-offset: 0px;
+  --roll-angle: 0deg;
+  position: absolute;
+  top: calc(var(--map-overlay-top) + var(--map-overlay-control-h) + 10px);
+  left: calc(var(--map-overlay-left) + 48px);
+  z-index: 650;
+  width: 144px;
+  min-height: 40px;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--bg-overlay) 78%, transparent);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(8px);
+  pointer-events: none;
+}
+
+.cesium-inclinometer.hidden {
+  display: none;
+}
+
+.cesium-inclinometer-dial {
+  position: relative;
+  width: 32px;
+  height: 26px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 4px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--bg-base) 70%, transparent);
+}
+
+.cesium-inclinometer-dial::before,
+.cesium-inclinometer-dial::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  background: rgba(226, 232, 240, 0.42);
+  transform: translate(-50%, -50%);
+}
+
+.cesium-inclinometer-dial::before {
+  width: 20px;
+  height: 1px;
+}
+
+.cesium-inclinometer-dial::after {
+  width: 1px;
+  height: 14px;
+}
+
+.cesium-inclinometer-horizon {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 54px;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--accent-arrow);
+  box-shadow: 0 0 8px rgba(var(--accent-rgb), 0.22);
+  transform: translate(-50%, calc(-50% + var(--tilt-offset))) rotate(var(--roll-angle));
+  transform-origin: center;
+  transition: transform 0.12s ease-out;
+}
+
+.cesium-inclinometer-center {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 4px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--text);
+  transform: translate(-50%, -50%);
+}
+
+.cesium-inclinometer-readout {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.cesium-inclinometer-readout span {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cesium-inclinometer-readout strong {
+  color: var(--text);
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .icon-button,
@@ -5051,8 +5250,8 @@ button:focus {
   }
 
   .map-tak-identity-btn {
-    top: 56px;
-    left: calc(138px + 340px + 8px);
+    top: calc(var(--map-overlay-top) + var(--map-overlay-control-h) + 8px);
+    left: calc(var(--map-overlay-left) + var(--map-view-toggle-w) + var(--map-overlay-gap) + var(--map-geo-search-w) + var(--map-overlay-gap));
   }
 
   .app-content {
@@ -5101,6 +5300,15 @@ button:focus {
 }
 
 @media (max-width: 760px) {
+  .map-stage {
+    --map-overlay-top: 10px;
+    --map-overlay-left: 58px;
+    --map-overlay-gap: 8px;
+    --map-view-toggle-w: 96px;
+    --map-geo-search-w: min(44vw, 360px);
+    --map-offline-w: 96px;
+  }
+
   .top-bar {
     flex-direction: column;
     align-items: stretch;
@@ -5176,8 +5384,15 @@ button:focus {
   }
 
   .cesium-compass {
-    top: 10px;
-    right: 60px;
+    top: calc(var(--map-overlay-top) + var(--map-overlay-control-h) + 8px);
+    left: var(--map-overlay-left);
+    right: auto;
+  }
+
+  .cesium-inclinometer {
+    top: calc(var(--map-overlay-top) + var(--map-overlay-control-h) + 8px);
+    left: calc(var(--map-overlay-left) + 48px);
+    width: 132px;
   }
 }
 
@@ -7661,27 +7876,31 @@ body.emitter-modal-open {
 
 .map-offline-btn {
   position: absolute;
-  top: 14px;
-  /* 138px = search wrap left; 340px = search wrap width; 8px gap */
-  left: calc(138px + 340px + 8px);
+  top: var(--map-overlay-top);
+  left: calc(var(--map-overlay-left) + var(--map-view-toggle-w) + var(--map-overlay-gap) + var(--map-geo-search-w) + var(--map-overlay-gap));
   z-index: 650;
-  height: 32px;
-  padding: 0 10px;
-  background: var(--bg-overlay);
-  box-shadow: var(--shadow);
-  border-radius: 4px;
+  width: var(--map-offline-w);
+  min-width: var(--map-offline-w);
+  height: var(--map-overlay-control-h);
+  padding: 0 12px;
+  background: color-mix(in srgb, var(--bg-overlay) 88%, transparent);
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+  border-radius: 6px;
+  backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: 0.82rem;
+  font-weight: 700;
 }
 
 /* ─── TAK Contacts Overlay ────────────────────────────────────────────────── */
 .tak-contacts-overlay {
   position: absolute;
-  top: 14px;
-  /* sits right of the offline button */
-  left: calc(138px + 340px + 8px + 86px + 8px);
+  top: var(--map-overlay-top);
+  left: calc(var(--map-overlay-left) + var(--map-view-toggle-w) + var(--map-overlay-gap) + var(--map-geo-search-w) + var(--map-overlay-gap) + var(--map-offline-w) + var(--map-overlay-gap));
   z-index: 660;
   display: flex;
   flex-direction: column;
@@ -7694,10 +7913,13 @@ body.emitter-modal-open {
   display: flex;
   align-items: center;
   gap: 6px;
-  height: 32px;
-  padding: 0 10px 0 10px;
-  background: var(--bg-overlay);
-  border: 1px solid var(--border);
+  height: var(--map-overlay-control-h);
+  padding: 0 12px;
+  background: color-mix(in srgb, var(--bg-overlay) 88%, transparent);
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  border-radius: 6px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(8px);
   border-radius: 6px;
   box-shadow: var(--shadow);
   cursor: pointer;
@@ -8028,18 +8250,20 @@ body.emitter-modal-open {
 
 .map-tak-identity-btn {
   position: absolute;
-  top: 14px;
-  left: calc(138px + 340px + 8px + 86px + 8px + 120px + 18px);
+  top: var(--map-overlay-top);
+  left: calc(var(--map-overlay-left) + var(--map-view-toggle-w) + var(--map-overlay-gap) + var(--map-geo-search-w) + var(--map-overlay-gap) + var(--map-offline-w) + var(--map-overlay-gap) + 128px);
   z-index: 650;
-  height: 32px;
+  height: var(--map-overlay-control-h);
   padding: 0 12px;
-  background: var(--bg-overlay);
-  box-shadow: var(--shadow);
-  border-radius: 4px;
+  background: color-mix(in srgb, var(--bg-overlay) 88%, transparent);
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+  border-radius: 6px;
+  backdrop-filter: blur(8px);
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: 0.82rem;
 }
 
 .map-tak-identity-label {
@@ -8057,14 +8281,14 @@ body.emitter-modal-open {
 
 .offline-status-badge {
   position: absolute;
-  top: 14px;
-  left: calc(138px + 340px + 8px + 86px + 6px);
+  top: var(--map-overlay-top);
+  left: calc(var(--map-overlay-left) + var(--map-view-toggle-w) + var(--map-overlay-gap) + var(--map-geo-search-w) + var(--map-overlay-gap) + var(--map-offline-w) + 6px);
   z-index: 650;
-  height: 32px;
+  height: var(--map-overlay-control-h);
   padding: 0 9px;
   background: color-mix(in srgb, var(--bg-base) 78%, var(--accent-success) 22%);
   border: 1px solid rgba(var(--accent-success-rgb), 0.4);
-  border-radius: 4px;
+  border-radius: 6px;
   display: flex;
   align-items: center;
   font-size: 11px;

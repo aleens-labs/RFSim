@@ -2215,7 +2215,6 @@ const dom = {
   workspaceAutosaveIcon: document.querySelector("#workspaceAutosaveIcon"),
   workspaceAutosaveLabel: document.querySelector("#workspaceAutosaveLabel"),
   workspaceProjectReloadBtn: document.querySelector("#workspaceProjectReloadBtn"),
-  workspaceProjectSnapshotBtn: document.querySelector("#workspaceProjectSnapshotBtn"),
   workspaceProjectDeleteBtn: document.querySelector("#workspaceProjectDeleteBtn"),
   workspaceProjectStatus: document.querySelector("#workspaceProjectStatus"),
   aiMenuBtn: null,
@@ -2645,6 +2644,9 @@ const dom = {
   emitterModal: document.querySelector("#emitterModal"),
   cesiumCompassBtn: document.querySelector("#cesiumCompassBtn"),
   cesiumCompassRose: document.querySelector("#cesiumCompassRose"),
+  cesiumInclinometer: document.querySelector("#cesiumInclinometer"),
+  cesiumPitchValue: document.querySelector("#cesiumPitchValue"),
+  cesiumRollValue: document.querySelector("#cesiumRollValue"),
   aiPanel: document.querySelector("#aiPanel"),
   collapseAiPanelBtn: document.querySelector("#collapseAiPanelBtn"),
   collapseAiPanelIcon: document.querySelector("#collapseAiPanelIcon"),
@@ -2658,6 +2660,7 @@ const dom = {
   aiChatForm: document.querySelector("#aiChatForm"),
   aiChatModelSelect: document.querySelector("#aiChatModelSelect"),
   aiChatInput: document.querySelector("#aiChatInput"),
+  aiChatResizeHandle: document.querySelector("#aiChatResizeHandle"),
   aiSendBtn: document.querySelector("#aiSendBtn"),
   aiClearChatBtn: document.querySelector("#aiClearChatBtn"),
   aiAttachmentBar: document.querySelector("#aiAttachmentBar"),
@@ -8956,7 +8959,6 @@ function syncWorkspaceUi() {
     dom.workspaceProjectCreateBtn?.setAttribute("disabled", "true");
     dom.workspaceProjectSaveBtn?.setAttribute("disabled", "true");
     dom.workspaceProjectReloadBtn?.setAttribute("disabled", "true");
-    dom.workspaceProjectSnapshotBtn?.setAttribute("disabled", "true");
     dom.workspaceProjectDeleteBtn?.setAttribute("disabled", "true");
     setAuthScreenStatus("", false);
     syncTakUi();
@@ -8971,7 +8973,6 @@ function syncWorkspaceUi() {
   dom.workspaceProjectCreateBtn?.removeAttribute("disabled");
   dom.workspaceProjectSaveBtn?.removeAttribute("disabled");
   dom.workspaceProjectReloadBtn?.removeAttribute("disabled");
-  dom.workspaceProjectSnapshotBtn?.removeAttribute("disabled");
   const userLabel = state.session.user.fullName || state.session.user.username || state.session.user.email;
   const activeProject = state.session.projects.find((project) => project.id === state.session.activeProjectId) ?? null;
   const activeProjectLabel = activeProject?.name || "Local Browser Draft";
@@ -8981,7 +8982,7 @@ function syncWorkspaceUi() {
   dom.workspaceMenuHeadline.textContent = state.session.activeProjectId ? "Server Project" : "Workspace";
   dom.workspaceProjectMode.textContent = state.session.activeProjectId ? "Server" : "Local";
   dom.workspaceProjectStatus.textContent = state.session.activeProjectId
-    ? `Changes autosave to the server. Use Snapshot to save a named version you can restore later.${activeTakProfile ? ` TAK enabled via ${activeTakProfile.label || activeTakProfile.serverHost}.` : " TAK is not enabled for this project."}`
+    ? `Changes autosave to the server.${activeTakProfile ? ` TAK enabled via ${activeTakProfile.label || activeTakProfile.serverHost}.` : " TAK is not enabled for this project."}`
     : "Local browser draft mode is active. Project-backed work stays on the server; local drafts stay in this browser only.";
 
   dom.workspaceProjectSelect.innerHTML = "";
@@ -10424,6 +10425,8 @@ async function init() {
     dom.view3dToggleBtn.textContent = "2D View";
     dom.cesiumContainer.classList.remove("hidden");
     dom.cesiumCompassBtn.classList.remove("hidden");
+    dom.cesiumInclinometer?.classList.remove("hidden");
+    dom.mapStage?.classList.add("map-stage-3d");
     dom.map.style.visibility = "hidden";
     try {
       await initCesiumIfNeeded();
@@ -10432,6 +10435,8 @@ async function init() {
       dom.view3dToggleBtn.textContent = "3D View";
       dom.cesiumContainer.classList.add("hidden");
       dom.cesiumCompassBtn.classList.add("hidden");
+      dom.cesiumInclinometer?.classList.add("hidden");
+      dom.mapStage?.classList.remove("map-stage-3d");
       dom.map.style.visibility = "visible";
       setStatus("3D view unavailable. Cesium failed to initialize.", true);
       return;
@@ -10442,6 +10447,8 @@ async function init() {
       dom.view3dToggleBtn.textContent = "3D View";
       dom.cesiumContainer.classList.add("hidden");
       dom.cesiumCompassBtn.classList.add("hidden");
+      dom.cesiumInclinometer?.classList.add("hidden");
+      dom.mapStage?.classList.remove("map-stage-3d");
       dom.map.style.visibility = "visible";
       setStatus("3D view unavailable. Cesium viewer could not be created.", true);
       return;
@@ -10728,7 +10735,6 @@ function wireEvents() {
   dom.workspaceProjectSelect?.addEventListener("change", () => onWorkspaceProjectSelectChanged().catch((error) => setStatus(error.message, true)));
   dom.workspaceProjectSaveBtn?.addEventListener("click", () => saveActiveProjectNow().catch((error) => setStatus(error.message, true)));
   dom.workspaceProjectReloadBtn?.addEventListener("click", () => onWorkspaceProjectReload().catch((error) => setStatus(error.message, true)));
-  dom.workspaceProjectSnapshotBtn?.addEventListener("click", () => onWorkspaceProjectSnapshot().catch((error) => setStatus(error.message, true)));
   dom.workspaceProjectDeleteBtn?.addEventListener("click", () => onWorkspaceProjectDelete().catch((error) => setStatus(error.message, true)));
   document.addEventListener("click", (e) => {
     if (!e.target.closest(".ss-picker-wrap")) {
@@ -11277,6 +11283,10 @@ function wireEvents() {
   dom.aiChatInput.addEventListener("paste", onAiChatPaste);
   dom.aiChatInput.addEventListener("keydown", onAiChatKeyDown);
   dom.aiChatInput.addEventListener("input", onAiChatInput);
+  dom.aiChatResizeHandle?.addEventListener("pointerdown", beginAiChatPromptResize);
+  window.addEventListener("pointermove", onAiChatPromptResize);
+  window.addEventListener("pointerup", endAiChatPromptResize);
+  window.addEventListener("pointercancel", endAiChatPromptResize);
   dom.aiAddAttachmentBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleAiAttachmentMenu(); });
   dom.aiFileInput.addEventListener("change", onAiFileInputChange);
   dom.aiAddCurrentMapViewOption?.addEventListener("click", (e) => {
@@ -15413,6 +15423,49 @@ function wait(ms) {
 }
 
 // â”€â”€ Enter-to-send & @mention â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+let _aiChatPromptResizeState = null;
+
+function beginAiChatPromptResize(event) {
+  if (!dom.aiChatInput || event.button !== 0) {
+    return;
+  }
+  event.preventDefault();
+  event.stopPropagation();
+  const inputRect = dom.aiChatInput.getBoundingClientRect();
+  const panelRect = dom.aiChatInput.closest(".ai-panel")?.getBoundingClientRect();
+  const panelLimit = panelRect?.height ? panelRect.height * 0.48 : window.innerHeight * 0.36;
+  _aiChatPromptResizeState = {
+    pointerId: event.pointerId,
+    startY: event.clientY,
+    startHeight: inputRect.height,
+    maxHeight: Math.max(140, Math.min(380, panelLimit)),
+  };
+  dom.aiChatResizeHandle?.setPointerCapture?.(event.pointerId);
+  document.body.classList.add("ai-prompt-resizing");
+}
+
+function onAiChatPromptResize(event) {
+  if (!_aiChatPromptResizeState || !dom.aiChatInput || event.pointerId !== _aiChatPromptResizeState.pointerId) {
+    return;
+  }
+  event.preventDefault();
+  const nextHeight = clamp(
+    _aiChatPromptResizeState.startHeight + (_aiChatPromptResizeState.startY - event.clientY),
+    88,
+    _aiChatPromptResizeState.maxHeight,
+  );
+  dom.aiChatInput.style.height = `${nextHeight}px`;
+}
+
+function endAiChatPromptResize(event) {
+  if (!_aiChatPromptResizeState || (event.pointerId != null && event.pointerId !== _aiChatPromptResizeState.pointerId)) {
+    return;
+  }
+  dom.aiChatResizeHandle?.releasePointerCapture?.(_aiChatPromptResizeState.pointerId);
+  _aiChatPromptResizeState = null;
+  document.body.classList.remove("ai-prompt-resizing");
+}
 
 function onAiChatKeyDown(event) {
   // Navigate slash command dropdown
@@ -27316,6 +27369,8 @@ async function toggle3dView() {
   dom.view3dToggleBtn.textContent = state.view3dEnabled ? "2D View" : "3D View";
   dom.cesiumContainer.classList.toggle("hidden", !state.view3dEnabled);
   dom.cesiumCompassBtn.classList.toggle("hidden", !state.view3dEnabled);
+  dom.cesiumInclinometer?.classList.toggle("hidden", !state.view3dEnabled);
+  dom.mapStage?.classList.toggle("map-stage-3d", state.view3dEnabled);
   dom.map.style.visibility = state.view3dEnabled ? "hidden" : "visible";
   if (!state.view3dEnabled) removeCesium3dTerrainPopup();
 
@@ -27334,6 +27389,8 @@ async function toggle3dView() {
       dom.view3dToggleBtn.textContent = "3D View";
       dom.cesiumContainer.classList.add("hidden");
       dom.cesiumCompassBtn.classList.add("hidden");
+      dom.cesiumInclinometer?.classList.add("hidden");
+      dom.mapStage?.classList.remove("map-stage-3d");
       dom.map.style.visibility = "visible";
       setStatus("3D view unavailable. Cesium failed to initialize.", true);
       updatePlacementInteractionState();
@@ -27699,8 +27756,19 @@ function updateCesiumCompass() {
     return;
   }
 
-  const headingDegrees = window.Cesium.Math.toDegrees(state.cesiumViewer.camera.heading);
+  const camera = state.cesiumViewer.camera;
+  const headingDegrees = window.Cesium.Math.toDegrees(camera.heading);
+  const pitchDegrees = window.Cesium.Math.toDegrees(camera.pitch);
+  const rollDegrees = window.Cesium.Math.toDegrees(camera.roll);
+  const tiltDegrees = clamp(90 + pitchDegrees, 0, 90);
+  const normalizedRoll = ((rollDegrees + 540) % 360) - 180;
   dom.cesiumCompassRose.style.transform = `rotate(${-headingDegrees}deg)`;
+  if (dom.cesiumInclinometer) {
+    dom.cesiumInclinometer.style.setProperty("--tilt-offset", `${clamp(12 - (tiltDegrees / 90) * 24, -12, 12)}px`);
+    dom.cesiumInclinometer.style.setProperty("--roll-angle", `${-normalizedRoll}deg`);
+  }
+  if (dom.cesiumPitchValue) dom.cesiumPitchValue.textContent = `${Math.round(tiltDegrees)}°`;
+  if (dom.cesiumRollValue) dom.cesiumRollValue.textContent = `${Math.round(normalizedRoll)}°`;
 }
 
 function resetCesiumNorthUp() {

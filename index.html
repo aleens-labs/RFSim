@@ -159,7 +159,6 @@
                 <button id="workspaceProjectCreateBtn" class="primary-button small" type="button">New Project</button>
                 <button id="workspaceProjectSaveBtn" class="ghost-button small" type="button">Save Now</button>
                 <button id="workspaceProjectReloadBtn" class="ghost-button small" type="button">Reload</button>
-                <button id="workspaceProjectSnapshotBtn" class="ghost-button small" type="button">Snapshot</button>
                 <button id="workspaceProjectDeleteBtn" class="ghost-button small danger-button" type="button">Delete Project</button>
               </div>
               <div id="workspaceAutosaveStatus" class="workspace-autosave-status hidden">
@@ -240,7 +239,7 @@
                 <div id="mapContentsActions" class="button-row map-panel-actions">
                 <div class="terrain-heatmap-button-shell">
                   <button id="terrainHeatmapBtn" class="ghost-button small icon-button mc-icon-btn terrain-heatmap-btn" type="button" aria-label="Toggle Terrain Heatmap" aria-pressed="false" data-label="Heatmap">
-                    <svg class="terrain-heatmap-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <svg class="terrain-heatmap-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                       <defs>
                         <clipPath id="terrainHeatmapIconClip">
                           <rect x="3.25" y="4" width="17.5" height="16" rx="2.2"/>
@@ -271,8 +270,6 @@
                         <rect x="7.65" y="16" width="4.4" height="4" fill="#0ea5e9"/>
                         <rect x="12.05" y="16" width="4.4" height="4" fill="#65a30d"/>
                         <rect x="16.45" y="16" width="4.4" height="4" fill="#f59e0b"/>
-                        <path d="M3.8 15.9C6.3 14.3 7.7 15.1 9.6 13.7C11.7 12.2 11.8 9.2 14.7 8.4C16.5 7.9 18.1 8.5 20.2 7.2" stroke="#0f172a" stroke-width="2.4" stroke-linecap="round" opacity="0.24"/>
-                        <path d="M3.8 15.9C6.3 14.3 7.7 15.1 9.6 13.7C11.7 12.2 11.8 9.2 14.7 8.4C16.5 7.9 18.1 8.5 20.2 7.2" stroke="#f8fbff" stroke-width="1.25" stroke-linecap="round"/>
                       </g>
                       <path d="M4.4 20.2H20.1M20.9 5V18.6" stroke="url(#terrainHeatmapIconFrame)" stroke-width="1" stroke-linecap="round"/>
                     </svg>
@@ -292,14 +289,21 @@
                 </div>
                 <div class="terrain-heatmap-button-shell">
                   <button id="terrainContourBtn" class="ghost-button small icon-button mc-icon-btn terrain-contour-btn" type="button" aria-label="Toggle Terrain Contours" aria-pressed="false" data-label="Contours">
-                    <svg class="terrain-contour-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                      <rect x="3" y="3.25" width="18" height="17.5" rx="2.6" fill="#0b1220" stroke="rgba(219,234,254,0.42)" stroke-width="1"/>
-                      <path d="M5.4 16.4C7.1 18 10.3 18.5 13.5 17.6C17.3 16.5 19.3 13.9 18.1 11.6C16.9 9.3 12.8 8.3 9.1 9.5C6.2 10.4 4.6 12.5 5.4 14.4" stroke="#38bdf8" stroke-width="1.15" stroke-linecap="round"/>
-                      <path d="M8 14.8C9.1 15.8 11.3 16.2 13.3 15.5C15.5 14.8 16.7 13.2 16 11.9C15.3 10.6 12.8 10.1 10.7 10.8C9.1 11.3 8.1 12.5 8 13.6" stroke="#7dd3fc" stroke-width="1.05" stroke-linecap="round"/>
-                      <path d="M10.3 13.7C10.8 14.3 12.2 14.4 13.2 14C14.2 13.6 14.7 12.8 14.3 12.2C13.9 11.6 12.6 11.4 11.6 11.8C10.8 12.1 10.4 12.6 10.3 13.1" stroke="#f8fbff" stroke-width="0.95" stroke-linecap="round"/>
-                      <path d="M4.9 7.2C7.2 5.7 9.2 5.8 11.5 6.5C14.6 7.4 17.4 6.8 19.2 5.3" stroke="#34d399" stroke-width="1.1" stroke-linecap="round"/>
-                      <path d="M4.8 19.2H18.7" stroke="#facc15" stroke-width="1" stroke-linecap="round"/>
-                      <path d="M18.7 17.2V19.2" stroke="#facc15" stroke-width="1" stroke-linecap="round"/>
+                    <svg class="terrain-contour-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <defs>
+                        <clipPath id="terrainContourIconClip">
+                          <rect x="2.25" y="2.75" width="19.5" height="18.5" rx="2.8"/>
+                        </clipPath>
+                      </defs>
+                      <rect x="2.25" y="2.75" width="19.5" height="18.5" rx="2.8" fill="#0b1220" stroke="rgba(219,234,254,0.46)" stroke-width="1"/>
+                      <g clip-path="url(#terrainContourIconClip)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M2.8 6.1C5.6 4.7 8.2 4.9 10.7 6C13.4 7.2 16.5 6.9 21.5 4.8" stroke="#38bdf8" stroke-width="1.2" opacity="0.9"/>
+                        <path d="M2.4 10.2C5.7 8.2 8.9 8.2 11.8 9.9C14.9 11.7 17.8 11.2 21.9 8.7" stroke="#7dd3fc" stroke-width="1.15"/>
+                        <path d="M3 18.7C5.6 17 8.3 16.8 10.9 17.8C14.4 19.2 17.5 18.6 21.4 16.2" stroke="#38bdf8" stroke-width="1.15" opacity="0.85"/>
+                        <path d="M5.9 14.1C6.1 11.3 9.1 9.5 12.4 10.1C16.1 10.8 18.5 13.2 17.5 15.5C16.5 17.8 12.4 18.7 9.2 17.2C7.1 16.2 5.8 15 5.9 14.1Z" stroke="#e0f2fe" stroke-width="1.15"/>
+                        <path d="M8.5 14.3C8.7 12.8 10.5 11.9 12.6 12.2C14.7 12.6 16 13.9 15.5 15.1C15 16.3 12.7 16.9 10.9 16.2C9.5 15.6 8.4 15 8.5 14.3Z" stroke="#93c5fd" stroke-width="1.05"/>
+                        <path d="M10.9 14.5C11.1 13.8 12.1 13.4 13 13.6C14 13.8 14.5 14.4 14.2 15C13.9 15.6 12.8 15.9 12 15.6C11.3 15.3 10.8 14.9 10.9 14.5Z" stroke="#38bdf8" stroke-width="0.95"/>
+                      </g>
                     </svg>
                   </button>
                   <div id="terrainContourDropdown" class="terrain-heatmap-dropdown terrain-contour-dropdown hidden">
@@ -678,6 +682,16 @@
             <span class="cesium-compass-north">N</span>
           </span>
         </button>
+        <div id="cesiumInclinometer" class="cesium-inclinometer hidden" aria-label="3D camera inclinometer">
+          <div class="cesium-inclinometer-dial" aria-hidden="true">
+            <span class="cesium-inclinometer-horizon"></span>
+            <span class="cesium-inclinometer-center"></span>
+          </div>
+          <div class="cesium-inclinometer-readout">
+            <span><strong id="cesiumPitchValue">--</strong> Tilt</span>
+            <span><strong id="cesiumRollValue">--</strong> Roll</span>
+          </div>
+        </div>
         <div class="map-overlay bottom-center">
           <div id="undoBanner" class="undo-banner hidden" role="status" aria-live="polite">
             <span id="undoBannerMsg">Deleted item</span>
@@ -1512,6 +1526,7 @@
             Chat Prompt
             <div class="ai-textarea-flip">
               <textarea id="aiChatInput" rows="4" placeholder="Ask anything, or type / for RF analysis commands, @ to mention map items. Paste images directly." disabled></textarea>
+              <button id="aiChatResizeHandle" class="ai-textarea-resize-handle" type="button" aria-label="Resize chat prompt" title="Drag up to expand the chat prompt"></button>
             </div>
           </label>
         </div>
