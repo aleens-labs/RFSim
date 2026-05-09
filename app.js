@@ -36666,7 +36666,7 @@ async function toggleAnalyticsUserServerKey() {
 function ensureAnalyticsChrome() {
   const titleNote = document.querySelector("#analyticsModal .emitter-modal-title-group p");
   if (titleNote) {
-    titleNote.textContent = "Usage monitoring for users, projects, prompts, providers, and token spend. Visible only to workspace admins.";
+    titleNote.textContent = "Admin dashboard for user activity, AI demand, project usage, provider mix, and token spend.";
   }
 
   const filterBar = dom.analyticsSearchInput?.closest(".analytics-filter-bar");
@@ -36691,18 +36691,25 @@ function ensureAnalyticsChrome() {
     : null;
   if (!visitCanvas || !tokenCanvas || !visitTitle || !tokenTitle) return;
 
-  const makeSidebarCard = (titleNode, contentNode) => {
+  const makeSidebarCard = (titleNode, contentNode, noteId = "") => {
     const card = document.createElement("section");
     card.className = "analytics-sidebar-card";
     card.appendChild(titleNode);
     card.appendChild(contentNode);
+    if (noteId) {
+      const note = document.createElement("div");
+      note.id = noteId;
+      note.className = "analytics-chart-note";
+      note.textContent = "Loading...";
+      card.appendChild(note);
+    }
     return card;
   };
 
-  visitCanvas.width = 260;
-  visitCanvas.height = 140;
-  tokenCanvas.width = 260;
-  tokenCanvas.height = 160;
+  visitCanvas.width = 320;
+  visitCanvas.height = 150;
+  tokenCanvas.width = 320;
+  tokenCanvas.height = 168;
 
   const quickTotalsCard = document.createElement("section");
   quickTotalsCard.className = "analytics-sidebar-card";
@@ -36729,8 +36736,8 @@ function ensureAnalyticsChrome() {
   `;
 
   sidebar.replaceChildren(
-    makeSidebarCard(visitTitle, visitCanvas),
-    makeSidebarCard(tokenTitle, tokenCanvas),
+    makeSidebarCard(visitTitle, visitCanvas, "analyticsVisitChartNote"),
+    makeSidebarCard(tokenTitle, tokenCanvas, "analyticsTokenChartNote"),
     quickTotalsCard
   );
   sidebar.dataset.enhanced = "true";
@@ -36781,8 +36788,30 @@ function renderAnalyticsMeta() {
     : `${totalRows} ${tabLabel}`;
 }
 
+function setAnalyticsText(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = value;
+}
+
+function formatAnalyticsPercent(numerator, denominator) {
+  const num = Number(numerator ?? 0) || 0;
+  const den = Number(denominator ?? 0) || 0;
+  if (den <= 0) return "0%";
+  return `${Math.round((num / den) * 100)}%`;
+}
+
+function getTopAnalyticsRow(rows = [], metric = "total_tokens") {
+  return [...rows]
+    .filter(Boolean)
+    .sort((a, b) => (Number(b?.[metric] ?? 0) || 0) - (Number(a?.[metric] ?? 0) || 0))[0] ?? null;
+}
+
 function renderAnalyticsHighlights() {
   const summary = (_analytics.data ?? getEmptyAnalyticsPayload()).summary ?? {};
+  const users = _analytics.data?.users ?? [];
+  const providers = _analytics.data?.providers ?? [];
+  const intents = _analytics.data?.intents ?? [];
+  const daily = _analytics.data?.daily ?? [];
   const inputEl = document.getElementById("analyticsInputTokens");
   const outputEl = document.getElementById("analyticsOutputTokens");
   const snapshotsEl = document.getElementById("analyticsSnapshots");
@@ -36791,6 +36820,56 @@ function renderAnalyticsHighlights() {
   if (outputEl) outputEl.textContent = formatAnalyticsCompactNumber(summary.total_output_tokens);
   if (snapshotsEl) snapshotsEl.textContent = formatAnalyticsCompactNumber(summary.total_snapshots);
   if (active7dEl) active7dEl.textContent = formatAnalyticsCompactNumber(summary.active_users_7d);
+
+  const registeredUsers = Number(summary.registered_users ?? 0) || 0;
+  const active7d = Number(summary.active_users_7d ?? 0) || 0;
+  const active30d = Number(summary.active_users_30d ?? 0) || 0;
+  const aiRequests = Number(summary.ai_requests ?? 0) || 0;
+  const totalTokens = Number(summary.total_tokens ?? 0) || 0;
+  const avgTokens = aiRequests > 0 ? Math.round(totalTokens / aiRequests) : 0;
+  const visits7d = daily.slice(-7).reduce((sum, row) => sum + (Number(row?.total_visits ?? 0) || 0), 0);
+  const visits30d = daily.slice(-30).reduce((sum, row) => sum + (Number(row?.total_visits ?? 0) || 0), 0);
+  const topUser = getTopAnalyticsRow(users, "total_tokens");
+  const topUserTokens = Number(topUser?.total_tokens ?? 0) || 0;
+  const topUserShare = formatAnalyticsPercent(topUserTokens, totalTokens);
+  const topIntent = getTopAnalyticsRow(intents, "ai_requests") ?? getTopAnalyticsRow(intents, "total_tokens");
+  const topProvider = getTopAnalyticsRow(providers, "request_count") ?? getTopAnalyticsRow(providers, "total_tokens");
+  const aiUserCount = users.filter((user) => (Number(user?.ai_request_count ?? 0) || 0) > 0).length;
+
+  setAnalyticsText("analyticsInsightReadout", `${formatAnalyticsCompactNumber(active7d)} active this week`);
+  setAnalyticsText(
+    "analyticsInsightReadoutDetail",
+    `${formatAnalyticsCompactNumber(aiRequests)} AI requests at ${formatAnalyticsCompactNumber(avgTokens)} tokens/request. 30-day activity is ${formatAnalyticsPercent(active30d, registeredUsers)} of registered users.`
+  );
+  setAnalyticsText("analyticsInsightSpend", topUser?.username || "No token use");
+  setAnalyticsText(
+    "analyticsInsightSpendDetail",
+    topUser
+      ? `${topUserShare} of all tokens from ${formatAnalyticsCompactNumber(topUserTokens)} tokens. ${formatAnalyticsCompactNumber(aiUserCount)} users have made AI requests.`
+      : "No AI token spend has been recorded yet."
+  );
+  setAnalyticsText("analyticsInsightIntent", formatAnalyticsIntentLabel(topIntent?.intent_category));
+  setAnalyticsText(
+    "analyticsInsightIntentDetail",
+    topIntent
+      ? `${formatAnalyticsCompactNumber(topIntent.ai_requests)} requests, ${formatAnalyticsCompactNumber(topIntent.total_tokens)} tokens.`
+      : "No categorized AI requests yet."
+  );
+  setAnalyticsText("analyticsInsightProvider", formatAnalyticsDisplayLabel(topProvider?.provider));
+  setAnalyticsText(
+    "analyticsInsightProviderDetail",
+    topProvider
+      ? `${formatAnalyticsCompactNumber(topProvider.request_count)} requests from ${formatAnalyticsCompactNumber(topProvider.user_count)} users.`
+      : "No provider activity yet."
+  );
+  setAnalyticsText(
+    "analyticsVisitChartNote",
+    `${formatAnalyticsCompactNumber(visits7d)} visits in 7 days, ${formatAnalyticsCompactNumber(visits30d)} in 30 days.`
+  );
+  setAnalyticsText(
+    "analyticsTokenChartNote",
+    totalTokens ? `${formatAnalyticsCompactNumber(totalTokens)} total tokens across ${formatAnalyticsCompactNumber(aiUserCount)} AI users.` : "No token usage recorded yet."
+  );
 }
 
 function setAnalyticsOpenState(isOpen) {
@@ -37115,20 +37194,54 @@ function drawVisitSparkline() {
   const W = canvas.width;
   const H = canvas.height;
   ctx.clearRect(0, 0, W, H);
-  if (!daily.length) return;
+  ctx.save();
+  ctx.font = "10px sans-serif";
+  if (!daily.length) {
+    ctx.fillStyle = "rgba(148,163,184,0.74)";
+    ctx.fillText("No visit data", 12, 24);
+    ctx.restore();
+    return;
+  }
   const counts = daily.map((d) => Number(d.total_visits ?? 0) || 0);
   const maxVal = Math.max(1, ...counts);
-  const pad = { top: 8, bottom: 6, left: 4, right: 4 };
-  const barW = Math.max(1, (W - pad.left - pad.right) / counts.length - 1);
+  const avgVal = counts.reduce((sum, value) => sum + value, 0) / counts.length;
+  const pad = { top: 12, bottom: 18, left: 28, right: 8 };
+  const chartW = W - pad.left - pad.right;
+  const chartH = H - pad.top - pad.bottom;
+  const step = chartW / counts.length;
+  const barW = Math.max(2, Math.min(8, step - 2));
   const accent = "#8fb7ff";
-  const accentFaint = "rgba(143,183,255,0.18)";
+  const accentFaint = "rgba(143,183,255,0.22)";
+  ctx.strokeStyle = "rgba(148,163,184,0.16)";
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 3; i += 1) {
+    const y = pad.top + (chartH / 3) * i;
+    ctx.beginPath();
+    ctx.moveTo(pad.left, y);
+    ctx.lineTo(W - pad.right, y);
+    ctx.stroke();
+  }
+  ctx.fillStyle = "rgba(148,163,184,0.72)";
+  ctx.fillText(formatAnalyticsCompactNumber(maxVal), 2, pad.top + 4);
+  ctx.fillText("0", 16, H - pad.bottom + 3);
   counts.forEach((val, i) => {
-    const x = pad.left + i * ((W - pad.left - pad.right) / counts.length);
-    const barH = ((val / maxVal) * (H - pad.top - pad.bottom));
+    const x = pad.left + i * step + Math.max(0, (step - barW) / 2);
+    const barH = Math.max(val > 0 ? 2 : 1, (val / maxVal) * chartH);
     const y = H - pad.bottom - barH;
     ctx.fillStyle = val > 0 ? accent : accentFaint;
     ctx.fillRect(x, y, barW, barH);
   });
+  const avgY = H - pad.bottom - ((avgVal / maxVal) * chartH);
+  ctx.setLineDash([4, 4]);
+  ctx.strokeStyle = "rgba(110,231,183,0.72)";
+  ctx.beginPath();
+  ctx.moveTo(pad.left, avgY);
+  ctx.lineTo(W - pad.right, avgY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = "rgba(110,231,183,0.9)";
+  ctx.fillText("avg", W - pad.right - 24, Math.max(pad.top + 9, avgY - 4));
+  ctx.restore();
 }
 
 function drawTokenBarChart() {
@@ -37138,17 +37251,44 @@ function drawTokenBarChart() {
   const W = canvas.width;
   const H = canvas.height;
   ctx.clearRect(0, 0, W, H);
+  ctx.save();
+  ctx.font = "10px sans-serif";
   const entries = (_analytics.data?.users ?? [])
     .map((row) => [row.username || "(unknown)", Number(row.total_tokens ?? 0) || 0])
     .filter(([, tokens]) => tokens > 0)
     .sort((a, b) => b[1] - a[1])
-    .slice(0, 8);
-  if (!entries.length) return;
+    .slice(0, 6);
+  if (!entries.length) {
+    ctx.fillStyle = "rgba(148,163,184,0.74)";
+    ctx.fillText("No token usage", 12, 24);
+    ctx.restore();
+    return;
+  }
 
   const maxVal = Math.max(1, entries[0][1]);
-  const rowH = Math.floor((H - 4) / entries.length);
+  const rowH = Math.floor((H - 8) / entries.length);
+  const labelW = Math.min(92, Math.max(70, W * 0.3));
+  const valueW = 50;
+  const barAreaW = Math.max(40, W - labelW - valueW - 16);
   const colors = ["#8fb7ff", "#6ee7b7", "#fbbf24", "#f87171", "#a78bfa", "#34d399", "#fb923c", "#60a5fa"];
   entries.forEach(([username, tokens], i) => {
+    const label = username.length > 14 ? `${username.slice(0, 13)}...` : username;
+    const trackX = labelW;
+    const rowY = 5 + i * rowH;
+    const trackY = rowY + Math.max(4, Math.floor(rowH * 0.35));
+    const trackH = Math.max(7, Math.min(12, rowH - 8));
+    const newBarW = Math.max(2, (tokens / maxVal) * barAreaW);
+    ctx.fillStyle = "rgba(148,163,184,0.13)";
+    ctx.fillRect(trackX, trackY, barAreaW, trackH);
+    ctx.fillStyle = colors[i % colors.length];
+    ctx.fillRect(trackX, trackY, newBarW, trackH);
+    ctx.fillStyle = "rgba(226,232,240,0.82)";
+    ctx.fillText(label, 0, trackY + trackH - 1);
+    ctx.fillStyle = "rgba(203,213,225,0.82)";
+    ctx.textAlign = "right";
+    ctx.fillText(formatAnalyticsCompactNumber(tokens), W - 2, trackY + trackH - 1);
+    ctx.textAlign = "left";
+    return;
     const barW = Math.max(2, (tokens / maxVal) * (W - 8));
     const y = 2 + i * rowH;
     ctx.fillStyle = colors[i % colors.length];
@@ -37157,6 +37297,7 @@ function drawTokenBarChart() {
     ctx.font = `${Math.min(10, rowH - 2)}px sans-serif`;
     ctx.fillText(username.length > 16 ? `${username.slice(0, 15)}â€¦` : username, 4, y + rowH - 3);
   });
+  ctx.restore();
 }
 
 function ensureAnalyticsInitialized() {
