@@ -829,6 +829,7 @@
           <div id="toContextMenu" class="to-context-menu hidden">
             <button class="to-ctx-item" id="toCtxLinkParent" type="button">Link/Unlink Parent</button>
             <button class="to-ctx-item" id="toCtxLinkChild" type="button">Link/Unlink Child</button>
+            <button class="to-ctx-item" id="toCtxEmitters" type="button">Link/Unlink Emitters</button>
             <hr class="to-ctx-divider">
             <button class="to-ctx-item" id="toCtxEdit" type="button">Edit Unit</button>
             <button class="to-ctx-item" id="toCtxPlace" type="button">Place / Relocate on Map</button>
@@ -888,6 +889,62 @@
           <div class="emitter-footer-actions">
             <button id="toEditCancelBtn" class="ghost-button" type="button">Cancel</button>
             <button id="toEditSaveBtn" class="primary-button" type="button">Save Changes</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="toEmitterManagerModal" class="emitter-modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="toEmitterManagerTitle">
+      <div class="emitter-modal to-emitter-manager-modal">
+        <div class="emitter-modal-header">
+          <div class="emitter-modal-title-group">
+            <h2 id="toEmitterManagerTitle">Link / Unlink Emitters</h2>
+            <p id="toEmitterManagerSubtitle">Manage RF emitters linked to this unit.</p>
+          </div>
+          <button id="toEmitterManagerCloseBtn" class="ghost-button small icon-button" type="button" aria-label="Close">&#10005;</button>
+        </div>
+        <div class="emitter-modal-body to-emitter-manager-body">
+          <div class="to-emitter-manager-toolbar">
+            <button id="toEmitterLinkExistingBtn" class="primary-button small" type="button">Link Existing Emitter</button>
+            <button id="toEmitterChooserBackBtn" class="ghost-button small hidden" type="button">&#8592; Back to Linked Emitters</button>
+          </div>
+          <div id="toEmitterManagerGrid" class="to-emitter-manager-grid">
+            <section class="to-emitter-manager-section">
+              <div class="to-emitter-manager-section-header">
+                <div>
+                  <strong>Linked Emitters</strong>
+                  <span class="fine-print">Right-click a linked emitter to unlink it.</span>
+                </div>
+                <span id="toEmitterLinkedCount" class="to-emitter-manager-count">0</span>
+              </div>
+              <div id="toEmitterLinkedList" class="to-emitter-manager-list"></div>
+              <div id="toEmitterLinkedEmpty" class="to-emitter-manager-empty hidden">
+                <strong>No emitters linked.</strong>
+                <span>Select <em>Link Existing Emitter</em> to attach one of your available emitters.</span>
+              </div>
+            </section>
+            <section id="toEmitterAvailablePanel" class="to-emitter-manager-section hidden">
+              <div class="to-emitter-manager-section-header">
+                <div>
+                  <strong>Available Emitters</strong>
+                  <span class="fine-print">Only unlinked emitters appear here.</span>
+                </div>
+                <span id="toEmitterAvailableCount" class="to-emitter-manager-count">0</span>
+              </div>
+              <div id="toEmitterAvailableList" class="to-emitter-manager-list"></div>
+              <div id="toEmitterAvailableEmpty" class="to-emitter-manager-empty hidden">
+                <strong>No unlinked emitters available.</strong>
+                <span>Create a new emitter or unlink one from another unit first.</span>
+              </div>
+            </section>
+          </div>
+          <div id="toEmitterLinkedContextMenu" class="to-context-menu hidden">
+            <button id="toEmitterLinkedContextUnlink" class="to-ctx-item to-ctx-danger" type="button">Unlink Emitter</button>
+          </div>
+        </div>
+        <div class="emitter-modal-footer">
+          <div id="toEmitterManagerValidation" class="emitter-validation"></div>
+          <div class="emitter-footer-actions">
+            <button id="toEmitterManagerDoneBtn" class="primary-button" type="button">Done</button>
           </div>
         </div>
       </div>
@@ -3501,7 +3558,7 @@
   <script src="https://cdn.jsdelivr.net/npm/mgrs@1.0.0/dist/mgrs.min.js"></script>
   <script src="./app-config.js"></script>
   <script src="./milstd-symbol-catalog.js?v=20260508-2"></script>
-  <script type="module" src="./app.js?v=20260430-87"></script>
+  <script type="module" src="./src/main.js"></script>
   <script>
   (function () {
     const authCanvas = document.getElementById('authWaterfall');

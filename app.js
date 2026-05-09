@@ -1227,724 +1227,24 @@ function generateId() {
   return `id-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-// â”€â”€â”€ Emitter Library â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// Each entry: emitterType â†’ { label, programs: { programKey â†’ profile } }
-// Profile schema mirrors the emitter modal fields.
-const RADAR_EMITTER_LIBRARY = {
-  "long-range-early-warning-radar": {
-    label: "Long-Range Early Warning Radar",
-    programs: {
-      default: {
-        label: "Volume Search",
-        type: "sensor",
-        force: "enemy",
-        icon: "sensor",
-        color: "#ef4444",
-        notes: "Broad-area long-range surveillance radar optimized for wide azimuth coverage and early warning against aircraft and cruise-missile sized targets.",
-        rf: { frequencyMHz: 1250, bandwidthKHz: 8000, modulation: "Pulse", waveform: "Volume Search", duplex: "simplex", channelSpacingKHz: 5000 },
-        tx: { powerW: 850000, dutyCycle: 0.18, papr: 0, spectralEfficiency: null },
-        rx: { sensitivityDbm: -103, noiseFigDb: 4, requiredSnrDb: 13, acrDb: 80, bdrDb: 90 },
-        antenna: { type: "phased-array", gainDbi: 33, pattern: "sectoral", polarization: "linear", heightM: 14, cableLossDb: 1.2, systemLossDb: 4 },
-        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true, nvisEnabled: false, ionoModel: "simple", timeDayEffects: false, solarIndex: null },
-        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 120, adaptiveDataRate: false, satcomEnabled: false, satType: "", satUplinkMHz: null, satDownlinkMHz: null, satGainDbi: null },
-      },
-    },
-  },
-  "vhf-early-warning-radar": {
-    label: "VHF Early Warning Radar",
-    programs: {
-      default: {
-        label: "Low-Band Search",
-        type: "sensor",
-        force: "enemy",
-        icon: "sensor",
-        color: "#ef4444",
-        notes: "Low-band long-range surveillance radar emphasizing long detection range and reduced sensitivity to shaping, at the cost of coarser track quality.",
-        rf: { frequencyMHz: 180, bandwidthKHz: 3000, modulation: "Pulse", waveform: "Low-Band Search", duplex: "simplex", channelSpacingKHz: 1000 },
-        tx: { powerW: 600000, dutyCycle: 0.12, papr: 0, spectralEfficiency: null },
-        rx: { sensitivityDbm: -106, noiseFigDb: 3, requiredSnrDb: 10, acrDb: 75, bdrDb: 88 },
-        antenna: { type: "array", gainDbi: 24, pattern: "sectoral", polarization: "horizontal", heightM: 18, cableLossDb: 1.5, systemLossDb: 4.5 },
-        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true, nvisEnabled: false, ionoModel: "simple", timeDayEffects: false, solarIndex: null },
-        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 180, adaptiveDataRate: false, satcomEnabled: false, satType: "", satUplinkMHz: null, satDownlinkMHz: null, satGainDbi: null },
-      },
-    },
-  },
-  "3d-acquisition-radar": {
-    label: "3D Acquisition Radar",
-    programs: {
-      default: {
-        label: "3D Search",
-        type: "sensor",
-        force: "enemy",
-        icon: "sensor",
-        color: "#ef4444",
-        notes: "Altitude-capable surveillance and track-initiation radar for medium-to-long-range air defense batteries.",
-        rf: { frequencyMHz: 2900, bandwidthKHz: 6000, modulation: "Pulse-Doppler", waveform: "3D Search", duplex: "simplex", channelSpacingKHz: 2500 },
-        tx: { powerW: 320000, dutyCycle: 0.16, papr: 0, spectralEfficiency: null },
-        rx: { sensitivityDbm: -102, noiseFigDb: 4, requiredSnrDb: 12, acrDb: 78, bdrDb: 88 },
-        antenna: { type: "phased-array", gainDbi: 31, pattern: "sectoral", polarization: "linear", heightM: 12, cableLossDb: 1, systemLossDb: 3.5 },
-        prop: { model: "itu-p526", clutter: "suburban", terrainEnabled: true, diffractionEnabled: true, nvisEnabled: false, ionoModel: "simple", timeDayEffects: false, solarIndex: null },
-        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 90, adaptiveDataRate: false, satcomEnabled: false, satType: "", satUplinkMHz: null, satDownlinkMHz: null, satGainDbi: null },
-      },
-    },
-  },
-  "mobile-sector-search-radar": {
-    label: "Mobile Sector Search Radar",
-    programs: {
-      default: {
-        label: "Sector Search",
-        type: "sensor",
-        force: "enemy",
-        icon: "sensor",
-        color: "#ef4444",
-        notes: "Truck-mobile sector search radar for rapid emplacement, gap coverage, and cueing of nearby air-defense elements.",
-        rf: { frequencyMHz: 5600, bandwidthKHz: 4500, modulation: "Pulse-Doppler", waveform: "Sector Search", duplex: "simplex", channelSpacingKHz: 2000 },
-        tx: { powerW: 140000, dutyCycle: 0.14, papr: 0, spectralEfficiency: null },
-        rx: { sensitivityDbm: -100, noiseFigDb: 4.5, requiredSnrDb: 11, acrDb: 72, bdrDb: 84 },
-        antenna: { type: "phased-array", gainDbi: 29, pattern: "directional", polarization: "linear", heightM: 10, cableLossDb: 0.8, systemLossDb: 3.2 },
-        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true, nvisEnabled: false, ionoModel: "simple", timeDayEffects: false, solarIndex: null },
-        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 70, adaptiveDataRate: false, satcomEnabled: false, satType: "", satUplinkMHz: null, satDownlinkMHz: null, satGainDbi: null },
-      },
-    },
-  },
-  "long-range-aesa-surveillance-radar": {
-    label: "Long-Range AESA Surveillance Radar",
-    programs: {
-      default: {
-        label: "AESA Search",
-        type: "sensor",
-        force: "enemy",
-        icon: "sensor",
-        color: "#ef4444",
-        notes: "Modern electronically scanned long-range surveillance radar emphasizing rapid revisit rates, target density handling, and all-weather tracking.",
-        rf: { frequencyMHz: 3400, bandwidthKHz: 10000, modulation: "Pulse-Doppler", waveform: "AESA Search", duplex: "simplex", channelSpacingKHz: 5000 },
-        tx: { powerW: 280000, dutyCycle: 0.2, papr: 0, spectralEfficiency: null },
-        rx: { sensitivityDbm: -101, noiseFigDb: 3.5, requiredSnrDb: 12, acrDb: 82, bdrDb: 90 },
-        antenna: { type: "AESA", gainDbi: 35, pattern: "sectoral", polarization: "linear", heightM: 13, cableLossDb: 0.7, systemLossDb: 3.5 },
-        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true, nvisEnabled: false, ionoModel: "simple", timeDayEffects: false, solarIndex: null },
-        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 60, adaptiveDataRate: false, satcomEnabled: false, satType: "", satUplinkMHz: null, satDownlinkMHz: null, satGainDbi: null },
-      },
-    },
-  },
-  "sam-target-acquisition-radar": {
-    label: "SAM Target Acquisition Radar",
-    programs: {
-      default: {
-        label: "Acquisition Search",
-        type: "sensor",
-        force: "enemy",
-        icon: "sensor",
-        color: "#ef4444",
-        notes: "Battery-level target acquisition radar used to search, classify, and hand off tracks to engagement and command elements.",
-        rf: { frequencyMHz: 2700, bandwidthKHz: 5000, modulation: "Pulse-Doppler", waveform: "Acquisition Search", duplex: "simplex", channelSpacingKHz: 2500 },
-        tx: { powerW: 210000, dutyCycle: 0.15, papr: 0, spectralEfficiency: null },
-        rx: { sensitivityDbm: -101, noiseFigDb: 4, requiredSnrDb: 11, acrDb: 76, bdrDb: 86 },
-        antenna: { type: "phased-array", gainDbi: 30, pattern: "sectoral", polarization: "linear", heightM: 11, cableLossDb: 0.9, systemLossDb: 3.4 },
-        prop: { model: "itu-p526", clutter: "suburban", terrainEnabled: true, diffractionEnabled: true, nvisEnabled: false, ionoModel: "simple", timeDayEffects: false, solarIndex: null },
-        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 80, adaptiveDataRate: false, satcomEnabled: false, satType: "", satUplinkMHz: null, satDownlinkMHz: null, satGainDbi: null },
-      },
-    },
-  },
-  "sam-engagement-radar": {
-    label: "SAM Engagement Radar",
-    programs: {
-      default: {
-        label: "Target Track",
-        type: "sensor",
-        force: "enemy",
-        icon: "sensor",
-        color: "#ef4444",
-        notes: "High-gain engagement radar for precision target tracking, missile uplink support, and terminal fire-control tasking.",
-        rf: { frequencyMHz: 9300, bandwidthKHz: 2500, modulation: "Pulse-Doppler", waveform: "Target Track", duplex: "simplex", channelSpacingKHz: 1000 },
-        tx: { powerW: 95000, dutyCycle: 0.1, papr: 0, spectralEfficiency: null },
-        rx: { sensitivityDbm: -98, noiseFigDb: 5, requiredSnrDb: 14, acrDb: 85, bdrDb: 92 },
-        antenna: { type: "phased-array", gainDbi: 38, pattern: "directional", polarization: "linear", heightM: 9, cableLossDb: 0.7, systemLossDb: 3 },
-        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true, nvisEnabled: false, ionoModel: "simple", timeDayEffects: false, solarIndex: null },
-        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 45, adaptiveDataRate: false, satcomEnabled: false, satType: "", satUplinkMHz: null, satDownlinkMHz: null, satGainDbi: null },
-      },
-    },
-  },
-  "missile-track-illumination-radar": {
-    label: "Missile Track / Illumination Radar",
-    programs: {
-      default: {
-        label: "CW Illumination",
-        type: "sensor",
-        force: "enemy",
-        icon: "sensor",
-        color: "#ef4444",
-        notes: "Narrow-beam fire-control radar for terminal target illumination, missile track support, and high-precision engagement updates.",
-        rf: { frequencyMHz: 10300, bandwidthKHz: 1500, modulation: "CW", waveform: "CW Illumination", duplex: "simplex", channelSpacingKHz: 500 },
-        tx: { powerW: 70000, dutyCycle: 0.35, papr: 0, spectralEfficiency: null },
-        rx: { sensitivityDbm: -96, noiseFigDb: 5, requiredSnrDb: 15, acrDb: 88, bdrDb: 94 },
-        antenna: { type: "dish", gainDbi: 41, pattern: "directional", polarization: "linear", heightM: 8, cableLossDb: 0.9, systemLossDb: 3.3 },
-        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true, nvisEnabled: false, ionoModel: "simple", timeDayEffects: false, solarIndex: null },
-        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 35, adaptiveDataRate: false, satcomEnabled: false, satType: "", satUplinkMHz: null, satDownlinkMHz: null, satGainDbi: null },
-      },
-    },
-  },
-  "shorad-fire-control-radar": {
-    label: "SHORAD Fire-Control Radar",
-    programs: {
-      default: {
-        label: "SHORAD Track",
-        type: "sensor",
-        force: "enemy",
-        icon: "sensor",
-        color: "#ef4444",
-        notes: "Short-range fire-control radar supporting mobile SHORAD batteries against helicopters, low flyers, and pop-up threats.",
-        rf: { frequencyMHz: 15700, bandwidthKHz: 1800, modulation: "Pulse-Doppler", waveform: "SHORAD Track", duplex: "simplex", channelSpacingKHz: 750 },
-        tx: { powerW: 45000, dutyCycle: 0.12, papr: 0, spectralEfficiency: null },
-        rx: { sensitivityDbm: -97, noiseFigDb: 5.5, requiredSnrDb: 14, acrDb: 84, bdrDb: 90 },
-        antenna: { type: "AESA", gainDbi: 36, pattern: "directional", polarization: "linear", heightM: 6, cableLossDb: 0.6, systemLossDb: 2.8 },
-        prop: { model: "itu-p526", clutter: "urban", terrainEnabled: true, diffractionEnabled: true, nvisEnabled: false, ionoModel: "simple", timeDayEffects: false, solarIndex: null },
-        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 30, adaptiveDataRate: false, satcomEnabled: false, satType: "", satUplinkMHz: null, satDownlinkMHz: null, satGainDbi: null },
-      },
-    },
-  },
-  "low-altitude-gap-filler-radar": {
-    label: "Low-Altitude Gap-Filler Radar",
-    programs: {
-      default: {
-        label: "Gap Filler Search",
-        type: "sensor",
-        force: "enemy",
-        icon: "sensor",
-        color: "#ef4444",
-        notes: "Medium-range low-altitude surveillance radar intended to cover terrain-mask corridors and hand off low-flying targets to nearby batteries.",
-        rf: { frequencyMHz: 5400, bandwidthKHz: 4200, modulation: "Pulse-Doppler", waveform: "Gap Filler Search", duplex: "simplex", channelSpacingKHz: 1800 },
-        tx: { powerW: 90000, dutyCycle: 0.16, papr: 0, spectralEfficiency: null },
-        rx: { sensitivityDbm: -99, noiseFigDb: 4.5, requiredSnrDb: 11, acrDb: 73, bdrDb: 84 },
-        antenna: { type: "phased-array", gainDbi: 28, pattern: "sectoral", polarization: "linear", heightM: 9, cableLossDb: 0.8, systemLossDb: 3.1 },
-        prop: { model: "itu-p526", clutter: "urban", terrainEnabled: true, diffractionEnabled: true, nvisEnabled: false, ionoModel: "simple", timeDayEffects: false, solarIndex: null },
-        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 55, adaptiveDataRate: false, satcomEnabled: false, satType: "", satUplinkMHz: null, satDownlinkMHz: null, satGainDbi: null },
-      },
-    },
-  },
-  "counter-uas-surveillance-radar": {
-    label: "Counter-UAS Surveillance Radar",
-    programs: {
-      default: {
-        label: "Counter-UAS Search",
-        type: "sensor",
-        force: "enemy",
-        icon: "sensor",
-        color: "#ef4444",
-        notes: "Local-area surveillance radar optimized for small, slow, low targets and short revisit times around defended points.",
-        rf: { frequencyMHz: 9500, bandwidthKHz: 12000, modulation: "Pulse-Doppler", waveform: "Counter-UAS Search", duplex: "simplex", channelSpacingKHz: 4000 },
-        tx: { powerW: 18000, dutyCycle: 0.22, papr: 0, spectralEfficiency: null },
-        rx: { sensitivityDbm: -95, noiseFigDb: 5, requiredSnrDb: 10, acrDb: 68, bdrDb: 80 },
-        antenna: { type: "AESA", gainDbi: 30, pattern: "sectoral", polarization: "linear", heightM: 5, cableLossDb: 0.5, systemLossDb: 2.5 },
-        prop: { model: "itu-p526", clutter: "urban", terrainEnabled: true, diffractionEnabled: true, nvisEnabled: false, ionoModel: "simple", timeDayEffects: false, solarIndex: null },
-        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 20, adaptiveDataRate: false, satcomEnabled: false, satType: "", satUplinkMHz: null, satDownlinkMHz: null, satGainDbi: null },
-      },
-    },
-  },
-  "passive-air-surveillance-receiver-site": {
-    label: "Passive Air-Surveillance Receiver Site",
-    programs: {
-      default: {
-        label: "Passive DF",
-        type: "sensor",
-        force: "enemy",
-        icon: "sensor",
-        color: "#ef4444",
-        notes: "Passive DF and ESM-style site that contributes to the air picture without intentional RF transmission; use for bearing-only or emitter-cueing scenarios.",
-        rf: { frequencyMHz: 1200, bandwidthKHz: 25000, modulation: "Passive", waveform: "Passive DF", duplex: "simplex", channelSpacingKHz: 5000 },
-        tx: { powerW: 0, dutyCycle: 0, papr: 0, spectralEfficiency: null },
-        rx: { sensitivityDbm: -112, noiseFigDb: 3, requiredSnrDb: 6, acrDb: 70, bdrDb: 86 },
-        antenna: { type: "interferometer", gainDbi: 18, pattern: "omnidirectional", polarization: "linear", heightM: 7, cableLossDb: 0.6, systemLossDb: 2.2 },
-        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true, nvisEnabled: false, ionoModel: "simple", timeDayEffects: false, solarIndex: null },
-        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 25, adaptiveDataRate: false, satcomEnabled: false, satType: "", satUplinkMHz: null, satDownlinkMHz: null, satGainDbi: null },
-      },
-    },
-  },
-};
+// Emitter library is loaded lazily on first emitter-editor use to keep the main entry smaller.
+const EMPTY_EMITTER_LIBRARY = Object.freeze({});
+let EMITTER_LIBRARY = EMPTY_EMITTER_LIBRARY;
+let emitterLibraryLoadPromise = null;
 
-const EMITTER_LIBRARY = {
-  "prc-163": {
-    label: "AN/PRC-163 Falcon IV",
-    programs: {
-      "vhf-sincgars": {
-        label: "VHF LOS â€” SINCGARS",
-        rf: { frequencyMHz: 46, bandwidthKHz: 25, modulation: "FHSS", waveform: "SINCGARS", duplex: "half-duplex", channelSpacingKHz: 25 },
-        tx: { powerW: 5, dutyCycle: 0.5, papr: 0, spectralEfficiency: 4.8 },
-        rx: { sensitivityDbm: -107, noiseFigDb: 6, requiredSnrDb: 12, acrDb: 70, bdrDb: 90 },
-        antenna: { type: "whip", gainDbi: 2.15, pattern: "omnidirectional", polarization: "vertical", heightM: 2, cableLossDb: 0.5, systemLossDb: 3 },
-        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true },
-        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 200, adaptiveDataRate: false },
-      },
-      "uhf-los": {
-        label: "UHF LOS â€” Tactical",
-        rf: { frequencyMHz: 370, bandwidthKHz: 25, modulation: "FM", waveform: "analog", duplex: "half-duplex", channelSpacingKHz: 25 },
-        tx: { powerW: 5, dutyCycle: 0.5, papr: 0, spectralEfficiency: 2.4 },
-        rx: { sensitivityDbm: -107, noiseFigDb: 6, requiredSnrDb: 12, acrDb: 65, bdrDb: 85 },
-        antenna: { type: "whip", gainDbi: 2.15, pattern: "omnidirectional", polarization: "vertical", heightM: 2, cableLossDb: 0.5, systemLossDb: 3 },
-        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true },
-        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 150, adaptiveDataRate: false },
-      },
-      "srw-manet": {
-        label: "SRW MANET â€” Soldier Radio",
-        rf: { frequencyMHz: 2400, bandwidthKHz: 5000, modulation: "OFDM", waveform: "SRW", duplex: "full-duplex", channelSpacingKHz: 5000 },
-        tx: { powerW: 2, dutyCycle: 1, papr: 8, spectralEfficiency: 1.5 },
-        rx: { sensitivityDbm: -95, noiseFigDb: 8, requiredSnrDb: 10, acrDb: 30, bdrDb: 60 },
-        antenna: { type: "blade", gainDbi: 0, pattern: "omnidirectional", polarization: "vertical", heightM: 1.5, cableLossDb: 0.3, systemLossDb: 2 },
-        prop: { model: "itu-p526", clutter: "urban", terrainEnabled: true, diffractionEnabled: true },
-        net: { isManet: true, relayCapable: true, maxHops: 8, latencyMs: 50, adaptiveDataRate: true },
-      },
-      "muos-satcom": {
-        label: "MUOS SATCOM â€” WCDMA",
-        rf: { frequencyMHz: 300, bandwidthKHz: 5000, modulation: "QPSK", waveform: "MUOS", duplex: "full-duplex", channelSpacingKHz: 5000 },
-        tx: { powerW: 20, dutyCycle: 1, papr: 6, spectralEfficiency: 2 },
-        rx: { sensitivityDbm: -107, noiseFigDb: 4, requiredSnrDb: 8, acrDb: 60, bdrDb: 80 },
-        antenna: { type: "satcom_patch", gainDbi: 10, pattern: "directional", polarization: "circular", heightM: 1.5, cableLossDb: 1, systemLossDb: 4 },
-        prop: { model: "itu-p528", clutter: "open", terrainEnabled: false, diffractionEnabled: false },
-        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 600, adaptiveDataRate: true, satcomEnabled: true, satType: "GEO", satUplinkMHz: 292, satDownlinkMHz: 243, satGainDbi: 10 },
-      },
-    },
-  },
-  "prc-152a": {
-    label: "AN/PRC-152A Falcon III",
-    programs: {
-      "vhf-los": {
-        label: "VHF LOS â€” SINCGARS",
-        rf: { frequencyMHz: 60, bandwidthKHz: 25, modulation: "FHSS", waveform: "SINCGARS", duplex: "half-duplex", channelSpacingKHz: 25 },
-        tx: { powerW: 5, dutyCycle: 0.5, papr: 0, spectralEfficiency: 4.8 },
-        rx: { sensitivityDbm: -107, noiseFigDb: 6, requiredSnrDb: 12, acrDb: 70, bdrDb: 90 },
-        antenna: { type: "whip", gainDbi: 2.15, pattern: "omnidirectional", polarization: "vertical", heightM: 2, cableLossDb: 0.5, systemLossDb: 3 },
-        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true },
-        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 200, adaptiveDataRate: false },
-      },
-      "anw2": {
-        label: "ANW2 MANET",
-        rf: { frequencyMHz: 1800, bandwidthKHz: 2000, modulation: "OFDM", waveform: "ANW2", duplex: "full-duplex", channelSpacingKHz: 2000 },
-        tx: { powerW: 5, dutyCycle: 1, papr: 6, spectralEfficiency: 2 },
-        rx: { sensitivityDbm: -98, noiseFigDb: 7, requiredSnrDb: 10, acrDb: 40, bdrDb: 70 },
-        antenna: { type: "blade", gainDbi: 0, pattern: "omnidirectional", polarization: "vertical", heightM: 2, cableLossDb: 0.5, systemLossDb: 3 },
-        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true },
-        net: { isManet: true, relayCapable: true, maxHops: 6, latencyMs: 80, adaptiveDataRate: true },
-      },
-    },
-  },
-  "prc-117g": {
-    label: "AN/PRC-117G Falcon III",
-    programs: {
-      "vhf-cmd": {
-        label: "VHF Command Net",
-        rf: { frequencyMHz: 50, bandwidthKHz: 25, modulation: "FM", waveform: "analog", duplex: "half-duplex", channelSpacingKHz: 25 },
-        tx: { powerW: 20, dutyCycle: 0.5, papr: 0, spectralEfficiency: 2.4 },
-        rx: { sensitivityDbm: -107, noiseFigDb: 5, requiredSnrDb: 12, acrDb: 70, bdrDb: 90 },
-        antenna: { type: "whip", gainDbi: 2.15, pattern: "omnidirectional", polarization: "vertical", heightM: 2, cableLossDb: 0.5, systemLossDb: 3 },
-        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true },
-        net: { isManet: false, relayCapable: true, maxHops: 1, latencyMs: 200, adaptiveDataRate: false },
-      },
-      "uhf-satcom-dama": {
-        label: "UHF SATCOM DAMA",
-        rf: { frequencyMHz: 305, bandwidthKHz: 25, modulation: "PSK", waveform: "MUOS", duplex: "full-duplex", channelSpacingKHz: 25 },
-        tx: { powerW: 20, dutyCycle: 1, papr: 3, spectralEfficiency: 1.2 },
-        rx: { sensitivityDbm: -107, noiseFigDb: 4, requiredSnrDb: 8, acrDb: 60, bdrDb: 80 },
-        antenna: { type: "satcom_patch", gainDbi: 10, pattern: "directional", polarization: "circular", heightM: 1.5, cableLossDb: 1, systemLossDb: 4 },
-        prop: { model: "itu-p528", clutter: "open", terrainEnabled: false, diffractionEnabled: false },
-        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 600, adaptiveDataRate: false, satcomEnabled: true, satType: "GEO", satUplinkMHz: 305, satDownlinkMHz: 255, satGainDbi: 10 },
-      },
-      "wb-anw2": {
-        label: "Wideband ANW2",
-        rf: { frequencyMHz: 1500, bandwidthKHz: 5000, modulation: "OFDM", waveform: "ANW2", duplex: "full-duplex", channelSpacingKHz: 5000 },
-        tx: { powerW: 20, dutyCycle: 1, papr: 8, spectralEfficiency: 3 },
-        rx: { sensitivityDbm: -95, noiseFigDb: 6, requiredSnrDb: 10, acrDb: 40, bdrDb: 75 },
-        antenna: { type: "blade", gainDbi: 2, pattern: "omnidirectional", polarization: "vertical", heightM: 2, cableLossDb: 0.5, systemLossDb: 3 },
-        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true },
-        net: { isManet: true, relayCapable: true, maxHops: 6, latencyMs: 60, adaptiveDataRate: true },
-      },
-    },
-  },
-  "prc-160": {
-    label: "AN/PRC-160",
-    programs: {
-      "hf-nvis": {
-        label: "HF NVIS â€” Short Range",
-        rf: { frequencyMHz: 5.5, bandwidthKHz: 3, modulation: "USB", waveform: "ALE", duplex: "half-duplex", channelSpacingKHz: 3 },
-        tx: { powerW: 20, dutyCycle: 0.5, papr: 0, spectralEfficiency: 0.4 },
-        rx: { sensitivityDbm: -110, noiseFigDb: 10, requiredSnrDb: 6, acrDb: 60, bdrDb: 90 },
-        antenna: { type: "dipole", gainDbi: 2, pattern: "omnidirectional", polarization: "horizontal", heightM: 5, cableLossDb: 0.5, systemLossDb: 2 },
-        prop: { model: "hf-skywave", clutter: "open", terrainEnabled: false, diffractionEnabled: false, nvisEnabled: true, ionoModel: "itu-r", timeDayEffects: true, solarIndex: 80 },
-        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 500, adaptiveDataRate: false },
-      },
-      "hf-longhaul": {
-        label: "HF Long-Haul â€” Skywave",
-        rf: { frequencyMHz: 14, bandwidthKHz: 3, modulation: "USB", waveform: "ALE", duplex: "half-duplex", channelSpacingKHz: 3 },
-        tx: { powerW: 20, dutyCycle: 0.5, papr: 0, spectralEfficiency: 0.4 },
-        rx: { sensitivityDbm: -110, noiseFigDb: 10, requiredSnrDb: 6, acrDb: 60, bdrDb: 90 },
-        antenna: { type: "dipole", gainDbi: 2, pattern: "directional", polarization: "horizontal", heightM: 8, cableLossDb: 1, systemLossDb: 3 },
-        prop: { model: "hf-skywave", clutter: "open", terrainEnabled: false, diffractionEnabled: false, nvisEnabled: false, ionoModel: "itu-r", timeDayEffects: true, solarIndex: 80 },
-        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 800, adaptiveDataRate: false },
-      },
-      "vhf-fallback": {
-        label: "VHF Fallback â€” Analog",
-        rf: { frequencyMHz: 50, bandwidthKHz: 25, modulation: "FM", waveform: "analog", duplex: "half-duplex", channelSpacingKHz: 25 },
-        tx: { powerW: 5, dutyCycle: 0.5, papr: 0, spectralEfficiency: 2.4 },
-        rx: { sensitivityDbm: -107, noiseFigDb: 6, requiredSnrDb: 12, acrDb: 70, bdrDb: 90 },
-        antenna: { type: "whip", gainDbi: 2.15, pattern: "omnidirectional", polarization: "vertical", heightM: 2, cableLossDb: 0.5, systemLossDb: 3 },
-        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true },
-        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 200, adaptiveDataRate: false },
-      },
-    },
-  },
-  "mbitr": {
-    label: "AN/PRC-148 MBITR",
-    programs: {
-      "vhf-los": {
-        label: "VHF LOS",
-        rf: { frequencyMHz: 150, bandwidthKHz: 25, modulation: "FM", waveform: "analog", duplex: "half-duplex", channelSpacingKHz: 25 },
-        tx: { powerW: 5, dutyCycle: 0.5, papr: 0, spectralEfficiency: 2.4 },
-        rx: { sensitivityDbm: -107, noiseFigDb: 7, requiredSnrDb: 12, acrDb: 65, bdrDb: 85 },
-        antenna: { type: "whip", gainDbi: 2.15, pattern: "omnidirectional", polarization: "vertical", heightM: 2, cableLossDb: 0.5, systemLossDb: 3 },
-        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true },
-        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 200, adaptiveDataRate: false },
-      },
-    },
-  },
-  "p25-portable": {
-    label: "P25 Portable (generic)",
-    programs: {
-      "p25-ph1-vhf": {
-        label: "P25 Phase 1 VHF",
-        rf: { frequencyMHz: 155, bandwidthKHz: 12.5, modulation: "FM", waveform: "P25-C4FM", duplex: "half-duplex", channelSpacingKHz: 12.5 },
-        tx: { powerW: 5, dutyCycle: 0.5, papr: 0, spectralEfficiency: 4.8 },
-        rx: { sensitivityDbm: -116, noiseFigDb: 5, requiredSnrDb: 12, acrDb: 70, bdrDb: 90 },
-        antenna: { type: "whip", gainDbi: 2.15, pattern: "omnidirectional", polarization: "vertical", heightM: 1.8, cableLossDb: 0.3, systemLossDb: 2 },
-        prop: { model: "itu-p526", clutter: "urban", terrainEnabled: true, diffractionEnabled: true },
-        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 100, adaptiveDataRate: false },
-      },
-      "p25-ph1-uhf": {
-        label: "P25 Phase 1 UHF",
-        rf: { frequencyMHz: 460, bandwidthKHz: 12.5, modulation: "FM", waveform: "P25-CQPSK", duplex: "half-duplex", channelSpacingKHz: 12.5 },
-        tx: { powerW: 4, dutyCycle: 0.5, papr: 0, spectralEfficiency: 4.8 },
-        rx: { sensitivityDbm: -116, noiseFigDb: 5, requiredSnrDb: 12, acrDb: 70, bdrDb: 90 },
-        antenna: { type: "whip", gainDbi: 2.15, pattern: "omnidirectional", polarization: "vertical", heightM: 1.8, cableLossDb: 0.3, systemLossDb: 2 },
-        prop: { model: "itu-p526", clutter: "urban", terrainEnabled: true, diffractionEnabled: true },
-        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 100, adaptiveDataRate: false },
-      },
-      "p25-ph2-tdma": {
-        label: "P25 Phase 2 TDMA",
-        rf: { frequencyMHz: 460, bandwidthKHz: 12.5, modulation: "QPSK", waveform: "P25-TDMA", duplex: "half-duplex", channelSpacingKHz: 12.5 },
-        tx: { powerW: 4, dutyCycle: 0.5, papr: 3, spectralEfficiency: 9.6 },
-        rx: { sensitivityDbm: -116, noiseFigDb: 5, requiredSnrDb: 12, acrDb: 70, bdrDb: 90 },
-        antenna: { type: "whip", gainDbi: 2.15, pattern: "omnidirectional", polarization: "vertical", heightM: 1.8, cableLossDb: 0.3, systemLossDb: 2 },
-        prop: { model: "itu-p526", clutter: "urban", terrainEnabled: true, diffractionEnabled: true },
-        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 80, adaptiveDataRate: false },
-      },
-    },
-  },
-  "p25-mobile": {
-    label: "P25 Mobile (generic)",
-    programs: {
-      "p25-vhf-mobile": {
-        label: "P25 VHF Mobile",
-        rf: { frequencyMHz: 155, bandwidthKHz: 12.5, modulation: "FM", waveform: "P25-C4FM", duplex: "half-duplex", channelSpacingKHz: 12.5 },
-        tx: { powerW: 50, dutyCycle: 0.5, papr: 0, spectralEfficiency: 4.8 },
-        rx: { sensitivityDbm: -116, noiseFigDb: 4, requiredSnrDb: 12, acrDb: 75, bdrDb: 95 },
-        antenna: { type: "whip", gainDbi: 2.15, pattern: "omnidirectional", polarization: "vertical", heightM: 1.5, cableLossDb: 1, systemLossDb: 2 },
-        prop: { model: "itu-p526", clutter: "suburban", terrainEnabled: true, diffractionEnabled: true },
-        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 100, adaptiveDataRate: false },
-      },
-    },
-  },
-  "p25-repeater": {
-    label: "P25 Repeater",
-    programs: {
-      "vhf-repeat": {
-        label: "VHF Repeater",
-        rf: { frequencyMHz: 155, bandwidthKHz: 12.5, modulation: "FM", waveform: "P25-C4FM", duplex: "full-duplex", channelSpacingKHz: 12.5 },
-        tx: { powerW: 100, dutyCycle: 1, papr: 0, spectralEfficiency: 4.8 },
-        rx: { sensitivityDbm: -120, noiseFigDb: 3, requiredSnrDb: 12, acrDb: 80, bdrDb: 100 },
-        antenna: { type: "dipole", gainDbi: 6, pattern: "omnidirectional", polarization: "vertical", heightM: 30, cableLossDb: 2, systemLossDb: 3 },
-        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true },
-        net: { isManet: false, relayCapable: true, maxHops: 1, latencyMs: 50, adaptiveDataRate: false },
-      },
-    },
-  },
-  // â”€â”€ Commercial DMR â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  "dmr-portable": {
-    label: "DMR Portable (Tier II)",
-    programs: {
-      "dmr-uhf": {
-        label: "DMR UHF Direct",
-        rf: { frequencyMHz: 460, bandwidthKHz: 12.5, modulation: "QPSK", waveform: "DMR", duplex: "half-duplex", channelSpacingKHz: 12.5 },
-        tx: { powerW: 4, dutyCycle: 0.5, papr: 3, spectralEfficiency: 9.6 },
-        rx: { sensitivityDbm: -116, noiseFigDb: 5, requiredSnrDb: 12, acrDb: 70, bdrDb: 90 },
-        antenna: { type: "whip", gainDbi: 2.15, pattern: "omnidirectional", polarization: "vertical", heightM: 1.8, cableLossDb: 0.3, systemLossDb: 2 },
-        prop: { model: "itu-p526", clutter: "urban", terrainEnabled: true, diffractionEnabled: true },
-        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 80, adaptiveDataRate: false },
-      },
-    },
-  },
-  "dmr-mobile": {
-    label: "DMR Mobile (Tier II)",
-    programs: {
-      "dmr-uhf-mobile": {
-        label: "DMR UHF Mobile",
-        rf: { frequencyMHz: 460, bandwidthKHz: 12.5, modulation: "QPSK", waveform: "DMR", duplex: "half-duplex", channelSpacingKHz: 12.5 },
-        tx: { powerW: 25, dutyCycle: 0.5, papr: 3, spectralEfficiency: 9.6 },
-        rx: { sensitivityDbm: -116, noiseFigDb: 4, requiredSnrDb: 12, acrDb: 75, bdrDb: 95 },
-        antenna: { type: "whip", gainDbi: 2.15, pattern: "omnidirectional", polarization: "vertical", heightM: 1.5, cableLossDb: 1, systemLossDb: 2 },
-        prop: { model: "itu-p526", clutter: "suburban", terrainEnabled: true, diffractionEnabled: true },
-        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 80, adaptiveDataRate: false },
-      },
-    },
-  },
-  "dmr-repeater": {
-    label: "DMR Repeater (Tier III)",
-    programs: {
-      "dmr-tier3": {
-        label: "DMR Trunked Repeater",
-        rf: { frequencyMHz: 460, bandwidthKHz: 12.5, modulation: "QPSK", waveform: "DMR", duplex: "full-duplex", channelSpacingKHz: 12.5 },
-        tx: { powerW: 100, dutyCycle: 1, papr: 3, spectralEfficiency: 9.6 },
-        rx: { sensitivityDbm: -120, noiseFigDb: 3, requiredSnrDb: 12, acrDb: 80, bdrDb: 100 },
-        antenna: { type: "dipole", gainDbi: 6, pattern: "omnidirectional", polarization: "vertical", heightM: 30, cableLossDb: 2, systemLossDb: 3 },
-        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true },
-        net: { isManet: false, relayCapable: true, maxHops: 1, latencyMs: 50, adaptiveDataRate: true },
-      },
-    },
-  },
-  "mototrbo-r7": {
-    label: "Motorola MOTOTRBO R7",
-    programs: {
-      "dmr-vhf": {
-        label: "DMR VHF",
-        rf: { frequencyMHz: 155, bandwidthKHz: 12.5, modulation: "QPSK", waveform: "DMR", duplex: "half-duplex", channelSpacingKHz: 12.5 },
-        tx: { powerW: 5, dutyCycle: 0.5, papr: 3, spectralEfficiency: 9.6 },
-        rx: { sensitivityDbm: -118, noiseFigDb: 5, requiredSnrDb: 12, acrDb: 70, bdrDb: 90 },
-        antenna: { type: "whip", gainDbi: 2.15, pattern: "omnidirectional", polarization: "vertical", heightM: 1.8, cableLossDb: 0.3, systemLossDb: 2 },
-        prop: { model: "itu-p526", clutter: "urban", terrainEnabled: true, diffractionEnabled: true },
-        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 80, adaptiveDataRate: false },
-      },
-      "p25-analog": {
-        label: "P25 / Analog Fallback",
-        rf: { frequencyMHz: 460, bandwidthKHz: 12.5, modulation: "FM", waveform: "P25-C4FM", duplex: "half-duplex", channelSpacingKHz: 12.5 },
-        tx: { powerW: 4, dutyCycle: 0.5, papr: 0, spectralEfficiency: 4.8 },
-        rx: { sensitivityDbm: -118, noiseFigDb: 5, requiredSnrDb: 12, acrDb: 70, bdrDb: 90 },
-        antenna: { type: "whip", gainDbi: 2.15, pattern: "omnidirectional", polarization: "vertical", heightM: 1.8, cableLossDb: 0.3, systemLossDb: 2 },
-        prop: { model: "itu-p526", clutter: "urban", terrainEnabled: true, diffractionEnabled: true },
-        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 100, adaptiveDataRate: false },
-      },
-    },
-  },
-  "harris-xg100p": {
-    label: "Harris XG-100P (P25/LTE)",
-    programs: {
-      "p25-uhf": {
-        label: "P25 UHF",
-        rf: { frequencyMHz: 460, bandwidthKHz: 12.5, modulation: "FM", waveform: "P25-CQPSK", duplex: "half-duplex", channelSpacingKHz: 12.5 },
-        tx: { powerW: 5, dutyCycle: 0.5, papr: 0, spectralEfficiency: 4.8 },
-        rx: { sensitivityDbm: -116, noiseFigDb: 5, requiredSnrDb: 12, acrDb: 70, bdrDb: 90 },
-        antenna: { type: "whip", gainDbi: 2.15, pattern: "omnidirectional", polarization: "vertical", heightM: 1.8, cableLossDb: 0.3, systemLossDb: 2 },
-        prop: { model: "itu-p526", clutter: "urban", terrainEnabled: true, diffractionEnabled: true },
-        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 100, adaptiveDataRate: false },
-      },
-    },
-  },
-  "xts-2500": {
-    label: "Motorola XTS 2500 (P25)",
-    programs: {
-      "p25-uhf": {
-        label: "P25 Phase 1 UHF",
-        rf: { frequencyMHz: 460, bandwidthKHz: 12.5, modulation: "FM", waveform: "P25-C4FM", duplex: "half-duplex", channelSpacingKHz: 12.5 },
-        tx: { powerW: 5, dutyCycle: 0.5, papr: 0, spectralEfficiency: 4.8 },
-        rx: { sensitivityDbm: -116, noiseFigDb: 5, requiredSnrDb: 12, acrDb: 70, bdrDb: 90 },
-        antenna: { type: "whip", gainDbi: 2.15, pattern: "omnidirectional", polarization: "vertical", heightM: 1.8, cableLossDb: 0.3, systemLossDb: 2 },
-        prop: { model: "itu-p526", clutter: "urban", terrainEnabled: true, diffractionEnabled: true },
-        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 100, adaptiveDataRate: false },
-      },
-      "p25-vhf": {
-        label: "P25 Phase 1 VHF",
-        rf: { frequencyMHz: 155, bandwidthKHz: 12.5, modulation: "FM", waveform: "P25-C4FM", duplex: "half-duplex", channelSpacingKHz: 12.5 },
-        tx: { powerW: 5, dutyCycle: 0.5, papr: 0, spectralEfficiency: 4.8 },
-        rx: { sensitivityDbm: -116, noiseFigDb: 5, requiredSnrDb: 12, acrDb: 70, bdrDb: 90 },
-        antenna: { type: "whip", gainDbi: 2.15, pattern: "omnidirectional", polarization: "vertical", heightM: 1.8, cableLossDb: 0.3, systemLossDb: 2 },
-        prop: { model: "itu-p526", clutter: "urban", terrainEnabled: true, diffractionEnabled: true },
-        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 100, adaptiveDataRate: false },
-      },
-      "analog-uhf": {
-        label: "Analog Conventional UHF",
-        rf: { frequencyMHz: 460, bandwidthKHz: 25, modulation: "FM", waveform: "analog", duplex: "half-duplex", channelSpacingKHz: 25 },
-        tx: { powerW: 5, dutyCycle: 0.5, papr: 0, spectralEfficiency: 2.4 },
-        rx: { sensitivityDbm: -116, noiseFigDb: 5, requiredSnrDb: 12, acrDb: 70, bdrDb: 90 },
-        antenna: { type: "whip", gainDbi: 2.15, pattern: "omnidirectional", polarization: "vertical", heightM: 1.8, cableLossDb: 0.3, systemLossDb: 2 },
-        prop: { model: "itu-p526", clutter: "urban", terrainEnabled: true, diffractionEnabled: true },
-        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 0, adaptiveDataRate: false },
-      },
-    },
-  },
+async function ensureEmitterLibraryLoaded() {
+  if (EMITTER_LIBRARY !== EMPTY_EMITTER_LIBRARY) {
+    return EMITTER_LIBRARY;
+  }
+  if (!emitterLibraryLoadPromise) {
+    emitterLibraryLoadPromise = import("./src/emitter-library.js").then(({ EMITTER_LIBRARY: loadedLibrary }) => {
+      EMITTER_LIBRARY = loadedLibrary;
+      return EMITTER_LIBRARY;
+    });
+  }
+  return emitterLibraryLoadPromise;
+}
 
-  // â”€â”€ MANET / Mesh Radios â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-  "silvus-sc4200": {
-    label: "Silvus StreamCaster 4200",
-    programs: {
-      "mimo-2x2": {
-        label: "MIMO 2Ã—2 â€” 2.4 GHz",
-        rf: { frequencyMHz: 2400, bandwidthKHz: 20000, modulation: "OFDM", waveform: "MIMO", duplex: "full-duplex", channelSpacingKHz: 20000 },
-        tx: { powerW: 1, dutyCycle: 1, papr: 10, spectralEfficiency: 6 },
-        rx: { sensitivityDbm: -95, noiseFigDb: 7, requiredSnrDb: 8, acrDb: 35, bdrDb: 60 },
-        antenna: { type: "mimo_patch", gainDbi: 3, pattern: "omnidirectional", polarization: "dual", heightM: 1.5, cableLossDb: 0.3, systemLossDb: 1 },
-        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true },
-        net: { isManet: true, relayCapable: true, maxHops: 10, latencyMs: 15, adaptiveDataRate: true, dataRateMbps: 60, meshProtocol: "MN-MIMO" },
-      },
-      "mimo-2x2-4900": {
-        label: "MIMO 2Ã—2 â€” 4.9 GHz",
-        rf: { frequencyMHz: 4940, bandwidthKHz: 20000, modulation: "OFDM", waveform: "MIMO", duplex: "full-duplex", channelSpacingKHz: 20000 },
-        tx: { powerW: 1, dutyCycle: 1, papr: 10, spectralEfficiency: 6 },
-        rx: { sensitivityDbm: -93, noiseFigDb: 7, requiredSnrDb: 8, acrDb: 35, bdrDb: 60 },
-        antenna: { type: "mimo_patch", gainDbi: 5, pattern: "omnidirectional", polarization: "dual", heightM: 1.5, cableLossDb: 0.3, systemLossDb: 1 },
-        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true },
-        net: { isManet: true, relayCapable: true, maxHops: 10, latencyMs: 15, adaptiveDataRate: true, dataRateMbps: 60, meshProtocol: "MN-MIMO" },
-      },
-    },
-  },
-
-  "silvus-sc4400": {
-    label: "Silvus StreamCaster 4400",
-    programs: {
-      "mimo-4x4-2400": {
-        label: "MIMO 4Ã—4 â€” 2.4 GHz (High-Cap)",
-        rf: { frequencyMHz: 2400, bandwidthKHz: 40000, modulation: "OFDM", waveform: "MIMO", duplex: "full-duplex", channelSpacingKHz: 40000 },
-        tx: { powerW: 2, dutyCycle: 1, papr: 10, spectralEfficiency: 8 },
-        rx: { sensitivityDbm: -97, noiseFigDb: 6, requiredSnrDb: 8, acrDb: 38, bdrDb: 62 },
-        antenna: { type: "mimo_array", gainDbi: 6, pattern: "omnidirectional", polarization: "dual", heightM: 2, cableLossDb: 0.3, systemLossDb: 1 },
-        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true },
-        net: { isManet: true, relayCapable: true, maxHops: 12, latencyMs: 10, adaptiveDataRate: true, dataRateMbps: 120, meshProtocol: "MN-MIMO" },
-      },
-      "mimo-4x4-5800": {
-        label: "MIMO 4Ã—4 â€” 5.8 GHz (High-Cap)",
-        rf: { frequencyMHz: 5800, bandwidthKHz: 40000, modulation: "OFDM", waveform: "MIMO", duplex: "full-duplex", channelSpacingKHz: 40000 },
-        tx: { powerW: 2, dutyCycle: 1, papr: 10, spectralEfficiency: 8 },
-        rx: { sensitivityDbm: -95, noiseFigDb: 6, requiredSnrDb: 8, acrDb: 38, bdrDb: 62 },
-        antenna: { type: "mimo_array", gainDbi: 8, pattern: "omnidirectional", polarization: "dual", heightM: 2, cableLossDb: 0.3, systemLossDb: 1 },
-        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true },
-        net: { isManet: true, relayCapable: true, maxHops: 12, latencyMs: 10, adaptiveDataRate: true, dataRateMbps: 150, meshProtocol: "MN-MIMO" },
-      },
-      "mimo-4x4-4900": {
-        label: "MIMO 4Ã—4 â€” 4.9 GHz (Public Safety)",
-        rf: { frequencyMHz: 4940, bandwidthKHz: 40000, modulation: "OFDM", waveform: "MIMO", duplex: "full-duplex", channelSpacingKHz: 40000 },
-        tx: { powerW: 2, dutyCycle: 1, papr: 10, spectralEfficiency: 8 },
-        rx: { sensitivityDbm: -95, noiseFigDb: 6, requiredSnrDb: 8, acrDb: 38, bdrDb: 62 },
-        antenna: { type: "mimo_array", gainDbi: 7, pattern: "omnidirectional", polarization: "dual", heightM: 2, cableLossDb: 0.3, systemLossDb: 1 },
-        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true },
-        net: { isManet: true, relayCapable: true, maxHops: 12, latencyMs: 10, adaptiveDataRate: true, dataRateMbps: 130, meshProtocol: "MN-MIMO" },
-      },
-    },
-  },
-
-  "mpu-5": {
-    label: "Persistent Systems Wave Relay MPU-5",
-    programs: {
-      "wave-relay-2400": {
-        label: "Wave Relay MANET â€” 2.4 GHz",
-        rf: { frequencyMHz: 2400, bandwidthKHz: 20000, modulation: "OFDM", waveform: "Wave Relay", duplex: "full-duplex", channelSpacingKHz: 20000 },
-        tx: { powerW: 1, dutyCycle: 1, papr: 9, spectralEfficiency: 5 },
-        rx: { sensitivityDbm: -96, noiseFigDb: 7, requiredSnrDb: 9, acrDb: 35, bdrDb: 60 },
-        antenna: { type: "omni_dipole", gainDbi: 2, pattern: "omnidirectional", polarization: "vertical", heightM: 1.5, cableLossDb: 0.3, systemLossDb: 1.5 },
-        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true },
-        net: { isManet: true, relayCapable: true, maxHops: 15, latencyMs: 12, adaptiveDataRate: true, dataRateMbps: 50, meshProtocol: "Wave Relay MANET" },
-      },
-      "wave-relay-4900": {
-        label: "Wave Relay MANET â€” 4.9 GHz",
-        rf: { frequencyMHz: 4940, bandwidthKHz: 20000, modulation: "OFDM", waveform: "Wave Relay", duplex: "full-duplex", channelSpacingKHz: 20000 },
-        tx: { powerW: 1, dutyCycle: 1, papr: 9, spectralEfficiency: 5 },
-        rx: { sensitivityDbm: -93, noiseFigDb: 7, requiredSnrDb: 9, acrDb: 35, bdrDb: 60 },
-        antenna: { type: "omni_dipole", gainDbi: 3, pattern: "omnidirectional", polarization: "vertical", heightM: 1.5, cableLossDb: 0.3, systemLossDb: 1.5 },
-        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true },
-        net: { isManet: true, relayCapable: true, maxHops: 15, latencyMs: 12, adaptiveDataRate: true, dataRateMbps: 55, meshProtocol: "Wave Relay MANET" },
-      },
-      "wave-relay-5800": {
-        label: "Wave Relay MANET â€” 5.8 GHz",
-        rf: { frequencyMHz: 5800, bandwidthKHz: 40000, modulation: "OFDM", waveform: "Wave Relay", duplex: "full-duplex", channelSpacingKHz: 40000 },
-        tx: { powerW: 1, dutyCycle: 1, papr: 9, spectralEfficiency: 6 },
-        rx: { sensitivityDbm: -94, noiseFigDb: 7, requiredSnrDb: 9, acrDb: 35, bdrDb: 60 },
-        antenna: { type: "omni_dipole", gainDbi: 4, pattern: "omnidirectional", polarization: "vertical", heightM: 1.5, cableLossDb: 0.3, systemLossDb: 1.5 },
-        prop: { model: "itu-p526", clutter: "open", terrainEnabled: true, diffractionEnabled: true },
-        net: { isManet: true, relayCapable: true, maxHops: 15, latencyMs: 12, adaptiveDataRate: true, dataRateMbps: 80, meshProtocol: "Wave Relay MANET" },
-      },
-    },
-  },
-
-  "trellisware-tw950": {
-    label: "TrellisWare TW-950",
-    programs: {
-      "tsm-x-manet": {
-        label: "TSM-X MANET",
-        rf: { frequencyMHz: 2400, bandwidthKHz: 5000, modulation: "OFDM", waveform: "TSM-X", duplex: "full-duplex", channelSpacingKHz: 5000 },
-        tx: { powerW: 1, dutyCycle: 1, papr: 8, spectralEfficiency: 2.2 },
-        rx: { sensitivityDbm: -97, noiseFigDb: 7, requiredSnrDb: 9, acrDb: 34, bdrDb: 62 },
-        antenna: { type: "blade", gainDbi: 1, pattern: "omnidirectional", polarization: "vertical", heightM: 1.5, cableLossDb: 0.3, systemLossDb: 1.8 },
-        prop: { model: "itu-p526", clutter: "urban", terrainEnabled: true, diffractionEnabled: true },
-        net: { isManet: true, relayCapable: true, maxHops: 10, latencyMs: 20, adaptiveDataRate: true, dataRateMbps: 12, meshProtocol: "TSM-X" },
-      },
-    },
-  },
-
-  "starlink-military": {
-    label: "Starlink / Starshield LEO SATCOM",
-    programs: {
-      "starlink-standard": {
-        label: "Starlink Standard (Ku-band)",
-        rf: { frequencyMHz: 13500, bandwidthKHz: 250000, modulation: "OFDM", waveform: "Link 182", duplex: "full-duplex", channelSpacingKHz: 250000 },
-        tx: { powerW: 40, dutyCycle: 1, papr: 8, spectralEfficiency: 8 },
-        rx: { sensitivityDbm: -90, noiseFigDb: 3, requiredSnrDb: 10, acrDb: 40, bdrDb: 60 },
-        antenna: { type: "phased_array", gainDbi: 38, pattern: "steerable", polarization: "circular", heightM: 0.6, cableLossDb: 0.5, systemLossDb: 2 },
-        prop: { model: "itu-p618", clutter: "open", terrainEnabled: false, diffractionEnabled: false },
-        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 25, adaptiveDataRate: true, satcomEnabled: true, satType: "LEO", satUplinkMHz: 14000, satDownlinkMHz: 11200, satGainDbi: 38, dataRateMbps: 200 },
-      },
-      "starshield-ka": {
-        label: "Starshield (Ka-band â€” Gov/Mil)",
-        rf: { frequencyMHz: 29500, bandwidthKHz: 500000, modulation: "OFDM", waveform: "Link 182", duplex: "full-duplex", channelSpacingKHz: 500000 },
-        tx: { powerW: 60, dutyCycle: 1, papr: 8, spectralEfficiency: 10 },
-        rx: { sensitivityDbm: -88, noiseFigDb: 2.5, requiredSnrDb: 10, acrDb: 45, bdrDb: 65 },
-        antenna: { type: "phased_array", gainDbi: 42, pattern: "steerable", polarization: "circular", heightM: 0.6, cableLossDb: 0.5, systemLossDb: 2 },
-        prop: { model: "itu-p618", clutter: "open", terrainEnabled: false, diffractionEnabled: false },
-        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 20, adaptiveDataRate: true, satcomEnabled: true, satType: "LEO", satUplinkMHz: 29500, satDownlinkMHz: 19700, satGainDbi: 42, dataRateMbps: 500, encrypted: true, milStandard: "Starshield" },
-      },
-    },
-  },
-
-  "prc-160-hf": {
-    label: "AN/PRC-160 HF ALE Manpack",
-    programs: {
-      "hf-nvis-ale": {
-        label: "HF NVIS â€” ALE 2â€“12 MHz",
-        rf: { frequencyMHz: 7, bandwidthKHz: 3, modulation: "USB", waveform: "MIL-STD-188-141B ALE", duplex: "half-duplex", channelSpacingKHz: 3 },
-        tx: { powerW: 20, dutyCycle: 0.5, papr: 0, spectralEfficiency: 0.4 },
-        rx: { sensitivityDbm: -115, noiseFigDb: 10, requiredSnrDb: 6, acrDb: 60, bdrDb: 90 },
-        antenna: { type: "whip_hf", gainDbi: 2, pattern: "omnidirectional", polarization: "vertical", heightM: 5.5, cableLossDb: 0.5, systemLossDb: 2 },
-        prop: { model: "hf-skywave", clutter: "open", terrainEnabled: false, diffractionEnabled: false, nvisEnabled: true, ionoModel: "itu-r", timeDayEffects: true, solarIndex: 80 },
-        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 500, adaptiveDataRate: false, hfDataRate: "2400bps", milStandard: "MIL-STD-188-141B" },
-      },
-      "hf-longhaul-ale": {
-        label: "HF Long-Haul â€” 12â€“30 MHz",
-        rf: { frequencyMHz: 18, bandwidthKHz: 3, modulation: "USB", waveform: "MIL-STD-188-141B ALE", duplex: "half-duplex", channelSpacingKHz: 3 },
-        tx: { powerW: 20, dutyCycle: 0.5, papr: 0, spectralEfficiency: 0.4 },
-        rx: { sensitivityDbm: -115, noiseFigDb: 10, requiredSnrDb: 6, acrDb: 60, bdrDb: 90 },
-        antenna: { type: "dipole_hf", gainDbi: 2.15, pattern: "directional", polarization: "horizontal", heightM: 8, cableLossDb: 1, systemLossDb: 3 },
-        prop: { model: "hf-skywave", clutter: "open", terrainEnabled: false, diffractionEnabled: false, nvisEnabled: false, ionoModel: "itu-r", timeDayEffects: true, solarIndex: 80 },
-        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 800, adaptiveDataRate: false, hfDataRate: "2400bps", milStandard: "MIL-STD-188-141B" },
-      },
-      "hf-data-stanag": {
-        label: "HF Data â€” STANAG 4538",
-        rf: { frequencyMHz: 10, bandwidthKHz: 3, modulation: "PSK", waveform: "STANAG-4538", duplex: "half-duplex", channelSpacingKHz: 3 },
-        tx: { powerW: 20, dutyCycle: 0.5, papr: 3, spectralEfficiency: 1.2 },
-        rx: { sensitivityDbm: -115, noiseFigDb: 10, requiredSnrDb: 8, acrDb: 55, bdrDb: 85 },
-        antenna: { type: "whip_hf", gainDbi: 2, pattern: "omnidirectional", polarization: "vertical", heightM: 5.5, cableLossDb: 0.5, systemLossDb: 2 },
-        prop: { model: "hf-skywave", clutter: "open", terrainEnabled: false, diffractionEnabled: false, nvisEnabled: true, ionoModel: "itu-r", timeDayEffects: true, solarIndex: 80 },
-        net: { isManet: false, relayCapable: false, maxHops: 1, latencyMs: 600, adaptiveDataRate: true, hfDataRate: "19200bps", milStandard: "STANAG-4538" },
-      },
-    },
-  },
-
-  ...RADAR_EMITTER_LIBRARY,
-};
-
-// â”€â”€â”€ Link budget helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function wattsToDbm(w) { return 10 * Math.log10(w * 1000); }
 function dbmToWatts(dbm) { return Math.pow(10, dbm / 10) / 1000; }
 function fsplDb(freqMHz, distM) {
@@ -2285,6 +1585,24 @@ const dom = {
   emittersNetFreqInput: document.querySelector("#emittersNetFreqInput"),
   emittersNetBandwidthInput: document.querySelector("#emittersNetBandwidthInput"),
   emittersNetWaveformInput: document.querySelector("#emittersNetWaveformInput"),
+  toEmitterManagerModal: document.querySelector("#toEmitterManagerModal"),
+  toEmitterManagerTitle: document.querySelector("#toEmitterManagerTitle"),
+  toEmitterManagerSubtitle: document.querySelector("#toEmitterManagerSubtitle"),
+  toEmitterManagerValidation: document.querySelector("#toEmitterManagerValidation"),
+  toEmitterManagerCloseBtn: document.querySelector("#toEmitterManagerCloseBtn"),
+  toEmitterManagerDoneBtn: document.querySelector("#toEmitterManagerDoneBtn"),
+  toEmitterLinkExistingBtn: document.querySelector("#toEmitterLinkExistingBtn"),
+  toEmitterChooserBackBtn: document.querySelector("#toEmitterChooserBackBtn"),
+  toEmitterManagerGrid: document.querySelector("#toEmitterManagerGrid"),
+  toEmitterLinkedCount: document.querySelector("#toEmitterLinkedCount"),
+  toEmitterLinkedList: document.querySelector("#toEmitterLinkedList"),
+  toEmitterLinkedEmpty: document.querySelector("#toEmitterLinkedEmpty"),
+  toEmitterAvailablePanel: document.querySelector("#toEmitterAvailablePanel"),
+  toEmitterAvailableCount: document.querySelector("#toEmitterAvailableCount"),
+  toEmitterAvailableList: document.querySelector("#toEmitterAvailableList"),
+  toEmitterAvailableEmpty: document.querySelector("#toEmitterAvailableEmpty"),
+  toEmitterLinkedContextMenu: document.querySelector("#toEmitterLinkedContextMenu"),
+  toEmitterLinkedContextUnlink: document.querySelector("#toEmitterLinkedContextUnlink"),
   aiPanelDivider: document.querySelector("#aiPanelDivider"),
   imageryMenuBtn: document.querySelector("#imageryMenuBtn"),
   imageryMenu: document.querySelector("#imageryMenu"),
@@ -3942,7 +3260,7 @@ function throwIfSimulationCanceled(requestId) {
 }
 
 function createSimulationWorker() {
-  return new Worker("./simulation-worker.js?v=20260429-1", { type: "module" });
+  return new Worker(new URL("./simulation-worker.js", import.meta.url), { type: "module" });
 }
 
 function attachSimulationWorkerListener() {
@@ -4193,7 +3511,11 @@ function buildTacticalPointIcon(object) {
   });
 }
 
-function renderTacticalPopup(object, { live = false } = {}) {
+function renderTacticalPopup(object, { live = false, panel = "summary", emitterId = "" } = {}) {
+  const selectedEmitterId = String(emitterId || "").trim();
+  const linkedEmitters = !live && isUnitTacticalObject(object)
+    ? getLinkedEmitterAssetsForTacticalObject(object)
+    : [];
   const lines = [];
   if (object?.cotType) lines.push(`CoT: ${object.cotType}`);
   if (object?.objectClass) lines.push(`Class: ${object.objectClass}`);
@@ -4203,10 +3525,82 @@ function renderTacticalPopup(object, { live = false } = {}) {
   if (live && object?.detail?.role) lines.push(`Role: ${object.detail.role}`);
   if (live && object?.detail?.lastSeenAt) lines.push(`Last seen: ${formatTakTimestamp(object.detail.lastSeenAt)}`);
   if (object?.staleAt) lines.push(`Stale: ${formatTakTimestamp(object.staleAt)}`);
+  const detailEmitter = selectedEmitterId
+    ? linkedEmitters.find((asset) => String(asset.id) === selectedEmitterId) || null
+    : null;
+  let actionHtml = "";
+
+  if (linkedEmitters.length && object?.id) {
+    if (panel === "emitters") {
+      actionHtml = `
+        <div class="tactical-popup-actions">
+          <div class="tactical-popup-subtitle">Linked Emitters</div>
+          <div class="tactical-popup-emitter-list">
+            ${linkedEmitters.map((asset) => {
+              const label = asset.emitterLabel || asset.name || "Emitter";
+              const waveform = asset.waveform || asset.ext?.waveform || "";
+              const freq = Number.isFinite(Number(asset.frequencyMHz))
+                ? `${Number(asset.frequencyMHz).toFixed(3)} MHz`
+                : "No frequency";
+              const detail = [waveform, freq].filter(Boolean).join(" | ");
+              return `
+                <button class="ghost-button small tactical-popup-emitter-row" type="button"
+                  data-tactical-popup-action="show-emitter-detail"
+                  data-tactical-id="${escapeHtml(object.id)}"
+                  data-emitter-id="${escapeHtml(asset.id)}">
+                  <span class="tactical-popup-emitter-name">${escapeHtml(label)}</span>
+                  <span class="tactical-popup-emitter-meta">${escapeHtml(detail)}</span>
+                </button>
+              `;
+            }).join("")}
+          </div>
+          <button class="ghost-button small" type="button"
+            data-tactical-popup-action="show-summary"
+            data-tactical-id="${escapeHtml(object.id)}">Back</button>
+        </div>
+      `;
+    } else if (panel === "emitter-detail" && detailEmitter) {
+      const label = detailEmitter.emitterLabel || detailEmitter.name || "Emitter";
+      const waveform = detailEmitter.waveform || detailEmitter.ext?.waveform || "";
+      const profile = detailEmitter.profileName || detailEmitter.profileId || "";
+      const anchored = hasAssetMapLocation(detailEmitter) ? "" : "Using linked unit position";
+      const details = [
+        waveform,
+        Number.isFinite(Number(detailEmitter.frequencyMHz)) ? `${Number(detailEmitter.frequencyMHz).toFixed(3)} MHz` : "",
+        Number.isFinite(Number(detailEmitter.powerW)) ? `${Number(detailEmitter.powerW)} W` : "",
+        profile ? `Profile ${profile}` : "",
+        anchored,
+      ].filter(Boolean);
+      actionHtml = `
+        <div class="tactical-popup-actions">
+          <div class="tactical-popup-subtitle">${escapeHtml(label)}</div>
+          <div class="tactical-popup-detail">${details.map((line) => `<div>${escapeHtml(line)}</div>`).join("")}</div>
+          <div class="tactical-popup-button-row">
+            <button class="ghost-button small" type="button"
+              data-tactical-popup-action="show-emitters"
+              data-tactical-id="${escapeHtml(object.id)}">Back</button>
+            <button class="primary-button small" type="button"
+              data-tactical-popup-action="simulate-emitter"
+              data-tactical-id="${escapeHtml(object.id)}"
+              data-emitter-id="${escapeHtml(detailEmitter.id)}">Simulate</button>
+          </div>
+        </div>
+      `;
+    } else {
+      actionHtml = `
+        <div class="tactical-popup-actions">
+          <button class="ghost-button small" type="button"
+            data-tactical-popup-action="show-emitters"
+            data-tactical-id="${escapeHtml(object.id)}">Emitters (${linkedEmitters.length})</button>
+        </div>
+      `;
+    }
+  }
   return `
     <strong>${escapeHtml(object?.name || object?.uid || "Tactical Item")}</strong><br>
     ${escapeHtml(object?.designator || object?.uid || "")}
     ${lines.length ? `<br>${lines.map((line) => escapeHtml(line)).join("<br>")}` : ""}
+    ${actionHtml}
   `;
 }
 
@@ -4249,6 +3643,83 @@ function openMapContentMenuForLeafletEvent(event, contentId) {
   openMapContentsMenu(nativeEvent, contentId);
 }
 
+function getLinkedEmitterAssetsForTacticalObject(object) {
+  const directAssetIds = new Set((object?.linkedAssetIds || []).map((id) => String(id)));
+  const linkedPlanUnitId = Number.isFinite(Number(object?.linkedPlanUnitId))
+    ? Number(object.linkedPlanUnitId)
+    : null;
+  const linked = state.assets.filter((asset) => (
+    directAssetIds.has(String(asset.id))
+    || (linkedPlanUnitId !== null && Number(asset.toUnitId) === linkedPlanUnitId)
+  ));
+  return [...new Map(linked.map((asset) => [String(asset.id), asset])).values()].sort((a, b) => {
+    const nameA = String(a?.emitterLabel || a?.name || "");
+    const nameB = String(b?.emitterLabel || b?.name || "");
+    return nameA.localeCompare(nameB) || (Number(a?.frequencyMHz) || 0) - (Number(b?.frequencyMHz) || 0);
+  });
+}
+
+function getMappedTacticalAnchorForAsset(asset) {
+  if (!Number.isFinite(Number(asset?.toUnitId))) {
+    return null;
+  }
+  const object = getTacticalObjectByPlanUnitId(Number(asset.toUnitId));
+  if (!object || !isTacticalPointGeometry(object.geometryType)) {
+    return null;
+  }
+  return object;
+}
+
+function getAssetEffectiveMapPosition(asset) {
+  if (hasAssetMapLocation(asset)) {
+    return {
+      lat: Number(asset.lat),
+      lon: Number(asset.lon),
+      tacticalObject: null,
+    };
+  }
+  const tacticalObject = getMappedTacticalAnchorForAsset(asset);
+  if (!tacticalObject || !Array.isArray(tacticalObject.coordinates) || tacticalObject.coordinates.length < 2) {
+    return null;
+  }
+  return {
+    lat: Number(tacticalObject.coordinates[0]),
+    lon: Number(tacticalObject.coordinates[1]),
+    tacticalObject,
+  };
+}
+
+function openTacticalPopupPanel(tacticalId, panel = "summary", emitterId = "") {
+  const object = getTacticalObjectById(tacticalId);
+  const layer = object ? state.tacticalLayers.get(object.id) : null;
+  if (!object || !layer) {
+    return;
+  }
+  layer.setPopupContent(renderTacticalPopup(object, { panel, emitterId }));
+  layer.openPopup();
+}
+
+function openLinkedEmitterPopupForAsset(asset) {
+  if (!asset) {
+    return;
+  }
+  const marker = state.assetMarkers.get(asset.id);
+  if (marker) {
+    state.map.setView(marker.getLatLng(), Math.max(state.map.getZoom(), 15));
+    marker.openPopup();
+    return;
+  }
+  const effective = getAssetEffectiveMapPosition(asset);
+  const tacticalObject = effective?.tacticalObject || null;
+  const layer = tacticalObject ? state.tacticalLayers.get(tacticalObject.id) : null;
+  if (!effective || !tacticalObject || !layer) {
+    return;
+  }
+  state.map.setView([effective.lat, effective.lon], Math.max(state.map.getZoom(), 15));
+  layer.setPopupContent(renderTacticalPopup(tacticalObject, { panel: "emitter-detail", emitterId: asset.id }));
+  layer.openPopup();
+}
+
 function createTacticalLeafletLayer(object, contentId, { live = false } = {}) {
   const tactical = normalizeTacticalObject(object);
   if (!state.map) return null;
@@ -4261,7 +3732,17 @@ function createTacticalLeafletLayer(object, contentId, { live = false } = {}) {
     layer.bindPopup(renderTacticalPopup(tactical, { live }));
     layer.on("click", () => focusMapContent(contentId));
     if (!live) {
-      layer.on("contextmenu", (event) => openMapContentMenuForLeafletEvent(event, contentId));
+      layer.on("contextmenu", (event) => {
+        const linkedEmitters = getLinkedEmitterAssetsForTacticalObject(tactical);
+        if (linkedEmitters.length) {
+          event.originalEvent?.preventDefault?.();
+          L.DomEvent.stopPropagation(event);
+          layer.setPopupContent(renderTacticalPopup(tactical, { panel: "summary" }));
+          layer.openPopup(event.latlng);
+          return;
+        }
+        openMapContentMenuForLeafletEvent(event, contentId);
+      });
     }
     applyTacticalLabel(tactical, layer);
     return layer;
@@ -5536,6 +5017,141 @@ function buildPlanUnitContentId(unitId) {
 
 function getPlanUnitById(unitId) {
   return _toState.units.find((unit) => Number(unit.id) === Number(unitId)) ?? null;
+}
+
+function getPlanUnitLinkedEmitters(unitId) {
+  return (state.assets || [])
+    .filter((asset) => Number(asset?.toUnitId) === Number(unitId))
+    .sort((a, b) => {
+      const nameA = String(a?.emitterLabel || a?.name || "");
+      const nameB = String(b?.emitterLabel || b?.name || "");
+      return nameA.localeCompare(nameB) || (Number(a?.frequencyMHz) || 0) - (Number(b?.frequencyMHz) || 0);
+    });
+}
+
+function getAvailableEmittersForPlanUnitLinking() {
+  return (state.assets || [])
+    .filter((asset) => !Number.isFinite(Number(asset?.toUnitId)))
+    .sort((a, b) => {
+      const nameA = String(a?.emitterLabel || a?.name || "");
+      const nameB = String(b?.emitterLabel || b?.name || "");
+      return nameA.localeCompare(nameB) || (Number(a?.frequencyMHz) || 0) - (Number(b?.frequencyMHz) || 0);
+    });
+}
+
+function formatPlanUnitEmitterMeta(asset) {
+  const waveform = asset?.waveform || asset?.ext?.waveform || "";
+  const freq = Number.isFinite(Number(asset?.frequencyMHz)) ? `${Number(asset.frequencyMHz).toFixed(3)} MHz` : "No frequency";
+  const power = Number.isFinite(Number(asset?.powerW)) ? `${Number(asset.powerW)} W` : "";
+  const profile = asset?.profileName || asset?.profileId || "";
+  return [waveform, freq, power, profile].filter(Boolean).join(" | ");
+}
+
+function hideToEmitterLinkedContextMenu() {
+  dom.toEmitterLinkedContextMenu?.classList.add("hidden");
+  dom.toEmitterLinkedList?.querySelectorAll(".is-context-target").forEach((entry) => entry.classList.remove("is-context-target"));
+  _toEmitterManagerState.contextAssetId = "";
+}
+
+function closeToEmitterManagerModal() {
+  _toEmitterManagerState.unitId = null;
+  _toEmitterManagerState.chooserOpen = false;
+  _toEmitterManagerState.contextAssetId = "";
+  hideToEmitterLinkedContextMenu();
+  if (dom.toEmitterManagerValidation) {
+    dom.toEmitterManagerValidation.textContent = "";
+  }
+  dom.toEmitterManagerModal?.classList.add("hidden");
+  updateModalBodyState();
+}
+
+function renderToEmitterManagerModal() {
+  const unit = getPlanUnitById(_toEmitterManagerState.unitId);
+  if (!unit) {
+    closeToEmitterManagerModal();
+    return;
+  }
+  const linkedEmitters = getPlanUnitLinkedEmitters(unit.id);
+  const availableEmitters = getAvailableEmittersForPlanUnitLinking();
+  if (dom.toEmitterManagerTitle) {
+    dom.toEmitterManagerTitle.textContent = `Link / Unlink Emitters`;
+  }
+  if (dom.toEmitterManagerSubtitle) {
+    dom.toEmitterManagerSubtitle.textContent = `${unit.label || unit.designator || `Unit ${unit.id}`} | ${linkedEmitters.length} linked emitter${linkedEmitters.length === 1 ? "" : "s"}`;
+  }
+  if (dom.toEmitterLinkedCount) {
+    dom.toEmitterLinkedCount.textContent = String(linkedEmitters.length);
+  }
+  if (dom.toEmitterAvailableCount) {
+    dom.toEmitterAvailableCount.textContent = String(availableEmitters.length);
+  }
+  if (dom.toEmitterManagerGrid) {
+    dom.toEmitterManagerGrid.classList.toggle("is-chooser-open", _toEmitterManagerState.chooserOpen);
+  }
+  dom.toEmitterAvailablePanel?.classList.toggle("hidden", !_toEmitterManagerState.chooserOpen);
+  dom.toEmitterChooserBackBtn?.classList.toggle("hidden", !_toEmitterManagerState.chooserOpen);
+  if (dom.toEmitterLinkExistingBtn) {
+    dom.toEmitterLinkExistingBtn.disabled = !availableEmitters.length;
+  }
+  if (dom.toEmitterLinkedList) {
+    dom.toEmitterLinkedList.innerHTML = linkedEmitters.map((asset) => `
+      <div class="to-emitter-manager-item" data-asset-id="${escapeHtml(asset.id)}" tabindex="0">
+        <div class="to-emitter-manager-item-main">
+          <div class="to-emitter-manager-item-name">${escapeHtml(asset.emitterLabel || asset.name || "Emitter")}</div>
+          <div class="to-emitter-manager-item-meta">${escapeHtml(formatPlanUnitEmitterMeta(asset))}</div>
+        </div>
+        <div class="to-emitter-manager-item-action">
+          <button class="ghost-button small" type="button" data-to-emitter-action="focus-asset" data-asset-id="${escapeHtml(asset.id)}">Focus</button>
+        </div>
+      </div>
+    `).join("");
+  }
+  dom.toEmitterLinkedEmpty?.classList.toggle("hidden", linkedEmitters.length > 0);
+  if (dom.toEmitterAvailableList) {
+    dom.toEmitterAvailableList.innerHTML = availableEmitters.map((asset) => `
+      <div class="to-emitter-manager-item" data-asset-id="${escapeHtml(asset.id)}">
+        <div class="to-emitter-manager-item-main">
+          <div class="to-emitter-manager-item-name">${escapeHtml(asset.emitterLabel || asset.name || "Emitter")}</div>
+          <div class="to-emitter-manager-item-meta">${escapeHtml(formatPlanUnitEmitterMeta(asset))}</div>
+        </div>
+        <div class="to-emitter-manager-item-action">
+          <button class="primary-button small" type="button" data-to-emitter-action="link-asset" data-asset-id="${escapeHtml(asset.id)}">Link</button>
+        </div>
+      </div>
+    `).join("");
+  }
+  dom.toEmitterAvailableEmpty?.classList.toggle("hidden", availableEmitters.length > 0);
+  hideToEmitterLinkedContextMenu();
+}
+
+function openToEmitterManagerModal(unitId = _toState.selectedUnit) {
+  const unit = getPlanUnitById(unitId);
+  if (!unit) {
+    setStatus("Select a T/O unit first.", true);
+    return;
+  }
+  _toEmitterManagerState.unitId = Number(unit.id);
+  _toEmitterManagerState.chooserOpen = false;
+  renderToEmitterManagerModal();
+  dom.toEmitterManagerModal?.classList.remove("hidden");
+  updateModalBodyState();
+}
+
+function linkEmitterAssetToPlanUnit(assetId, unitId = _toEmitterManagerState.unitId) {
+  const unit = getPlanUnitById(unitId);
+  const asset = (state.assets || []).find((entry) => entry.id === assetId) || null;
+  if (!unit || !asset) {
+    return false;
+  }
+  asset.toUnitId = Number(unit.id);
+  if (_currentEmitterEditId === asset.id) {
+    updateEmitterToLinkBadge(unit);
+  }
+  renderAssets();
+  refreshLinkedViews();
+  saveMapState();
+  setStatus(`Linked ${asset.emitterLabel || asset.name || "Emitter"} to ${unit.label || unit.designator || `Unit ${unit.id}`}.`);
+  return true;
 }
 
 function findPlanUnitByReference(reference) {
@@ -8325,7 +7941,8 @@ const emitterModal = {
     this.renderSavedProfileLibrary();
   },
 
-  open(prefill = null) {
+  async open(prefill = null) {
+    await ensureEmitterLibraryLoaded();
     this.backdrop.classList.remove("hidden");
     updateModalBodyState();
     setAssetPlacementMode(false);
@@ -9049,6 +8666,12 @@ function initEmitterModal() {
   initTakContactsOverlay();
 }
 
+function openEmitterModal(prefill = null) {
+  emitterModal.open(prefill).catch((error) => {
+    setStatus(`Emitter library failed to load: ${error.message}`, true);
+  });
+}
+
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 function updateRangeTrack(input) {
@@ -9381,6 +9004,39 @@ function initMap() {
 }
 
 function wireEvents() {
+  if (document.body) {
+    document.body.addEventListener("click", (event) => {
+      if (!(event.target instanceof Element)) {
+        return;
+      }
+      const actionButton = event.target.closest("[data-tactical-popup-action]");
+      if (!actionButton) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      const action = actionButton.dataset.tacticalPopupAction;
+      const tacticalId = actionButton.dataset.tacticalId || "";
+      const emitterId = actionButton.dataset.emitterId || "";
+      if (action === "show-emitters") {
+        openTacticalPopupPanel(tacticalId, "emitters");
+        return;
+      }
+      if (action === "show-emitter-detail") {
+        openTacticalPopupPanel(tacticalId, "emitter-detail", emitterId);
+        return;
+      }
+      if (action === "show-summary") {
+        openTacticalPopupPanel(tacticalId, "summary");
+        return;
+      }
+      if (action === "simulate-emitter") {
+        state.map?.closePopup?.();
+        openSimulationForAssetId(emitterId);
+      }
+    });
+  }
+
   dom.collapsePanelBtn.addEventListener("click", togglePanelCollapse);
   if (dom.panelModeBtn) dom.panelModeBtn.addEventListener("click", togglePanelMode);
   dom.mapPanelModeToggle?.addEventListener("click", toggleMapPanelMode);
@@ -9657,13 +9313,13 @@ function wireEvents() {
     // Close the tactical editor temporarily while the emitter modal is open
     dom.tacticalEditorModal?.classList.add("hidden");
     updateModalBodyState();
-    emitterModal.open();
+    openEmitterModal();
   });
   dom.emittersAddBtn?.addEventListener("click", () => {
     if (isEmitterWorkspaceViewActive()) {
       reserveEmitterWorkspaceSpawnLayout();
     }
-    emitterModal.open();
+    openEmitterModal();
   });
   dom.mapEmitterAddFromWorkspaceBtn?.addEventListener("click", () => {
     closeMapEmitterAddMenu();
@@ -9671,7 +9327,7 @@ function wireEvents() {
   });
   dom.mapEmitterAddNewBtn?.addEventListener("click", () => {
     closeMapEmitterAddMenu();
-    emitterModal.open();
+    openEmitterModal();
   });
   dom.mapEmitterPickerCloseBtn?.addEventListener("click", closeMapEmitterPickerModal);
   addModalBackdropClose(dom.mapEmitterPickerModal, closeMapEmitterPickerModal);
@@ -9685,7 +9341,7 @@ function wireEvents() {
     if (isEmitterWorkspaceViewActive()) {
       reserveEmitterWorkspaceSpawnLayout();
     }
-    emitterModal.open();
+    openEmitterModal();
   });
   dom.emittersRefreshBtn?.addEventListener("click", () => {
     renderEmittersView();
@@ -22865,7 +22521,7 @@ function openEmitterEditorById(assetId) {
   const asset = state.assets.find((entry) => entry.id === assetId) || null;
   if (!asset) return;
   state.editingAssetId = assetId;
-  emitterModal.open(asset);
+  openEmitterModal(asset);
 }
 
 function openEmitterToUnitPickerById(assetId) {
@@ -23384,6 +23040,9 @@ function renderAssets() {
 
   renderEmittersWorkspace();
   renderMapContents();
+  if (!dom.toEmitterManagerModal?.classList.contains("hidden")) {
+    renderToEmitterManagerModal();
+  }
 }
 
 function renderTerrains() {
@@ -24799,13 +24458,18 @@ async function runSimulation() {
     setStatus("Place and select an emitter first.", true);
     return;
   }
+  const simulationAsset = getSimulationReadyAsset(selected);
+  if (!simulationAsset) {
+    setStatus("Select an emitter that is on the map or linked to a mapped unit.", true);
+    return;
+  }
 
   try {
     const existingViewshed = state.viewsheds.find((entry) => entry.id === state.editingViewshedId);
     const requestId = state.editingViewshedId ?? generateId();
     openSimulationProgress(
       requestId,
-      state.editingViewshedId ? `Updating ${existingViewshed?.name ?? "coverage layer"}...` : `Generating ${selected.name} coverage...`,
+      state.editingViewshedId ? `Updating ${existingViewshed?.name ?? "coverage layer"}...` : `Generating ${simulationAsset.name} coverage...`,
     );
     await yieldToMainThread();
     throwIfSimulationCanceled(requestId);
@@ -24815,7 +24479,7 @@ async function runSimulation() {
       simulationUsesTerrainModel(dom.propagationModel.value) ? "Preparing terrain inputs..." : "Preparing RF simulation...",
       "8%",
     );
-    const terrainId = await resolveTerrainIdForSimulation(selected);
+    const terrainId = await resolveTerrainIdForSimulation(simulationAsset);
     throwIfSimulationCanceled(requestId);
     updateSimulationProgress(
       24,
@@ -24827,7 +24491,7 @@ async function runSimulation() {
       type: "simulation:start",
       payload: {
         requestId,
-        asset: selected,
+        asset: simulationAsset,
         weather: state.weather,
         terrainId,
         radiusMeters: getSimulationRadiusMeters(),
@@ -24918,6 +24582,11 @@ function consumeSimulationResult(payload) {
   const emitterMarker = state.assetMarkers.get(payload.asset.id);
   if (emitterMarker) {
     emitterMarker.openPopup();
+  } else {
+    const linkedAsset = state.assets.find((asset) => asset.id === payload.asset.id);
+    if (linkedAsset) {
+      openLinkedEmitterPopupForAsset(linkedAsset);
+    }
   }
 
   updateMetrics(rssi, validMask);
@@ -26703,8 +26372,9 @@ function getMapContentEntries() {
     });
   });
 
-  state.assets.filter((asset) => hasAssetMapLocation(asset)).forEach((asset) => {
+  state.assets.filter((asset) => Boolean(getAssetEffectiveMapPosition(asset))).forEach((asset) => {
     const radioName = asset.emitterLabel || asset.name || "Radio";
+    const effectivePosition = getAssetEffectiveMapPosition(asset);
     let displayName;
     if (asset.toUnitId) {
       const toUnit = (_toState?.units || []).find(u => u.id === asset.toUnitId);
@@ -26718,7 +26388,10 @@ function getMapContentEntries() {
       kind: "asset",
       assetType: asset.type,
       name: displayName,
-      subtitle: `${asset.type} | ${asset.unit}`,
+      subtitle: hasAssetMapLocation(asset)
+        ? `${asset.type} | ${asset.unit}`
+        : `${asset.type} | ${asset.unit} | Linked to mapped unit`,
+      anchoredToUnit: Boolean(effectivePosition?.tacticalObject),
     });
   });
 
@@ -27966,11 +27639,21 @@ function focusMapContent(contentId) {
 
   if (contentId.startsWith("asset:")) {
     const assetId = contentId.slice("asset:".length);
+    const asset = state.assets.find((entry) => entry.id === assetId);
     const marker = state.assetMarkers.get(assetId);
-    if (!marker) {
+    if (marker) {
+      state.map.setView(marker.getLatLng(), Math.max(state.map.getZoom(), 15));
+      marker.openPopup();
       return;
     }
-    state.map.setView(marker.getLatLng(), Math.max(state.map.getZoom(), 15));
+    if (!asset) {
+      return;
+    }
+    const effectivePosition = getAssetEffectiveMapPosition(asset);
+    if (!effectivePosition) {
+      return;
+    }
+    openLinkedEmitterPopupForAsset(asset);
     return;
   }
 
@@ -28289,22 +27972,52 @@ function setSimulationModalAsset(asset) {
   }
   dom.assetSelect.value = asset.id;
   if (dom.simulationAssetSummary) {
-    dom.simulationAssetSummary.textContent = `${asset.name} | ${asset.frequencyMHz} MHz | ${asset.powerW} W`;
+    const anchoredNote = asset.mapAnchorSource === "linked-unit" ? " | linked unit position" : "";
+    dom.simulationAssetSummary.textContent = `${asset.name} | ${asset.frequencyMHz} MHz | ${asset.powerW} W${anchoredNote}`;
   }
   syncSimPropFromAsset(asset);
 }
 
+function getSimulationReadyAsset(asset) {
+  if (!asset) {
+    return null;
+  }
+  const effectivePosition = getAssetEffectiveMapPosition(asset);
+  if (!effectivePosition) {
+    return null;
+  }
+  const groundElevationM = Number.isFinite(Number(asset.groundElevationM))
+    ? Number(asset.groundElevationM)
+    : sampleTerrainElevation(effectivePosition.lat, effectivePosition.lon);
+  return {
+    ...asset,
+    lat: effectivePosition.lat,
+    lon: effectivePosition.lon,
+    groundElevationM: Number.isFinite(Number(groundElevationM)) ? Number(groundElevationM) : asset.groundElevationM,
+    mapAnchorSource: effectivePosition.tacticalObject ? "linked-unit" : "asset",
+  };
+}
+
+function openSimulationForAssetId(assetId) {
+  const asset = state.assets.find((entry) => entry.id === assetId);
+  if (!asset) {
+    return;
+  }
+  const simulationAsset = getSimulationReadyAsset(asset);
+  if (!simulationAsset) {
+    setStatus("That emitter is not placed on the map and is not linked to a mapped unit.", true);
+    return;
+  }
+  state.editingViewshedId = null;
+  setSimulationModalAsset(simulationAsset);
+  refreshActionButtons();
+  openSimulationModal();
+  setStatus(`Configuring RF simulation for ${asset.name}.`);
+}
+
 function openSimulationForContent(contentId) {
   if (contentId.startsWith("asset:")) {
-    const asset = state.assets.find((entry) => entry.id === contentId.slice("asset:".length));
-    if (!asset) {
-      return;
-    }
-    state.editingViewshedId = null;
-    setSimulationModalAsset(asset);
-    refreshActionButtons();
-    openSimulationModal();
-    setStatus(`Configuring RF simulation for ${asset.name}.`);
+    openSimulationForAssetId(contentId.slice("asset:".length));
     return;
   }
 
@@ -28411,7 +28124,7 @@ function editMapContent(contentId) {
     }
     state.editingAssetId = asset.id;
     setAssetPlacementMode(false);
-    emitterModal.open(asset);
+    openEmitterModal(asset);
     refreshActionButtons();
     setStatus(`Editing ${asset.name}.`);
     return;
@@ -35645,6 +35358,11 @@ const _toPickerState = {
   selectedUnitIds: new Set(),
   commitEmitterId: null,
 };
+const _toEmitterManagerState = {
+  unitId: null,
+  chooserOpen: false,
+  contextAssetId: "",
+};
 
 function initToPickerModal() {
   const linkBtn   = document.getElementById("emLinkToToBtn");
@@ -36806,6 +36524,10 @@ function initPlanViewIfNeeded() {
     updateToLinkBannerMessage("Click another unit to link or unlink it as a child of the selected unit.");
     hideToContextMenu();
   });
+  document.getElementById("toCtxEmitters")?.addEventListener("click", () => {
+    hideToContextMenu();
+    openToEmitterManagerModal();
+  });
   document.getElementById("toCtxEdit")?.addEventListener("click", () => {
     hideToContextMenu();
     openToEditModal();
@@ -36856,6 +36578,57 @@ function initPlanViewIfNeeded() {
       saveToEditModal();
     }
   });
+  dom.toEmitterManagerCloseBtn?.addEventListener("click", closeToEmitterManagerModal);
+  dom.toEmitterManagerDoneBtn?.addEventListener("click", closeToEmitterManagerModal);
+  dom.toEmitterManagerModal?.addEventListener("click", (e) => {
+    if (e.target === dom.toEmitterManagerModal) {
+      closeToEmitterManagerModal();
+    }
+  });
+  dom.toEmitterLinkExistingBtn?.addEventListener("click", () => {
+    _toEmitterManagerState.chooserOpen = true;
+    renderToEmitterManagerModal();
+  });
+  dom.toEmitterChooserBackBtn?.addEventListener("click", () => {
+    _toEmitterManagerState.chooserOpen = false;
+    renderToEmitterManagerModal();
+  });
+  dom.toEmitterAvailableList?.addEventListener("click", (event) => {
+    const button = event.target.closest('[data-to-emitter-action="link-asset"]');
+    if (!button) return;
+    const assetId = button.dataset.assetId || "";
+    if (!assetId) return;
+    if (linkEmitterAssetToPlanUnit(assetId)) {
+      renderToEmitterManagerModal();
+    }
+  });
+  dom.toEmitterLinkedList?.addEventListener("click", (event) => {
+    const button = event.target.closest('[data-to-emitter-action="focus-asset"]');
+    if (!button) return;
+    const assetId = button.dataset.assetId || "";
+    if (!assetId) return;
+    focusMapContent(`asset:${assetId}`);
+  });
+  dom.toEmitterLinkedList?.addEventListener("contextmenu", (event) => {
+    const row = event.target.closest(".to-emitter-manager-item");
+    if (!row || !dom.toEmitterLinkedContextMenu) return;
+    event.preventDefault();
+    event.stopPropagation();
+    hideToEmitterLinkedContextMenu();
+    _toEmitterManagerState.contextAssetId = row.dataset.assetId || "";
+    row.classList.add("is-context-target");
+    dom.toEmitterLinkedContextMenu.style.left = `${event.clientX}px`;
+    dom.toEmitterLinkedContextMenu.style.top = `${event.clientY}px`;
+    dom.toEmitterLinkedContextMenu.classList.remove("hidden");
+  });
+  dom.toEmitterLinkedContextUnlink?.addEventListener("click", () => {
+    const assetId = _toEmitterManagerState.contextAssetId;
+    hideToEmitterLinkedContextMenu();
+    if (!assetId) return;
+    if (unlinkEmitterAssetById(assetId)) {
+      renderToEmitterManagerModal();
+    }
+  });
 
   canvas.addEventListener("click", (e) => {
     hideToContextMenu();
@@ -36863,11 +36636,17 @@ function initPlanViewIfNeeded() {
       clearToSelection();
     }
   });
+  document.addEventListener("click", (e) => {
+    if (!dom.toEmitterLinkedContextMenu?.contains(e.target)) {
+      hideToEmitterLinkedContextMenu();
+    }
+  });
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
       hideToContextMenu();
       cancelToLink();
       closeToEditModal();
+      closeToEmitterManagerModal();
     }
   });
 
@@ -36902,6 +36681,9 @@ function renderToView() {
   world.innerHTML = "";
   for (const unit of _toState.units) renderToUnit(normalizePlanUnit(unit));
   renderToEdges();
+  if (!dom.toEmitterManagerModal?.classList.contains("hidden")) {
+    renderToEmitterManagerModal();
+  }
 }
 
 function renderToUnit(unit) {
@@ -36909,9 +36691,13 @@ function renderToUnit(unit) {
   if (!world) return;
   const normalized = normalizePlanUnit(unit);
   const linkedTactical = getTacticalObjectByPlanUnitId(normalized.id);
+  const linkedEmitters = getPlanUnitLinkedEmitters(normalized.id);
   const placementBadge = linkedTactical
     ? `<span class="to-unit-placement-badge">Map linked</span>`
     : `<span class="to-unit-placement-badge to-unit-placement-badge--pending">Not placed</span>`;
+  const emitterBadge = linkedEmitters.length
+    ? `<span class="to-unit-placement-badge">${linkedEmitters.length} emitter${linkedEmitters.length === 1 ? "" : "s"} linked</span>`
+    : "";
   const el = document.createElement("div");
   el.className = "to-unit";
   if (_toState.selectedUnit === normalized.id) el.classList.add("selected");
@@ -36922,6 +36708,7 @@ function renderToUnit(unit) {
     <div class="to-unit-card">
       <span class="to-unit-icon">${renderToUnitIcon(normalized)}</span>
       <span class="to-unit-label">${esc(normalized.label)}</span>
+      ${emitterBadge}
       ${placementBadge}
     </div>
   `;

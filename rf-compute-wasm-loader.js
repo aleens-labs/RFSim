@@ -1,5 +1,6 @@
 async function importWasmModule() {
-  return await import("./rust/rf_sim_compute/pkg/rf_sim_compute.js");
+  const moduleUrl = new URL("./rust/rf_sim_compute/pkg/rf_sim_compute.js", window.location.href).toString();
+  return await import(/* @vite-ignore */ moduleUrl);
 }
 
 export async function loadRfComputeEngine() {
