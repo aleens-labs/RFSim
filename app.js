@@ -1270,7 +1270,7 @@ function computeLinkBudget(profile) {
 const EMITTER_PROFILE_LEGACY_STORAGE_KEY = "ew-sim-emitter-profiles";
 const EMITTER_PROFILE_STORAGE_KEY = "ew-sim-emitter-profiles-library";
 const PROFILE_STORAGE_KEY = EMITTER_PROFILE_STORAGE_KEY;
-const SETTINGS_STORAGE_KEY = "ew-sim-map-settings";
+const SETTINGS_STORAGE_KEY_PREFIX = "ew-sim-map-settings";
 const FONT_FAMILY_OPTIONS = {
   bahnschrift: `Bahnschrift, "DIN Alternate", "Segoe UI", sans-serif`,
   inter: `Inter, "Segoe UI", Roboto, Arial, sans-serif`,
@@ -1281,8 +1281,8 @@ const FONT_FAMILY_OPTIONS = {
 const CESIUM_ION_TOKEN_STORAGE_KEY = "ew-sim-cesium-ion-token";
 const AI_PROVIDER_STORAGE_KEY = "ew-sim-ai-provider";
 const TAK_IDENTITY_STORAGE_KEY_PREFIX = "ew-sim-tak-identity";
-const MAP_STATE_STORAGE_KEY = "ew-sim-map-state";
-const MAP_VIEW_CACHE_STORAGE_KEY = "ew-sim-map-view-cache";
+const MAP_STATE_STORAGE_KEY_PREFIX = "ew-sim-map-state";
+const MAP_VIEW_CACHE_STORAGE_KEY_PREFIX = "ew-sim-map-view-cache";
 const MAP_STATE_STORAGE_KEY_LEGACY = null; // no prior keys to migrate
 const DEFAULT_MAP_VIEW = Object.freeze({
   lat: 34.296261,
@@ -1432,6 +1432,23 @@ function getTakIdentityStorageKey(user = state.session.user) {
     .replace(/^-+|-+$/g, "")
     .slice(0, 120) || "session";
   return `${TAK_IDENTITY_STORAGE_KEY_PREFIX}:${normalized}`;
+}
+
+function _userStorageSegment(user = state.session.user) {
+  const id = user?.id || user?.username || user?.email || "guest";
+  return String(id).toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 120) || "guest";
+}
+
+function getMapStateStorageKey(user = state.session.user) {
+  return `${MAP_STATE_STORAGE_KEY_PREFIX}:${_userStorageSegment(user)}`;
+}
+
+function getSettingsStorageKey(user = state.session.user) {
+  return `${SETTINGS_STORAGE_KEY_PREFIX}:${_userStorageSegment(user)}`;
+}
+
+function getMapViewCacheStorageKey(user = state.session.user) {
+  return `${MAP_VIEW_CACHE_STORAGE_KEY_PREFIX}:${_userStorageSegment(user)}`;
 }
 
 function deriveDefaultTakCallsign(user = state.session.user) {
@@ -7676,7 +7693,7 @@ async function saveActiveProjectNow({ silent = false } = {}) {
 
   // Write to localStorage immediately as a safety net
   try {
-    window.localStorage.setItem(MAP_STATE_STORAGE_KEY, JSON.stringify(serializeCurrentMapState()));
+    window.localStorage.setItem(getMapStateStorageKey(), JSON.stringify(serializeCurrentMapState()));
   } catch { /* quota */ }
 
   try {
@@ -7711,7 +7728,7 @@ function flushPendingAutosave() {
   }
   // Always write localStorage â€” guaranteed local recovery layer.
   try {
-    window.localStorage.setItem(MAP_STATE_STORAGE_KEY, JSON.stringify(serializeCurrentMapState()));
+    window.localStorage.setItem(getMapStateStorageKey(), JSON.stringify(serializeCurrentMapState()));
   } catch { /* quota */ }
 
   if (!state.session.autosavePending && !state.session.autosaveTimerId) return;
@@ -9801,7 +9818,7 @@ function loadSettings() {
   if (!canUsePersistentBrowserStorage()) {
     return;
   }
-  const stored = window.localStorage.getItem(SETTINGS_STORAGE_KEY);
+  const stored = window.localStorage.getItem(getSettingsStorageKey());
   if (!stored) {
     return;
   }
@@ -9848,7 +9865,7 @@ function loadSettings() {
       state.settings.tacticalMarkerSize = parsed.tacticalMarkerSize;
     }
   } catch {
-    window.localStorage.removeItem(SETTINGS_STORAGE_KEY);
+    window.localStorage.removeItem(getSettingsStorageKey());
   }
 }
 
@@ -9856,7 +9873,7 @@ function persistSettings() {
   if (!canUsePersistentBrowserStorage()) {
     return;
   }
-  window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(state.settings));
+  window.localStorage.setItem(getSettingsStorageKey(), JSON.stringify(state.settings));
 }
 
 function serializeImportedItem(item) {
@@ -9932,11 +9949,11 @@ function getMapViewCacheScopeKey() {
 
 function readMapViewCache() {
   try {
-    const raw = window.localStorage.getItem(MAP_VIEW_CACHE_STORAGE_KEY);
+    const raw = window.localStorage.getItem(getMapViewCacheStorageKey());
     const parsed = raw ? JSON.parse(raw) : {};
     return parsed && typeof parsed === "object" ? parsed : {};
   } catch {
-    window.localStorage.removeItem(MAP_VIEW_CACHE_STORAGE_KEY);
+    window.localStorage.removeItem(getMapViewCacheStorageKey());
     return {};
   }
 }
@@ -10019,7 +10036,7 @@ function saveMapViewPosition() {
   try {
     const cache = readMapViewCache();
     cache[getMapViewCacheScopeKey()] = getCurrentMapView();
-    window.localStorage.setItem(MAP_VIEW_CACHE_STORAGE_KEY, JSON.stringify(cache));
+    window.localStorage.setItem(getMapViewCacheStorageKey(), JSON.stringify(cache));
   } catch {
     // quota or parse error â€” skip silently
   }
@@ -10038,7 +10055,7 @@ function persistMapStateNow() {
   idbSaveKmzItems(state.session.activeProjectId, kmzItems).catch(() => {});
 
   try {
-    window.localStorage.setItem(MAP_STATE_STORAGE_KEY, JSON.stringify(compactPayload));
+    window.localStorage.setItem(getMapStateStorageKey(), JSON.stringify(compactPayload));
   } catch {
     // Still over quota without KMZ â€” write minimal envelope so map position
     // and folder structure survive a refresh.
@@ -10059,7 +10076,7 @@ function persistMapStateNow() {
         importedItems: [],
         assets: compactPayload.assets,
       };
-      window.localStorage.setItem(MAP_STATE_STORAGE_KEY, JSON.stringify(minimalPayload));
+      window.localStorage.setItem(getMapStateStorageKey(), JSON.stringify(minimalPayload));
     } catch { /* truly out of space */ }
   }
 
@@ -10263,10 +10280,10 @@ async function loadMapState() {
   // Read localStorage first â€” it is the only place KMZ geometry is persisted.
   let localState = null;
   try {
-    const raw = window.localStorage.getItem(MAP_STATE_STORAGE_KEY);
+    const raw = window.localStorage.getItem(getMapStateStorageKey());
     if (raw) localState = JSON.parse(raw);
   } catch {
-    window.localStorage.removeItem(MAP_STATE_STORAGE_KEY);
+    window.localStorage.removeItem(getMapStateStorageKey());
   }
 
   if (state.session.token && state.session.activeProjectId) {
