@@ -949,30 +949,47 @@ function getMilstdSymbolCatalogEntry(value = null) {
   if (!value) return null;
   if (typeof value === "string") {
     const text = value.trim();
-    const baseUniqueId = normalizeMilstdUniqueId(text);
+    const legacySidc = isMilstdLegacySidc(text) ? text.toUpperCase() : "";
+    const sidc20 = isMilstdSidc20(text) ? text : "";
+    const baseUniqueId = sidc20 ? extractMilstdUniqueIdFromSidc(sidc20) : normalizeMilstdUniqueId(text);
     return MILSTD_SYMBOL_BY_ID.get(text)
       || MILSTD_SYMBOL_BY_UNIQUE_ID.get(text)
-      || MILSTD_SYMBOL_BY_LEGACY_SIDC.get(text.toUpperCase())
+      || (legacySidc ? MILSTD_SYMBOL_BY_LEGACY_SIDC.get(legacySidc) : null)
+      || (sidc20 ? getPreferredMilstdSymbolEntryByBaseUniqueId(baseUniqueId, deriveTacticalAffiliationFromMilstdSidc(sidc20, "friendly")) : null)
       || getPreferredMilstdSymbolEntryByBaseUniqueId(baseUniqueId)
       || null;
   }
   const detail = value?.detail && typeof value.detail === "object" ? value.detail : {};
+  const explicitSidc = String(value?.sidc || detail?.milsymId || "").trim();
   const id = String(value?.id || detail.milsymCatalogId || "").trim();
-  const uniqueId = String(value?.uniqueId || value?.symbolUniqueId || value?.catalogId || value?.unitType || detail.milsymUniqueId || "").trim();
-  const baseUniqueId = normalizeMilstdUniqueId(uniqueId || id);
+  const sidc20 = isMilstdSidc20(explicitSidc) ? explicitSidc : "";
+  const uniqueId = String(
+    value?.uniqueId
+    || value?.symbolUniqueId
+    || value?.catalogId
+    || value?.unitType
+    || detail.milsymUniqueId
+    || extractMilstdUniqueIdFromSidc(explicitSidc)
+    || ""
+  ).trim();
+  const baseUniqueId = normalizeMilstdUniqueId(uniqueId || id || extractMilstdUniqueIdFromSidc(explicitSidc));
   const legacySidc = String(
     value?.legacySidc
     || value?.sidcLegacy
     || detail.milsymLegacyId
-    || (typeof value?.sidc === "string" && value.sidc.length === 15 ? value.sidc : "")
-    || (typeof detail?.milsymId === "string" && detail.milsymId.length === 15 ? detail.milsymId : "")
+    || (isMilstdLegacySidc(explicitSidc) ? explicitSidc : "")
     || ""
   ).trim().toUpperCase();
   return (id ? MILSTD_SYMBOL_BY_ID.get(id) : null)
     || (uniqueId ? MILSTD_SYMBOL_BY_UNIQUE_ID.get(uniqueId) : null)
     || (legacySidc ? MILSTD_SYMBOL_BY_LEGACY_SIDC.get(legacySidc) : null)
+    || (sidc20 ? getPreferredMilstdSymbolEntryByBaseUniqueId(baseUniqueId, deriveTacticalAffiliationFromMilstdSidc(sidc20, value?.affiliation || detail?.affiliation || "friendly")) : null)
     || getPreferredMilstdSymbolEntryByBaseUniqueId(baseUniqueId, value?.affiliation || detail?.affiliation || "friendly")
     || null;
+}
+
+function isMilstdLegacySidc(value = "") {
+  return /^[A-Z0-9_-]{15}$/i.test(String(value || "").trim());
 }
 
 function isMilstdSidc20(value = "") {
@@ -1030,11 +1047,21 @@ function getMilstdSymbolDefaultCotType(entry, affiliation = "friendly") {
 function buildMilstdDetail(detail = {}, entry, affiliation = "friendly", size = "") {
   const next = detail && typeof detail === "object" ? { ...detail } : {};
   const catalogEntry = entry || getMilstdSymbolCatalogEntry(next);
-  const uniqueId = normalizeMilstdUniqueId(next.milsymUniqueId || catalogEntry?.uniqueId || catalogEntry?.id || "");
-  const sidc = buildMilstdSidc(uniqueId, affiliation, size) || String(next.milsymId || "").trim();
+  const explicitSidc = String(next.milsymId || "").trim();
+  const uniqueId = normalizeMilstdUniqueId(
+    next.milsymUniqueId
+    || extractMilstdUniqueIdFromSidc(explicitSidc)
+    || catalogEntry?.uniqueId
+    || catalogEntry?.id
+    || ""
+  );
+  const sidc = isMilstdSidc20(explicitSidc)
+    ? explicitSidc
+    : (buildMilstdSidc(uniqueId, affiliation, size) || explicitSidc);
   if (catalogEntry?.id) next.milsymCatalogId = catalogEntry.id;
   if (uniqueId) next.milsymUniqueId = uniqueId;
   if (catalogEntry?.legacySidc) next.milsymLegacyId = catalogEntry.legacySidc;
+  if (!next.milsymLegacyId && isMilstdLegacySidc(explicitSidc)) next.milsymLegacyId = explicitSidc.toUpperCase();
   if (catalogEntry?.label) next.milsymLabel = catalogEntry.label;
   if (catalogEntry?.familyKey) next.milsymFamilyKey = catalogEntry.familyKey;
   if (catalogEntry?.familyLabel) next.milsymFamilyLabel = catalogEntry.familyLabel;
@@ -1103,6 +1130,41 @@ function getMilstdSymbolInfo(value = {}) {
     affiliation,
     sidc,
     uniqueId: normalizeMilstdUniqueId(detail.milsymUniqueId || entry?.uniqueId || entry?.id || extractMilstdUniqueIdFromSidc(sidc) || ""),
+  };
+}
+
+function getMilstdLayerSpec(value = {}) {
+  const symbolInfo = getMilstdSymbolInfo(value);
+  if (symbolInfo.entry && symbolInfo.sidc) {
+    const standalone = shouldRenderStandaloneMilstd(symbolInfo.entry);
+    return {
+      framePath: standalone ? "" : getMilstdFramePathFromSidc(symbolInfo.sidc),
+      mainPath: getMilstdMainPathForAffiliation(symbolInfo.entry, symbolInfo.affiliation),
+      modifierPaths: [],
+      echelonPath: standalone ? "" : getMilstdEchelonPathFromSidc(symbolInfo.sidc),
+      fallbackText: "",
+    };
+  }
+
+  const unit = value && typeof value === "object" ? value : {};
+  const framePath = resolveMilstdFramePath(unit);
+  if (unit?.frameOnly) {
+    return {
+      framePath,
+      mainPath: "",
+      modifierPaths: [],
+      echelonPath: "",
+      fallbackText: "",
+    };
+  }
+  const mainPath = resolveMilstdMainPath(unit) || "";
+  const modifierPaths = resolveMilstdModifierPaths(unit);
+  return {
+    framePath,
+    mainPath,
+    modifierPaths,
+    echelonPath: MILSTD_ECHELON_PATHS[unit.size] || "",
+    fallbackText: !mainPath && !modifierPaths.length ? getMilstdFallbackText(unit) : "",
   };
 }
 
@@ -1261,12 +1323,21 @@ function buildDefaultCotTypeForTacticalObject(objectClass, affiliation = "friend
 function normalizeTacticalObject(raw = {}) {
   const geometryType = String(raw.geometryType || "Point");
   const rawDetail = raw.detail && typeof raw.detail === "object" ? { ...raw.detail } : {};
+  const explicitSidc = String(raw.sidc || rawDetail.milsymId || "").trim();
+  const explicitSymbolUniqueId = normalizeMilstdUniqueId(
+    raw.symbolUniqueId
+    || rawDetail.milsymUniqueId
+    || extractMilstdUniqueIdFromSidc(explicitSidc)
+    || ""
+  );
   const milstdEntry = getMilstdSymbolCatalogEntry({
     ...raw,
     detail: rawDetail,
+    sidc: explicitSidc,
+    uniqueId: explicitSymbolUniqueId || raw.symbolUniqueId || raw.catalogId || raw.unitType || "",
   });
-  const milstdAffiliation = raw.sidc || rawDetail.milsymId
-    ? deriveTacticalAffiliationFromMilstdSidc(raw.sidc || rawDetail.milsymId, raw.affiliation || "friendly")
+  const milstdAffiliation = explicitSidc
+    ? deriveTacticalAffiliationFromMilstdSidc(explicitSidc, raw.affiliation || "friendly")
     : normalizeTacticalAffiliation(raw.affiliation || "friendly");
   const objectClass = TACTICAL_OBJECT_CLASSES.includes(raw.objectClass)
     ? raw.objectClass
@@ -1276,8 +1347,7 @@ function normalizeTacticalObject(raw = {}) {
   const unitType = normalizeToUnitType(
     raw.unitType
     || raw.catalogId
-    || raw.symbolUniqueId
-    || rawDetail.milsymUniqueId
+    || explicitSymbolUniqueId
     || catalogEntry?.id
     || milstdEntry?.uniqueId
     || deriveTacticalUnitTypeFromCotType(raw.cotType, domain)
@@ -1296,7 +1366,14 @@ function normalizeTacticalObject(raw = {}) {
       detail.usericonPath = usericonPath;
     }
   }
-  const sidc = String(raw.sidc || detail.milsymId || "").trim();
+  const sidc = String(explicitSidc || detail.milsymId || "").trim();
+  const symbolUniqueId = normalizeMilstdUniqueId(
+    explicitSymbolUniqueId
+    || detail.milsymUniqueId
+    || milstdEntry?.uniqueId
+    || unitType
+    || ""
+  );
   const defaultCotType = milstdEntry
     ? getMilstdSymbolDefaultCotType(milstdEntry, affiliation)
     : buildDefaultCotTypeForTacticalObject(objectClass, affiliation, domain);
@@ -1319,7 +1396,7 @@ function normalizeTacticalObject(raw = {}) {
     affiliation,
     size,
     unitType,
-    symbolUniqueId: objectClass === "unit" ? normalizeMilstdUniqueId(unitType || detail.milsymUniqueId || milstdEntry?.uniqueId || "") : "",
+    symbolUniqueId: objectClass === "unit" ? symbolUniqueId : "",
     name: String(raw.name || raw.label || detail.milsymLabel || buildDefaultToUnitLabel(size, unitType)).trim(),
     designator: String(raw.designator || raw.callsign || "").trim(),
     remarks: String(raw.remarks || "").trim(),
@@ -1393,18 +1470,31 @@ function getLinkedPlanUnitForTacticalObject(object) {
 function getTacticalDisplayUnit(object) {
   const linked = getLinkedPlanUnitForTacticalObject(object);
   const normalizedLinked = linked ? normalizePlanUnit(linked) : null;
-  const resolvedType = normalizeToUnitType(object?.catalogId || deriveTacticalUnitTypeFromCotType(object?.cotType, object?.domain) || object?.unitType);
   const detail = object?.detail && typeof object.detail === "object" ? { ...object.detail } : {};
+  const explicitSidc = String(object?.sidc || detail.milsymId || "").trim();
+  const resolvedSymbolUniqueId = normalizeMilstdUniqueId(
+    object?.symbolUniqueId
+    || detail.milsymUniqueId
+    || extractMilstdUniqueIdFromSidc(explicitSidc)
+    || ""
+  );
+  const resolvedType = normalizeToUnitType(
+    object?.catalogId
+    || resolvedSymbolUniqueId
+    || deriveTacticalUnitTypeFromCotType(object?.cotType, object?.domain)
+    || object?.unitType
+  );
   return normalizeToUnit({
     id: normalizedLinked?.id ?? object?.linkedPlanUnitId ?? 0,
     label: normalizedLinked?.label || object?.name || "Tactical Unit",
     designator: normalizedLinked?.designator || object?.designator || "",
     affiliation: normalizeTacticalAffiliation(normalizedLinked?.affiliation || object?.affiliation || "friendly"),
-    type: normalizedLinked?.catalogId || normalizedLinked?.type || resolvedType || "infantry",
-    catalogId: normalizedLinked?.catalogId || resolvedType || "infantry",
+    type: normalizedLinked?.catalogId || normalizedLinked?.type || resolvedSymbolUniqueId || resolvedType || "infantry",
+    catalogId: normalizedLinked?.catalogId || resolvedSymbolUniqueId || resolvedType || "infantry",
     cotType: normalizedLinked?.cotType || object?.cotType || buildCatalogCotType(resolvedType, normalizedLinked?.affiliation || object?.affiliation || "friendly"),
     size: normalizedLinked?.size ?? object?.size ?? (object?.objectClass === "unit" && catalogAllowsEchelon(resolvedType) ? "battalion" : ""),
-    sidc: object?.sidc || detail.milsymId || "",
+    sidc: explicitSidc,
+    symbolUniqueId: resolvedSymbolUniqueId,
     detail,
     frameOnly: isGenericCotTrackType(object?.cotType),
   });
@@ -4201,13 +4291,20 @@ function removeTakLiveRuntimeObject(uid) {
 
 function buildTakLiveObject(contact, profile) {
   const cotType = String(contact?.cotType || "");
+  const sidc = String(contact?.sidc || contact?.milsymId || "").trim();
+  const symbolUniqueId = normalizeMilstdUniqueId(contact?.symbolUniqueId || extractMilstdUniqueIdFromSidc(sidc) || "");
   const domain = deriveTacticalDomainFromCotType(cotType);
-  const objectClass = String(cotType || "").toLowerCase().startsWith("a-") ? "unit" : "track";
+  const objectClass = String(cotType || "").toLowerCase().startsWith("a-") || sidc || symbolUniqueId ? "unit" : "track";
+  const affiliation = sidc
+    ? deriveTacticalAffiliationFromMilstdSidc(sidc, deriveTacticalAffiliationFromCotType(cotType))
+    : deriveTacticalAffiliationFromCotType(cotType);
   const detail = {
     team: contact?.team || "",
     role: contact?.role || "",
     lastSeenAt: contact?.lastSeenAt || "",
     usericonPath: contact?.usericonPath || buildTakUserIconPath(cotType),
+    milsymId: sidc,
+    milsymUniqueId: symbolUniqueId,
   };
   return normalizeTacticalObject({
     id: `live-${contact.uid}`,
@@ -4218,8 +4315,10 @@ function buildTakLiveObject(contact, profile) {
     coordinates: [Number(contact.lat), Number(contact.lon)],
     cotType,
     domain,
-    affiliation: deriveTacticalAffiliationFromCotType(cotType),
-    unitType: deriveTacticalUnitTypeFromCotType(cotType, domain),
+    affiliation,
+    unitType: symbolUniqueId || deriveTacticalUnitTypeFromCotType(cotType, domain),
+    symbolUniqueId,
+    sidc,
     size: "team",
     name: contact.callsign || contact.uid,
     designator: contact.callsign || "",
@@ -32515,17 +32614,20 @@ function _syncCesiumEntitiesImmediate() {
   }
 
   const buildTacticalBillboardUrl = (object) => {
-    const aff = normalizeTacticalAffiliation(object.affiliation);
-    const type = normalizeToUnitType(object.unitType || deriveTacticalUnitTypeFromCotType(object.cotType, object.domain));
-    const size = object.size || "battalion";
-    const unit = normalizeToUnit({ id: 0, label: "", affiliation: aff, type, size, frameOnly: isGenericCotTrackType(object.cotType) });
-
-    const framePath = resolveMilstdFramePath(unit);
-    const mainPath = unit.frameOnly ? null : resolveMilstdMainPath(unit);
-    const modifierPaths = unit.frameOnly ? [] : resolveMilstdModifierPaths(unit);
-    const echelonPath = unit.frameOnly ? null : (MILSTD_ECHELON_PATHS[size] || null);
-
-    const key = `${framePath}|${mainPath}|${modifierPaths.join(",")}|${echelonPath}`;
+    const tactical = normalizeTacticalObject(object);
+    const unit = getTacticalDisplayUnit(tactical);
+    const spec = getMilstdLayerSpec({
+      ...unit,
+      affiliation: normalizeTacticalAffiliation(tactical.affiliation || unit.affiliation),
+      sidc: tactical.sidc || unit.sidc || "",
+      detail: {
+        ...(unit.detail && typeof unit.detail === "object" ? unit.detail : {}),
+        ...(tactical.detail && typeof tactical.detail === "object" ? tactical.detail : {}),
+      },
+      frameOnly: isGenericCotTrackType(tactical.cotType),
+    });
+    const layerPaths = [spec.framePath, spec.mainPath, ...spec.modifierPaths, spec.echelonPath].filter(Boolean);
+    const key = layerPaths.join("|") || "blank";
     if (_cesiumBillboardCache.has(key)) return Promise.resolve(_cesiumBillboardCache.get(key));
 
     // Fetch each SVG as text, inject explicit width/height, then render to
@@ -32551,7 +32653,6 @@ function _syncCesiumEntitiesImmediate() {
       img.src = dataUrl;
     });
 
-    const layerPaths = [framePath, mainPath, ...modifierPaths, echelonPath];
     const promise = Promise.all(layerPaths.map(fetchSvgDataUrl))
       .then((dataUrls) => Promise.all(dataUrls.map(loadDataUrl)))
       .then((images) => {
@@ -36659,29 +36760,6 @@ const _emittersWorkspaceState = {
 };
 
 
-const MIL_COLORS = {
-  friendly: { frame: "#006bb6", bg: "#aad4f5", text: "#000000" },
-  hostile:  { frame: "#c80000", bg: "#ff9999", text: "#000000" },
-  neutral:  { frame: "#00875a", bg: "#bff0c4", text: "#000000" },
-  unknown:  { frame: "#ffe600", bg: "#fffaa0", text: "#000000" },
-};
-
-const UNIT_SIZE_SYMBOLS = {
-  team:      "Ã¸",
-  squad:     "â€¢",
-  section:   "â€¢â€¢",
-  platoon:   "â€¢â€¢â€¢",
-  company:   "I",
-  battalion: "II",
-  regiment:  "III",
-  brigade:   "X",
-  division:  "XX",
-  corps:     "XXX",
-  army:      "XXXX",
-  army_group:"XXXXX",
-  theater:   "XXXXXX",
-};
-
 const UNIT_TYPE_SYMBOLS = {
   infantry:            "X",
   light_infantry:      "X",
@@ -36945,19 +37023,37 @@ function normalizeToUnitType(type) {
 
 function normalizeToUnit(unit) {
   if (!unit || typeof unit !== "object") return unit;
-  const normalizedType = normalizeToUnitType(unit.type);
-  const entry = getDoctrinalCatalogEntryById(normalizedType) || getMilstdSymbolCatalogEntry(normalizedType);
+  const detail = unit.detail && typeof unit.detail === "object" ? { ...unit.detail } : {};
+  const explicitSidc = String(unit.sidc || detail.milsymId || "").trim();
+  const explicitUniqueId = normalizeMilstdUniqueId(
+    unit.symbolUniqueId
+    || detail.milsymUniqueId
+    || extractMilstdUniqueIdFromSidc(explicitSidc)
+    || unit.catalogId
+    || unit.type
+    || ""
+  );
+  const normalizedType = normalizeToUnitType(unit.type || unit.catalogId || explicitUniqueId);
+  const entry = getDoctrinalCatalogEntryById(normalizedType) || getMilstdSymbolCatalogEntry({
+    ...unit,
+    detail,
+    sidc: explicitSidc,
+    uniqueId: explicitUniqueId || normalizedType,
+  });
   const affiliation = normalizeTacticalAffiliation(unit.affiliation || "friendly");
   const size = typeof unit.size === "string" ? unit.size : "";
   if (unit.type !== normalizedType) unit.type = normalizedType;
   if (unit.catalogId !== normalizedType) unit.catalogId = normalizedType;
-  unit.symbolUniqueId = normalizeMilstdUniqueId(unit.catalogId || normalizedType || unit.symbolUniqueId || "");
+  unit.symbolUniqueId = normalizeMilstdUniqueId(explicitUniqueId || entry?.uniqueId || unit.catalogId || normalizedType || "");
   if (!unit.cotType) {
     unit.cotType = buildCatalogCotType(normalizedType, affiliation) || unit.cotType || "";
   }
   if (entry) {
-    unit.detail = buildMilstdDetail(unit.detail, getMilstdSymbolCatalogEntry(entry.milstdCatalogId || entry.id || normalizedType), affiliation, size);
-    unit.sidc = String(unit.sidc || unit.detail?.milsymId || "").trim();
+    unit.detail = buildMilstdDetail(detail, getMilstdSymbolCatalogEntry(entry.milstdCatalogId || entry.id || explicitUniqueId || normalizedType), affiliation, size);
+    unit.sidc = String(explicitSidc || unit.detail?.milsymId || "").trim();
+  } else if (detail && Object.keys(detail).length) {
+    unit.detail = detail;
+    unit.sidc = String(explicitSidc || unit.sidc || "").trim();
   }
   return unit;
 }
@@ -37026,228 +37122,15 @@ function serializeToPlanState() {
   };
 }
 
-function buildMilstdCustomLayout(unit = null) {
-  const isMilstdDiamond = Boolean(unit)
-    && resolveMilstdDomain(unit) === "ground"
-    && unit.affiliation !== "friendly";
-  if (!isMilstdDiamond) {
-    return {
-      clipPath: "",
-      reconLine: `<line x1="126.5" y1="516" x2="485.5" y2="276" stroke-width="5" stroke-linecap="round"/>`,
-      xLines: `
-        <line x1="126.5" y1="276" x2="485.5" y2="516" stroke-width="5" stroke-linecap="round"/>
-        <line x1="126.5" y1="516" x2="485.5" y2="276" stroke-width="5" stroke-linecap="round"/>
-      `,
-      oval: `
-        <path d="M250.552 441c-22.895 0-41.457-19.98-41.457-44.626 0-24.646 18.562-44.624 41.457-44.624" fill="none" stroke-width="5" stroke-linecap="round"/>
-        <path d="M361.448 351.75c22.896 0 41.457 19.979 41.457 44.624 0 24.645-18.562 44.626-41.457 44.626" fill="none" stroke-width="5" stroke-linecap="round"/>
-        <line x1="250.552" y1="351.75" x2="361.448" y2="351.75" stroke-width="5" stroke-linecap="round"/>
-        <line x1="250.552" y1="441" x2="361.448" y2="441" stroke-width="5" stroke-linecap="round"/>
-      `,
-      canopy: `<path d="M228 322c0-32 78-32 78 0c0-32 78-32 78 0" fill="none" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>`,
-    };
-  }
-
-  return {
-    clipPath: `<clipPath id="milstd-custom-clip"><polygon points="306,294 408,396 306,498 204,396"/></clipPath>`,
-    reconLine: `<line x1="220" y1="482" x2="392" y2="310" stroke-width="5" stroke-linecap="round"/>`,
-    xLines: `
-      <line x1="220" y1="310" x2="392" y2="482" stroke-width="5" stroke-linecap="round"/>
-      <line x1="220" y1="482" x2="392" y2="310" stroke-width="5" stroke-linecap="round"/>
-    `,
-    oval: `
-      <path d="M266 435c-19.5 0-35.5-17.5-35.5-39s16-39 35.5-39" fill="none" stroke-width="5" stroke-linecap="round"/>
-      <path d="M346 357c19.5 0 35.5 17.5 35.5 39s-16 39-35.5 39" fill="none" stroke-width="5" stroke-linecap="round"/>
-      <line x1="266" y1="357" x2="346" y2="357" stroke-width="5" stroke-linecap="round"/>
-      <line x1="266" y1="435" x2="346" y2="435" stroke-width="5" stroke-linecap="round"/>
-    `,
-    canopy: `<path d="M244 336c0-23 62-23 62 0c0-23 62-23 62 0" fill="none" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>`,
-  };
-}
-
-function renderToCustomSymbolShapes(type, stroke = "#000000", milstd = false, unit = null) {
-  const normalizedType = normalizeToUnitType(type);
-  const HANDLED = [
-    "infantry", "light_infantry", "mechanized_infantry", "airborne_infantry",
-    "armor", "recon",
-    "artillery", "engineer", "medical",
-    "air_defense", "special_forces",
-  ];
-  if (!HANDLED.includes(normalizedType)) return "";
-
-  if (milstd) {
-    const layout = buildMilstdCustomLayout(unit);
-    const s = stroke;
-    const sw = 'stroke-width="5"';
-    const applyStroke = (markup) => markup.replaceAll(sw, `stroke="${s}" ${sw}`);
-    const reconLine = applyStroke(layout.reconLine);
-    const xLines = applyStroke(layout.xLines);
-    const oval = applyStroke(layout.oval);
-    const canopy = applyStroke(layout.canopy);
-    const wrap = (markup) => layout.clipPath
-      ? `<defs>${layout.clipPath}</defs><g clip-path="url(#milstd-custom-clip)">${markup}</g>`
-      : markup;
-    // Shapes for the large milstd card view (viewBox 0 0 612 792, symbol area ~183â€“429 x, 276â€“516 y)
-    const cx = 306, cy = 396, r = 60;
-    const artCircle = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${s}" stroke-width="5"/>`;
-    // Signal: sine wave across the symbol area
-    const sigWave = `<path d="M183,396 C213,336 243,336 273,396 S333,456 363,396 S423,336 429,396" fill="none" stroke="${s}" stroke-width="5" stroke-linecap="round"/>`;
-    // EW: sine wave with vertical terminal bars
-    const ewWave = `<line x1="183" y1="396" x2="183" y2="346" stroke="${s}" stroke-width="5" stroke-linecap="round"/>
-      <path d="M183,396 C213,336 243,336 273,396 S333,456 363,396 S423,336 429,396" fill="none" stroke="${s}" stroke-width="5" stroke-linecap="round"/>
-      <line x1="429" y1="396" x2="429" y2="346" stroke="${s}" stroke-width="5" stroke-linecap="round"/>`;
-    // Engineer: castle battlements (T shape)
-    const engCastle = `<line x1="210" y1="441" x2="402" y2="441" stroke="${s}" stroke-width="5" stroke-linecap="round"/>
-      <line x1="210" y1="441" x2="210" y2="366" stroke="${s}" stroke-width="5" stroke-linecap="round"/>
-      <line x1="402" y1="441" x2="402" y2="366" stroke="${s}" stroke-width="5" stroke-linecap="round"/>
-      <line x1="183" y1="366" x2="240" y2="366" stroke="${s}" stroke-width="5" stroke-linecap="round"/>
-      <line x1="372" y1="366" x2="429" y2="366" stroke="${s}" stroke-width="5" stroke-linecap="round"/>`;
-    // Medical: cross
-    const medCross = `<line x1="${cx}" y1="321" x2="${cx}" y2="471" stroke="${s}" stroke-width="5" stroke-linecap="round"/>
-      <line x1="231" y1="${cy}" x2="381" y2="${cy}" stroke="${s}" stroke-width="5" stroke-linecap="round"/>`;
-    // Military Intelligence: vertical line with two horizontal tick marks
-    const miShape = `<line x1="${cx}" y1="306" x2="${cx}" y2="486" stroke="${s}" stroke-width="5" stroke-linecap="round"/>
-      <line x1="258" y1="351" x2="354" y2="351" stroke="${s}" stroke-width="5" stroke-linecap="round"/>
-      <line x1="258" y1="441" x2="354" y2="441" stroke="${s}" stroke-width="5" stroke-linecap="round"/>`;
-    // Air Defense: upward arc (chevron/umbrella)
-    const adArc = `<path d="M183,441 Q306,276 429,441" fill="none" stroke="${s}" stroke-width="5" stroke-linecap="round"/>`;
-    // Special Forces: vertical bar (de Oppresso Liber)
-    const sfBar = `<line x1="${cx}" y1="306" x2="${cx}" y2="486" stroke="${s}" stroke-width="5" stroke-linecap="round"/>`;
-    // Logistics: box with angled top-right corner
-    const logBox = `<polyline points="210,351 210,441 402,441 402,351 363,306 210,306 210,351 402,351" fill="none" stroke="${s}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>`;
-
-    switch (normalizedType) {
-      case "recon":           return wrap(reconLine);
-      case "infantry":
-      case "light_infantry":  return wrap(xLines);
-      case "mechanized_infantry": return wrap(`${xLines}${oval}`);
-      case "airborne_infantry":   return wrap(`${xLines}${canopy}`);
-      case "armor":           return wrap(oval);
-      case "artillery":       return artCircle;
-      case "engineer":        return engCastle;
-      case "medical":         return medCross;
-      case "air_defense":     return adArc;
-      case "special_forces":  return sfBar;
-      default:                return "";
-    }
-  }
-
-  // Small icon shapes (viewBox 0 0 56 60, symbol area approx x:8-48, y:14-46)
-  const sw = "1.8";
-  const lc = "round";
-  const reconLine = `<line x1="12" y1="40" x2="44" y2="16" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${lc}"/>`;
-  const xLines = `
-    <line x1="12" y1="16" x2="44" y2="40" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${lc}"/>
-    <line x1="44" y1="16" x2="12" y2="40" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${lc}"/>
-  `;
-  const oval = `
-    <path d="M22 34c-3.5 0-6.5-2.8-6.5-6.25S18.5 21.5 22 21.5" fill="none" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${lc}"/>
-    <path d="M34 21.5c3.5 0 6.5 2.8 6.5 6.25S37.5 34 34 34" fill="none" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${lc}"/>
-    <line x1="22" y1="21.5" x2="34" y2="21.5" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${lc}"/>
-    <line x1="22" y1="34" x2="34" y2="34" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${lc}"/>
-  `;
-  const canopy = `<path d="M18 18c0-3.8 10-3.8 10 0c0-3.8 10-3.8 10 0" fill="none" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${lc}" stroke-linejoin="${lc}"/>`;
-  // Signal: sine wave
-  const sigWaveS = `<path d="M10,28 C14,20 18,20 22,28 S30,36 34,28 S40,20 46,28" fill="none" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${lc}"/>`;
-  // EW: sine wave with vertical terminal bars
-  const ewWaveS = `<line x1="10" y1="28" x2="10" y2="20" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${lc}"/>
-    <path d="M10,28 C14,20 18,20 22,28 S30,36 34,28 S40,20 46,28" fill="none" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${lc}"/>
-    <line x1="46" y1="28" x2="46" y2="20" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${lc}"/>`;
-  // Artillery: circle
-  const artCircleS = `<circle cx="28" cy="28" r="9" fill="none" stroke="${stroke}" stroke-width="${sw}"/>`;
-  // Engineer: castle T shape
-  const engCastleS = `<line x1="14" y1="35" x2="42" y2="35" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${lc}"/>
-    <line x1="14" y1="35" x2="14" y2="24" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${lc}"/>
-    <line x1="42" y1="35" x2="42" y2="24" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${lc}"/>
-    <line x1="10" y1="24" x2="20" y2="24" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${lc}"/>
-    <line x1="36" y1="24" x2="46" y2="24" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${lc}"/>`;
-  // Medical: cross
-  const medCrossS = `<line x1="28" y1="18" x2="28" y2="38" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${lc}"/>
-    <line x1="18" y1="28" x2="38" y2="28" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${lc}"/>`;
-  // Military Intelligence: vertical with two tick marks
-  const miShapeS = `<line x1="28" y1="16" x2="28" y2="40" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${lc}"/>
-    <line x1="20" y1="21" x2="36" y2="21" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${lc}"/>
-    <line x1="20" y1="35" x2="36" y2="35" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${lc}"/>`;
-  // Air Defense: upward arc
-  const adArcS = `<path d="M10,36 Q28,14 46,36" fill="none" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${lc}"/>`;
-  // Special Forces: single vertical bar
-  const sfBarS = `<line x1="28" y1="16" x2="28" y2="40" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${lc}"/>`;
-  // Logistics: box shape
-  const logBoxS = `<polyline points="14,24 14,38 42,38 42,24 36,17 14,17 14,24 42,24" fill="none" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${lc}" stroke-linejoin="${lc}"/>`;
-
-  switch (normalizedType) {
-    case "recon":           return reconLine;
-    case "infantry":
-    case "light_infantry":  return xLines;
-    case "mechanized_infantry": return `${xLines}${oval}`;
-    case "airborne_infantry":   return `${xLines}${canopy}`;
-    case "armor":           return oval;
-    case "artillery":       return artCircleS;
-    case "engineer":        return engCastleS;
-    case "medical":         return medCrossS;
-    case "air_defense":     return adArcS;
-    case "special_forces":  return sfBarS;
-    default:                return "";
-  }
-}
-
 function milstd2525Svg(unit) {
-  const symbolInfo = getMilstdSymbolInfo(unit);
-  if (symbolInfo.entry && symbolInfo.sidc) {
-    const mainPath = getMilstdMainPathForAffiliation(symbolInfo.entry, symbolInfo.affiliation);
-    const standalone = shouldRenderStandaloneMilstd(symbolInfo.entry);
-    const framePath = standalone ? "" : getMilstdFramePathFromSidc(symbolInfo.sidc);
-    const echelonPath = standalone ? "" : getMilstdEchelonPathFromSidc(symbolInfo.sidc);
-    return `<span class="milstd-stack ms2525-icon" aria-hidden="true">
-      ${framePath ? `<img src="${framePath}" class="milstd-layer" alt="">` : ""}
-      ${mainPath ? `<img src="${mainPath}" class="milstd-layer" alt="">` : ""}
-      ${echelonPath ? `<img src="${echelonPath}" class="milstd-layer" alt="">` : ""}
-    </span>`;
-  }
-  const framePath = resolveMilstdFramePath(unit);
-  if (unit?.frameOnly) {
-    return `<span class="milstd-stack ms2525-icon" aria-hidden="true">
-      <img src="${framePath}" class="milstd-layer" alt="">
-    </span>`;
-  }
-  const mainPath = resolveMilstdMainPath(unit);
-  const modifierPaths = resolveMilstdModifierPaths(unit);
-  const echelonPath = MILSTD_ECHELON_PATHS[unit.size] || "";
-  const fallbackText = !mainPath && !modifierPaths.length ? getMilstdFallbackText(unit) : "";
+  const spec = getMilstdLayerSpec(unit);
   return `<span class="milstd-stack ms2525-icon" aria-hidden="true">
-    <img src="${framePath}" class="milstd-layer" alt="">
-    ${mainPath ? `<img src="${mainPath}" class="milstd-layer" alt="">` : ""}
-    ${modifierPaths.map((path) => `<img src="${path}" class="milstd-layer" alt="">`).join("")}
-    ${fallbackText ? `<span class="milstd-fallback-text">${esc(fallbackText)}</span>` : ""}
-    ${echelonPath ? `<img src="${echelonPath}" class="milstd-layer" alt="">` : ""}
+    ${spec.framePath ? `<img src="${spec.framePath}" class="milstd-layer" alt="">` : ""}
+    ${spec.mainPath ? `<img src="${spec.mainPath}" class="milstd-layer" alt="">` : ""}
+    ${spec.modifierPaths.map((path) => `<img src="${path}" class="milstd-layer" alt="">`).join("")}
+    ${spec.fallbackText ? `<span class="milstd-fallback-text">${esc(spec.fallbackText)}</span>` : ""}
+    ${spec.echelonPath ? `<img src="${spec.echelonPath}" class="milstd-layer" alt="">` : ""}
   </span>`;
-}
-
-function ms2525Svg(unit) {
-  const type = normalizeToUnitType(unit?.type);
-  const col = MIL_COLORS[unit.affiliation] || MIL_COLORS.unknown;
-  const sym = UNIT_TYPE_SYMBOLS[type] || UNIT_TYPE_SYMBOLS.default;
-  const customSymbolShapes = renderToCustomSymbolShapes(type, col.text, false);
-  const sizeSym = UNIT_SIZE_SYMBOLS[unit.size] || "";
-  const isAir = type && (type.includes("fixed") || type.includes("rotary") ||
-    ["fighter","bomber","attack_fixed","transport_fixed","isr_fixed","tanker","uav_fixed",
-     "attack_helo","utility_helo","recon_helo","medevac","uav_rotary","naval_aviation"].includes(type));
-  const frameShape = isAir
-    ? `<ellipse cx="28" cy="28" rx="24" ry="20" fill="${col.bg}" stroke="${col.frame}" stroke-width="2.5"/>`
-    : `<rect x="4" y="8" width="48" height="40" rx="2" fill="${col.bg}" stroke="${col.frame}" stroke-width="2.5"/>`;
-  const hostile = unit.affiliation === "hostile";
-  const hostile_marks = hostile
-    ? `<line x1="4" y1="8" x2="52" y2="48" stroke="${col.frame}" stroke-width="1.5"/>
-       <line x1="52" y1="8" x2="4" y2="48" stroke="${col.frame}" stroke-width="1.5"/>`
-    : "";
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 56 60" class="ms2525-icon">
-    ${frameShape}
-    ${hostile_marks}
-    ${customSymbolShapes || `<text x="28" y="34" text-anchor="middle" dominant-baseline="middle"
-      font-size="16" font-weight="bold" fill="${col.text}" font-family="monospace">${sym}</text>`}
-    <text x="28" y="6" text-anchor="middle" dominant-baseline="middle"
-      font-size="8" font-weight="bold" fill="#000000" font-family="monospace">${sizeSym}</text>
-  </svg>`;
 }
 
 function renderToUnitIcon(unit) {
@@ -40652,6 +40535,7 @@ init().catch((error) => {
   console.error(error);
   setStatus(`Startup failed: ${error.message}`, true);
 });
+
 
 
 

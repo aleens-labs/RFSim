@@ -305,6 +305,18 @@ function parseTakCotEvent(xml = "") {
 
   const eventAttrs = parseXmlAttributes(eventMatch[1]);
   const pointAttrs = parseXmlAttributes(pointMatch[1]);
+  const contactMatch = String(xml || "").match(/<contact\b([^>]*)\/?>/i);
+  const groupMatch = String(xml || "").match(/<__group\b([^>]*)\/?>/i);
+  const usericonMatch = String(xml || "").match(/<usericon\b([^>]*)\/?>/i);
+  const milsymMatch = String(xml || "").match(/<__milsym\b([^>]*)\/?>/i);
+  const remarksMatch = String(xml || "").match(/<remarks[^>]*>([\s\S]*?)<\/remarks>/i);
+  const contactAttrs = contactMatch ? parseXmlAttributes(contactMatch[1]) : {};
+  const groupAttrs = groupMatch ? parseXmlAttributes(groupMatch[1]) : {};
+  const usericonAttrs = usericonMatch ? parseXmlAttributes(usericonMatch[1]) : {};
+  const milsymAttrs = milsymMatch ? parseXmlAttributes(milsymMatch[1]) : {};
+  const sidc = String(milsymAttrs.id || "").trim();
+  const usericonPath = String(usericonAttrs.iconsetpath || "").trim();
+  const remarks = decodeXmlEntities((remarksMatch?.[1] || "").trim());
   const lat = Number(pointAttrs.lat);
   const lon = Number(pointAttrs.lon);
   if (!eventAttrs.uid || !Number.isFinite(lat) || !Number.isFinite(lon)) {
@@ -312,18 +324,9 @@ function parseTakCotEvent(xml = "") {
   }
 
   const type = String(eventAttrs.type || "");
-  if (type && !type.toLowerCase().startsWith("a-")) {
+  if (type && !type.toLowerCase().startsWith("a-") && !sidc && !usericonPath) {
     return null;
   }
-
-  const contactMatch = String(xml || "").match(/<contact\b([^>]*)\/?>/i);
-  const groupMatch = String(xml || "").match(/<__group\b([^>]*)\/?>/i);
-  const usericonMatch = String(xml || "").match(/<usericon\b([^>]*)\/?>/i);
-  const remarksMatch = String(xml || "").match(/<remarks[^>]*>([\s\S]*?)<\/remarks>/i);
-  const contactAttrs = contactMatch ? parseXmlAttributes(contactMatch[1]) : {};
-  const groupAttrs = groupMatch ? parseXmlAttributes(groupMatch[1]) : {};
-  const usericonAttrs = usericonMatch ? parseXmlAttributes(usericonMatch[1]) : {};
-  const remarks = decodeXmlEntities((remarksMatch?.[1] || "").trim());
   const callsign = (
     contactAttrs.callsign
     || groupAttrs.name
@@ -346,7 +349,8 @@ function parseTakCotEvent(xml = "") {
     stale: String(eventAttrs.stale || "").trim(),
     team: String(groupAttrs.name || "").trim(),
     role: String(groupAttrs.role || "").trim(),
-    usericonPath: String(usericonAttrs.iconsetpath || "").trim(),
+    usericonPath,
+    sidc,
     remarks,
   };
 }
@@ -359,6 +363,7 @@ function serializeTakConnectorContact(contact) {
   return {
     uid: contact.uid,
     cotType: contact.cotType,
+    sidc: contact.sidc,
     callsign: contact.callsign,
     lat: contact.lat,
     lon: contact.lon,
