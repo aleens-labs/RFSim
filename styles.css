@@ -3568,7 +3568,7 @@ body.theme-light .ai-agent-mode-indicator {
   width: var(--map-view-toggle-w);
   min-width: var(--map-view-toggle-w);
   height: var(--map-overlay-control-h);
-  padding: 0 14px;
+  padding: 0 12px;
   background: color-mix(in srgb, var(--bg-overlay) 88%, transparent);
   border: 1px solid rgba(148, 163, 184, 0.34);
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
@@ -3577,7 +3577,7 @@ body.theme-light .ai-agent-mode-indicator {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.82rem;
+  font-size: 0.78rem;
   font-weight: 750;
 }
 
@@ -3594,8 +3594,8 @@ body.theme-light .ai-agent-mode-indicator {
   display: flex;
   align-items: center;
   flex-direction: row;
-  gap: 8px;
-  padding: 0 14px;
+  gap: 7px;
+  padding: 0 12px;
   height: var(--map-overlay-control-h);
   background: color-mix(in srgb, var(--bg-overlay) 88%, transparent);
   border: 1px solid rgba(148, 163, 184, 0.34);
@@ -3631,7 +3631,7 @@ body.theme-light .ai-agent-mode-indicator {
   border: none;
   background: transparent;
   color: var(--text);
-  font-size: 0.82rem;
+  font-size: 0.78rem;
   height: 100%;
   padding: 0;
   margin: 0;
