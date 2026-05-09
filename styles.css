@@ -7882,7 +7882,7 @@ body.emitter-modal-open {
   width: var(--map-offline-w);
   min-width: var(--map-offline-w);
   height: var(--map-overlay-control-h);
-  padding: 0 12px;
+  padding: 0 10px;
   background: color-mix(in srgb, var(--bg-overlay) 88%, transparent);
   border: 1px solid rgba(148, 163, 184, 0.34);
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
@@ -7891,8 +7891,8 @@ body.emitter-modal-open {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  font-size: 0.82rem;
+  gap: 5px;
+  font-size: 0.78rem;
   font-weight: 700;
 }
 
@@ -7912,9 +7912,9 @@ body.emitter-modal-open {
 .tak-contacts-pill {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   height: var(--map-overlay-control-h);
-  padding: 0 12px;
+  padding: 0 10px;
   background: color-mix(in srgb, var(--bg-overlay) 88%, transparent);
   border: 1px solid rgba(148, 163, 184, 0.34);
   border-radius: 6px;
@@ -8254,7 +8254,7 @@ body.emitter-modal-open {
   left: calc(var(--map-overlay-left) + var(--map-view-toggle-w) + var(--map-overlay-gap) + var(--map-geo-search-w) + var(--map-overlay-gap) + var(--map-offline-w) + var(--map-overlay-gap) + 128px);
   z-index: 650;
   height: var(--map-overlay-control-h);
-  padding: 0 12px;
+  padding: 0 10px;
   background: color-mix(in srgb, var(--bg-overlay) 88%, transparent);
   border: 1px solid rgba(148, 163, 184, 0.34);
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
@@ -8262,8 +8262,8 @@ body.emitter-modal-open {
   backdrop-filter: blur(8px);
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  font-size: 0.82rem;
+  gap: 6px;
+  font-size: 0.78rem;
 }
 
 .map-tak-identity-label {
@@ -8285,13 +8285,13 @@ body.emitter-modal-open {
   left: calc(var(--map-overlay-left) + var(--map-view-toggle-w) + var(--map-overlay-gap) + var(--map-geo-search-w) + var(--map-overlay-gap) + var(--map-offline-w) + 6px);
   z-index: 650;
   height: var(--map-overlay-control-h);
-  padding: 0 9px;
+  padding: 0 8px;
   background: color-mix(in srgb, var(--bg-base) 78%, var(--accent-success) 22%);
   border: 1px solid rgba(var(--accent-success-rgb), 0.4);
   border-radius: 6px;
   display: flex;
   align-items: center;
-  font-size: 11px;
+  font-size: 10px;
   color: var(--accent-success);
   gap: 5px;
   box-shadow: var(--shadow);
