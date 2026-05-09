@@ -81,7 +81,7 @@
             <button class="view-mode-tab" data-view="plan" role="tab" aria-selected="false" type="button">T/O</button>
             <button class="view-mode-tab" data-view="topology" role="tab" aria-selected="false" type="button">EMITTERS</button>
             <button class="view-mode-tab active" data-view="map" role="tab" aria-selected="true" type="button">MAP</button>
-            <button class="view-mode-tab" data-view="analyze" role="tab" aria-selected="false" type="button">ANALYZE</button>
+            <button class="view-mode-tab" data-view="analyze" role="tab" aria-selected="false" type="button">ANALYSIS</button>
           </div>
         </div>
         <div class="workspace-menu-shell">
@@ -242,26 +242,39 @@
                   <button id="terrainHeatmapBtn" class="ghost-button small icon-button mc-icon-btn terrain-heatmap-btn" type="button" aria-label="Toggle Terrain Heatmap" aria-pressed="false" data-label="Heatmap">
                     <svg class="terrain-heatmap-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                       <defs>
-                        <linearGradient id="terrainHeatmapIconGradient" x1="3" y1="18" x2="21" y2="5.5" gradientUnits="userSpaceOnUse">
-                          <stop offset="0%" stop-color="#ff6b57"/>
-                          <stop offset="18%" stop-color="#ff9d43"/>
-                          <stop offset="40%" stop-color="#f8e45c"/>
-                          <stop offset="62%" stop-color="#56d48f"/>
-                          <stop offset="82%" stop-color="#3dbcf8"/>
-                          <stop offset="100%" stop-color="#7b68ee"/>
-                        </linearGradient>
-                        <linearGradient id="terrainHeatmapIconShade" x1="6" y1="7" x2="18" y2="18" gradientUnits="userSpaceOnUse">
-                          <stop offset="0%" stop-color="#ffffff" stop-opacity="0.3"/>
-                          <stop offset="100%" stop-color="#0f172a" stop-opacity="0.08"/>
+                        <clipPath id="terrainHeatmapIconClip">
+                          <rect x="3.25" y="4" width="17.5" height="16" rx="2.2"/>
+                        </clipPath>
+                        <linearGradient id="terrainHeatmapIconFrame" x1="3.5" y1="20" x2="20.5" y2="4" gradientUnits="userSpaceOnUse">
+                          <stop offset="0" stop-color="#38bdf8"/>
+                          <stop offset="0.38" stop-color="#34d399"/>
+                          <stop offset="0.66" stop-color="#f7e45c"/>
+                          <stop offset="1" stop-color="#f9735b"/>
                         </linearGradient>
                       </defs>
-                      <path d="M4 17.9L4.9 9.2L8.1 6.6L11.4 7.5L14.3 5.7L17.4 6.4L20 8.4V17.9H4Z" fill="url(#terrainHeatmapIconGradient)" opacity="0.96"/>
-                      <path d="M4 17.9L4.9 9.2L8.1 6.6L11.4 7.5L14.3 5.7L17.4 6.4L20 8.4V17.9H4Z" fill="url(#terrainHeatmapIconShade)" opacity="0.7"/>
-                      <path d="M4.9 9.2L8.1 6.6L11.4 7.5L14.3 5.7L17.4 6.4L20 8.4" stroke="#edf7ff" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/>
-                      <path d="M4.4 17.5H19.6M4.8 13.8L8.5 12.1L11.3 12.9L14.4 11L17.2 11.6L19.7 13.2M5.2 10.8L8.5 9.1L11.4 10L14.4 8.3L17.3 8.9L19.2 10.4" stroke="rgba(255,255,255,0.48)" stroke-width="0.78" stroke-linecap="round" stroke-linejoin="round"/>
-                      <path d="M4.9 9.2L4.4 17.5L8.5 12.1L8.1 6.6L11.3 12.9L11.4 7.5L14.4 11L14.3 5.7L17.2 11.6L17.4 6.4L19.7 13.2L20 8.4" stroke="rgba(244,250,255,0.82)" stroke-width="0.82" stroke-linecap="round" stroke-linejoin="round"/>
-                      <path d="M4.9 9.2L8.5 12.1L11.4 7.5L14.4 11L17.4 6.4L19.7 13.2M4.4 17.5L8.5 12.1L11.3 12.9L14.3 5.7L17.2 11.6L20 8.4M8.1 6.6L11.3 12.9L14.4 8.3L17.2 11.6" stroke="rgba(220,235,255,0.62)" stroke-width="0.74" stroke-linecap="round" stroke-linejoin="round"/>
-                      <path d="M3.3 6.2L18.7 4M20.8 5.5V18.9M5.3 19.8H20.8" stroke="rgba(255,112,96,0.78)" stroke-width="0.72" stroke-linecap="round"/>
+                      <rect x="2.75" y="3.5" width="18.5" height="17" rx="2.7" fill="#0b1220" stroke="rgba(219,234,254,0.54)" stroke-width="1"/>
+                      <g clip-path="url(#terrainHeatmapIconClip)">
+                        <rect x="3.25" y="4" width="17.5" height="16" fill="#0f172a"/>
+                        <rect x="3.25" y="4" width="4.4" height="4" fill="#2563eb"/>
+                        <rect x="7.65" y="4" width="4.4" height="4" fill="#22c55e"/>
+                        <rect x="12.05" y="4" width="4.4" height="4" fill="#eab308"/>
+                        <rect x="16.45" y="4" width="4.4" height="4" fill="#f97316"/>
+                        <rect x="3.25" y="8" width="4.4" height="4" fill="#38bdf8"/>
+                        <rect x="7.65" y="8" width="4.4" height="4" fill="#84cc16"/>
+                        <rect x="12.05" y="8" width="4.4" height="4" fill="#facc15"/>
+                        <rect x="16.45" y="8" width="4.4" height="4" fill="#ef4444"/>
+                        <rect x="3.25" y="12" width="4.4" height="4" fill="#0ea5e9"/>
+                        <rect x="7.65" y="12" width="4.4" height="4" fill="#22c55e"/>
+                        <rect x="12.05" y="12" width="4.4" height="4" fill="#fb923c"/>
+                        <rect x="16.45" y="12" width="4.4" height="4" fill="#dc2626"/>
+                        <rect x="3.25" y="16" width="4.4" height="4" fill="#1d4ed8"/>
+                        <rect x="7.65" y="16" width="4.4" height="4" fill="#0ea5e9"/>
+                        <rect x="12.05" y="16" width="4.4" height="4" fill="#65a30d"/>
+                        <rect x="16.45" y="16" width="4.4" height="4" fill="#f59e0b"/>
+                        <path d="M3.8 15.9C6.3 14.3 7.7 15.1 9.6 13.7C11.7 12.2 11.8 9.2 14.7 8.4C16.5 7.9 18.1 8.5 20.2 7.2" stroke="#0f172a" stroke-width="2.4" stroke-linecap="round" opacity="0.24"/>
+                        <path d="M3.8 15.9C6.3 14.3 7.7 15.1 9.6 13.7C11.7 12.2 11.8 9.2 14.7 8.4C16.5 7.9 18.1 8.5 20.2 7.2" stroke="#f8fbff" stroke-width="1.25" stroke-linecap="round"/>
+                      </g>
+                      <path d="M4.4 20.2H20.1M20.9 5V18.6" stroke="url(#terrainHeatmapIconFrame)" stroke-width="1" stroke-linecap="round"/>
                     </svg>
                   </button>
                   <div id="terrainHeatmapDropdown" class="terrain-heatmap-dropdown hidden">
@@ -280,10 +293,13 @@
                 <div class="terrain-heatmap-button-shell">
                   <button id="terrainContourBtn" class="ghost-button small icon-button mc-icon-btn terrain-contour-btn" type="button" aria-label="Toggle Terrain Contours" aria-pressed="false" data-label="Contours">
                     <svg class="terrain-contour-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                      <path d="M3 18.2C5 16.9 6 15.1 7.8 14.6C10.3 13.8 11.6 15.7 14.1 15.1C16.5 14.5 17 11.5 19.1 10.7C20.2 10.3 21.1 10.5 22 10.8" stroke="#facc15" stroke-width="1.35" stroke-linecap="round"/>
-                      <path d="M2.5 13.8C4.9 12.1 6.6 12.2 8.5 11.1C10.8 9.8 11 7.3 13.6 6.2C16 5.2 18.3 6.6 21.5 4.8" stroke="#38bdf8" stroke-width="1.45" stroke-linecap="round"/>
-                      <path d="M3.2 9.2C5.4 8.1 6.8 8.7 9 7.8C11.1 7 11.9 4.9 14.3 4.1C16.2 3.5 18.1 4.1 20.8 2.9" stroke="#34d399" stroke-width="1.2" stroke-linecap="round" opacity="0.92"/>
-                      <path d="M4 20.8H20" stroke="rgba(255,255,255,0.26)" stroke-width="1" stroke-linecap="round"/>
+                      <rect x="3" y="3.25" width="18" height="17.5" rx="2.6" fill="#0b1220" stroke="rgba(219,234,254,0.42)" stroke-width="1"/>
+                      <path d="M5.4 16.4C7.1 18 10.3 18.5 13.5 17.6C17.3 16.5 19.3 13.9 18.1 11.6C16.9 9.3 12.8 8.3 9.1 9.5C6.2 10.4 4.6 12.5 5.4 14.4" stroke="#38bdf8" stroke-width="1.15" stroke-linecap="round"/>
+                      <path d="M8 14.8C9.1 15.8 11.3 16.2 13.3 15.5C15.5 14.8 16.7 13.2 16 11.9C15.3 10.6 12.8 10.1 10.7 10.8C9.1 11.3 8.1 12.5 8 13.6" stroke="#7dd3fc" stroke-width="1.05" stroke-linecap="round"/>
+                      <path d="M10.3 13.7C10.8 14.3 12.2 14.4 13.2 14C14.2 13.6 14.7 12.8 14.3 12.2C13.9 11.6 12.6 11.4 11.6 11.8C10.8 12.1 10.4 12.6 10.3 13.1" stroke="#f8fbff" stroke-width="0.95" stroke-linecap="round"/>
+                      <path d="M4.9 7.2C7.2 5.7 9.2 5.8 11.5 6.5C14.6 7.4 17.4 6.8 19.2 5.3" stroke="#34d399" stroke-width="1.1" stroke-linecap="round"/>
+                      <path d="M4.8 19.2H18.7" stroke="#facc15" stroke-width="1" stroke-linecap="round"/>
+                      <path d="M18.7 17.2V19.2" stroke="#facc15" stroke-width="1" stroke-linecap="round"/>
                     </svg>
                   </button>
                   <div id="terrainContourDropdown" class="terrain-heatmap-dropdown terrain-contour-dropdown hidden">
@@ -789,7 +805,6 @@
               </optgroup>
             </select>
             <button id="toUnitTypePickerBtn" class="to-picker-button" type="button" title="Choose unit symbology">
-              <span class="to-picker-button-caption">Symbology</span>
               <span id="toUnitTypePickerLabel">Friendly • Infantry</span>
             </button>
             <select id="toUnitSize" class="to-select" title="Unit Size">
@@ -977,6 +992,11 @@
             <div class="tpal-step" data-step="3"><span>3</span> Type</div>
           </div>
 
+          <label class="tpal-search-field tpal-search-field--global hidden">
+            <span>Search Available Types</span>
+            <input id="tacticalPaletteSearch" type="text" maxlength="80" placeholder="Search infantry, engineer, logistics, intel...">
+          </label>
+
           <!-- Step 1: Affiliation -->
           <div id="tpalStep1" class="tpal-step-pane active">
             <div class="tpal-divider tpal-placement-only">T/O-owned Tactical Units</div>
@@ -1023,10 +1043,6 @@
             <label class="tpal-name-field">
               <span>Track Name</span>
               <input id="tacticalPaletteName" type="text" maxlength="80" placeholder="Enter track name">
-            </label>
-            <label class="tpal-search-field">
-              <span>Search Current Branch</span>
-              <input id="tacticalPaletteSearch" type="text" maxlength="80" placeholder="Search symbols">
             </label>
             <div id="tpalHierarchyBreadcrumbs" class="tpal-hierarchy-breadcrumbs"></div>
             <div class="tpal-type-layout">
@@ -1154,10 +1170,11 @@
               <div class="topo-filter-shell">
                 <button id="topoFilterFreqBtn" class="to-select topo-filter-trigger" type="button" aria-haspopup="true" aria-expanded="false">All Frequencies</button>
                 <div id="topoFilterFreqMenu" class="topo-filter-menu hidden">
-                  <label class="topo-filter-option"><input id="topoBandHF" type="checkbox" value="HF" checked>HF</label>
-                  <label class="topo-filter-option"><input id="topoBandVHF" type="checkbox" value="VHF" checked>VHF</label>
-                  <label class="topo-filter-option"><input id="topoBandUHF" type="checkbox" value="UHF" checked>UHF</label>
-                  <label class="topo-filter-option"><input id="topoBandSATCOM" type="checkbox" value="SATCOM" checked>SATCOM</label>
+                  <label class="topo-filter-option"><input id="topoBandHF" type="checkbox" value="HF" checked><span>HF</span></label>
+                  <label class="topo-filter-option"><input id="topoBandVHF" type="checkbox" value="VHF" checked><span>VHF</span></label>
+                  <label class="topo-filter-option"><input id="topoBandUHF" type="checkbox" value="UHF" checked><span>UHF</span></label>
+                  <label class="topo-filter-option"><input id="topoBandSATCOM" type="checkbox" value="SATCOM" checked><span>SATCOM</span></label>
+                  <button id="topoBandResetBtn" class="topo-filter-reset" type="button">Reset</button>
                 </div>
               </div>
             </div>
@@ -1260,7 +1277,7 @@
     </div>
 
     <!-- ═══════════════════════════════════════════════════════
-         ANALYZE VIEW — RF Analytics Dashboard
+         ANALYSIS VIEW - RF Analytics Dashboard
     ═══════════════════════════════════════════════════════ -->
     <div id="emittersView" class="view-panel hidden">
       <div class="emitters-shell">
@@ -1270,6 +1287,16 @@
             <span class="emitters-toolbar-copy">Cards, nets, and map actions</span>
           </div>
           <div class="to-toolbar-section to-toolbar-section-right emitters-toolbar-actions">
+            <div class="topo-filter-shell emitters-filter-shell">
+              <button id="emittersFilterFreqBtn" class="to-select topo-filter-trigger" type="button" aria-haspopup="true" aria-expanded="false">All Frequencies</button>
+              <div id="emittersFilterFreqMenu" class="topo-filter-menu hidden">
+                <label class="topo-filter-option"><input id="emittersBandHF" type="checkbox" value="HF" checked><span>HF</span></label>
+                <label class="topo-filter-option"><input id="emittersBandVHF" type="checkbox" value="VHF" checked><span>VHF</span></label>
+                <label class="topo-filter-option"><input id="emittersBandUHF" type="checkbox" value="UHF" checked><span>UHF</span></label>
+                <label class="topo-filter-option"><input id="emittersBandSATCOM" type="checkbox" value="SATCOM" checked><span>SATCOM</span></label>
+                <button id="emittersBandResetBtn" class="topo-filter-reset" type="button">Reset</button>
+              </div>
+            </div>
             <button id="emittersAddBtn" class="primary-button small" type="button">Add Emitter</button>
             <button id="emittersRefreshBtn" class="ghost-button small" type="button">Refresh</button>
             <button id="emittersOpenMapBtn" class="ghost-button small" type="button">Open Map</button>
@@ -1369,45 +1396,57 @@
     <div id="analyzeView" class="view-panel hidden">
       <div class="analyze-shell">
         <div class="analyze-toolbar">
-          <div class="to-toolbar-section">
+          <div class="to-toolbar-section analyze-toolbar-title">
             <span class="to-toolbar-label">Analysis</span>
+            <span id="analysisRunSummary" class="analyze-toolbar-summary">Scenario relationships, terrain, and RF links</span>
+          </div>
+          <div class="to-toolbar-section to-toolbar-section-right analyze-toolbar-actions">
             <button id="analyzeRefreshBtn" class="ghost-button small" type="button">Refresh Analysis</button>
           </div>
         </div>
         <div class="analyze-main">
           <div class="analyze-panels">
-            <!-- Insight cards grid -->
-            <div class="analyze-grid" id="analyzeGrid">
-              <div class="analyze-card" id="analyzeCardCoverage">
+            <div class="analyze-grid analysis-grid" id="analyzeGrid">
+              <section class="analyze-card analyze-card-wide analyze-brief" id="analysisOverviewCard">
                 <div class="analyze-card-header">
-                  <strong>Emitter Coverage Summary</strong>
-                  <span class="eyebrow" id="analyzeCoverageCount">0 emitters</span>
+                  <strong>Operational Conclusions</strong>
+                  <span class="eyebrow" id="analysisReadinessLabel">No scenario data</span>
                 </div>
-                <div id="analyzeCoverageBody" class="analyze-card-body">
-                  <div class="analyze-placeholder">No emitters placed yet.</div>
-                </div>
-              </div>
-              <div class="analyze-card" id="analyzeCardFreq">
+                <div id="analysisExecutiveBody" class="analyze-card-body"></div>
+              </section>
+
+              <section class="analysis-metric-strip analyze-card-wide" id="analysisMetricStrip"></section>
+
+              <section class="analyze-card" id="analysisNetworkCard">
                 <div class="analyze-card-header">
-                  <strong>RF Configuration</strong>
-                  <span class="eyebrow">Frequency &amp; Bandwidth Distribution</span>
+                  <strong>Network Relationships</strong>
+                  <span class="eyebrow">Units, emitters, and link health</span>
+                </div>
+                <div id="analysisNetworkBody" class="analyze-card-body"></div>
+              </section>
+
+              <section class="analyze-card" id="analysisSpectrumCard">
+                <div class="analyze-card-header">
+                  <strong>Spectrum &amp; RF Load</strong>
+                  <span class="eyebrow">Bands, channels, and congestion</span>
                 </div>
                 <div id="analyzeFreqBody" class="analyze-card-body">
-                  <canvas id="analyzeFreqChart" class="analyze-chart-canvas"></canvas>
-                  <div class="analyze-placeholder hidden" id="analyzeFreqPlaceholder">No emitter frequency data.</div>
+                  <div class="analyze-placeholder" id="analyzeFreqPlaceholder">No emitter frequency data.</div>
                 </div>
-              </div>
-              <div class="analyze-card" id="analyzeCardTerrain">
+              </section>
+
+              <section class="analyze-card" id="analysisTerrainCard">
                 <div class="analyze-card-header">
-                  <strong>Terrain Placement Quality</strong>
-                  <span class="eyebrow">Elevation &amp; Terrain Context</span>
+                  <strong>Terrain &amp; Elevation</strong>
+                  <span class="eyebrow">Map placement and LOS context</span>
                 </div>
                 <div id="analyzeTerrainBody" class="analyze-card-body">
                   <div id="analyzeTerrainList" class="analyze-terrain-list"></div>
                   <div class="analyze-placeholder" id="analyzeTerrainPlaceholder">No emitters to evaluate.</div>
                 </div>
-              </div>
-              <div class="analyze-card analyze-card-wide" id="analyzeCardConflicts">
+              </section>
+
+              <section class="analyze-card analyze-card-wide" id="analysisLinkCard">
                 <div class="analyze-card-header">
                   <strong>Link Findings &amp; Recommendations</strong>
                   <span class="eyebrow">Strong links, weak links, and suggested fixes</span>
@@ -1416,17 +1455,18 @@
                   <div id="analyzeConflictsList" class="analyze-conflicts-list"></div>
                   <div class="analyze-placeholder" id="analyzeConflictsPlaceholder">No analyzed links yet.</div>
                 </div>
-              </div>
-              <div class="analyze-card analyze-card-wide" id="analyzeCardWaveform">
+              </section>
+
+              <section class="analyze-card analyze-card-wide" id="analysisCorrelationCard">
                 <div class="analyze-card-header">
-                  <strong>Waveform &amp; Antenna Summary</strong>
-                  <span class="eyebrow">Configuration breakdown by emitter</span>
+                  <strong>Unit / Emitter Correlation</strong>
+                  <span class="eyebrow">T/O links, map anchors, and RF configuration</span>
                 </div>
                 <div id="analyzeWaveformBody" class="analyze-card-body">
                   <div id="analyzeWaveformTable" class="analyze-table-wrap"></div>
                   <div class="analyze-placeholder" id="analyzeWaveformPlaceholder">No emitter configuration data.</div>
                 </div>
-              </div>
+              </section>
             </div>
           </div>
         </div>

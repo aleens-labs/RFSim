@@ -861,6 +861,7 @@ const MILSTD_STANDARD_IDENTITY_BY_CODE = {
 };
 const MILSTD_ECHELON_CODES = {
   team: "11",
+  fireteam: "11",
   squad: "12",
   section: "13",
   platoon: "14",
@@ -874,6 +875,24 @@ const MILSTD_ECHELON_CODES = {
   army_group: "24",
   theater: "25",
 };
+const DEFAULT_TO_UNIT_SIZE = "team";
+const TO_UNIT_SIZE_LABELS = {
+  team: "Team",
+  fireteam: "Fire Team",
+  squad: "Squad",
+  section: "Section",
+  platoon: "Platoon",
+  company: "Company",
+  battalion: "Battalion",
+  regiment: "Regiment",
+  brigade: "Brigade",
+  division: "Division",
+  corps: "Corps",
+  army: "Army",
+  army_group: "Army Group",
+  theater: "Theater",
+};
+const TO_UNIT_SIZE_ORDER = Object.keys(TO_UNIT_SIZE_LABELS);
 
 function normalizeMilstdUniqueId(value = "") {
   const match = String(value || "").trim().match(/^(\d{8})/);
@@ -1187,6 +1206,7 @@ function getMilstdLayerSpec(value = {}) {
   if (symbolInfo.entry && symbolInfo.sidc) {
     const standalone = shouldRenderStandaloneMilstd(symbolInfo.entry);
     return {
+      domain: normalizeTacticalDomain(symbolInfo.entry.domain || value?.domain || "ground"),
       framePath: standalone ? "" : getMilstdFramePathFromSidc(symbolInfo.sidc),
       mainPath: getMilstdMainPathForAffiliation(symbolInfo.entry, symbolInfo.affiliation),
       modifierPaths: [],
@@ -1199,6 +1219,7 @@ function getMilstdLayerSpec(value = {}) {
   const framePath = resolveMilstdFramePath(unit);
   if (unit?.frameOnly) {
     return {
+      domain: resolveMilstdDomain(unit),
       framePath,
       mainPath: "",
       modifierPaths: [],
@@ -1209,6 +1230,7 @@ function getMilstdLayerSpec(value = {}) {
   const mainPath = resolveMilstdMainPath(unit) || "";
   const modifierPaths = resolveMilstdModifierPaths(unit);
   return {
+    domain: resolveMilstdDomain(unit),
     framePath,
     mainPath,
     modifierPaths,
@@ -2080,11 +2102,19 @@ const dom = {
   topoBandVHF: document.querySelector("#topoBandVHF"),
   topoBandUHF: document.querySelector("#topoBandUHF"),
   topoBandSATCOM: document.querySelector("#topoBandSATCOM"),
+  topoBandResetBtn: document.querySelector("#topoBandResetBtn"),
   topoDisplayModeToggle: document.querySelector("#topoDisplayModeToggle"),
   topoDisplayUnitsBtn: document.querySelector("#topoDisplayUnitsBtn"),
   topoDisplayEmittersBtn: document.querySelector("#topoDisplayEmittersBtn"),
   topoTerrainStatus: document.querySelector("#topoTerrainStatus"),
   analyzeView: document.querySelector("#analyzeView"),
+  emittersFilterFreqBtn: document.querySelector("#emittersFilterFreqBtn"),
+  emittersFilterFreqMenu: document.querySelector("#emittersFilterFreqMenu"),
+  emittersBandHF: document.querySelector("#emittersBandHF"),
+  emittersBandVHF: document.querySelector("#emittersBandVHF"),
+  emittersBandUHF: document.querySelector("#emittersBandUHF"),
+  emittersBandSATCOM: document.querySelector("#emittersBandSATCOM"),
+  emittersBandResetBtn: document.querySelector("#emittersBandResetBtn"),
   emittersAddBtn: document.querySelector("#emittersAddBtn"),
   addEmitterBtn: document.querySelector("#addEmitterBtn"),
   mapEmitterAddMenu: document.querySelector("#mapEmitterAddMenu"),
@@ -6507,6 +6537,145 @@ function formatWintakHierarchySegment(value = "", { selectionId = "", depth = 0 
   return mapped;
 }
 
+const WINTAK_ROOT_SORT = Object.freeze({
+  ground_track: ["Equipment", "Installation", "Unit", "Civilian"],
+  air_track: ["Military", "Civilian", "Weapon", "Manual track", "Air missile"],
+  sea_surface_track: ["Military combatant", "Military noncombatant", "Military", "Civilian", "Manual track", "Fused track"],
+  subsurface_track: ["Military", "Civilian", "Weapon", "Mine warfare", "Manual track", "Fused track"],
+  space_track: ["Space track", "Space missile", "Military", "Civilian", "Weapon"],
+});
+
+const WINTAK_LAND_UNIT_GROUP_ORDER = [
+  "Combat",
+  "Combat service support",
+  "Combat support",
+  "Special C2 headquarters component",
+];
+
+const WINTAK_LAND_UNIT_TOP_GROUP = Object.freeze({
+  "Movement and Maneuver": "Combat",
+  "Fires": "Combat",
+  "Naval": "Combat",
+  "Protection": "Combat support",
+  "Intelligence": "Combat support",
+  "Law Enforcement (Land Units)": "Combat support",
+  "Emergency Operation (Land Units)": "Combat support",
+  "Sustainment": "Combat service support",
+  "Command and Control": "Special C2 headquarters component",
+  "Named Headquarters": "Special C2 headquarters component",
+  "Special Entity Subtypes": "Special C2 headquarters component",
+});
+
+const WINTAK_LAND_UNIT_BRANCH_ALIASES = Object.freeze({
+  "Air Defense": "Air defense",
+  "Air/Land Naval Gunfire Liaison": "Naval gunfire liaison",
+  "Antitank/Antiarmor": "Anti armor",
+  "Armor/Armored/Mechanized/Self-Propelled/Tracked": "Armor",
+  "Army Aviation/Aviation Rotary Wing": "Aviation",
+  "Aviation Fixed Wing": "Aviation",
+  "Aviation Composite": "Aviation",
+  "CBRN Defense": "CBRN defense",
+  "Combat Service Support": "Logistics",
+  "Combat Support (Maneuver Enhancement)": "Maneuver enhancement",
+  "Electronic Warfare": "Electronic warfare",
+  "Explosive Ordnance Disposal (EOD)": "Explosive ordnance disposal",
+  "Field Artillery": "Field artillery",
+  "Field Artillery Observer": "Field artillery observer",
+  "Internal Security Force": "Internal security forces",
+  "Joint Fire Support": "Joint fire support",
+  "Military Intelligence": "Military intelligence",
+  "Military Police": "Military police",
+  "Mortuary Affairs/Graves Registration": "Mortuary affairs",
+  "Petroleum Oil and Lubricants": "Petroleum, oil, and lubricants",
+  "Reconnaissance/Cavalry/Scout": "Reconnaissance",
+  "Sea Air Land (SEAL)": "SEAL",
+  "Unmanned Aerial Systems": "UAS",
+});
+
+function formatTacticalPickerLabel(value = "", options = {}) {
+  const formatted = formatWintakHierarchySegment(value, options);
+  return formatted
+    .replace(/\bAnd\b/g, "and")
+    .replace(/\bOf\b/g, "of")
+    .trim();
+}
+
+function normalizeTacticalObjectRootLabel(entry, config, parts = []) {
+  const symbolSet = String(entry?.symbolSetCode || "").padStart(2, "0");
+  const selectionId = String(config?.selectionId || "").trim();
+  if (selectionId === "ground_track") {
+    if (symbolSet === "10") return "Unit";
+    if (symbolSet === "15") return "Equipment";
+    if (symbolSet === "20") return "Installation";
+    if (symbolSet === "11") return "Civilian";
+  }
+  if (selectionId === "air_track" && symbolSet === "02") return "Weapon";
+  if (selectionId === "space_track" && symbolSet === "06") return "Weapon";
+  if (selectionId === "subsurface_track" && symbolSet === "36") return "Mine warfare";
+  const first = formatTacticalPickerLabel(parts[0] || config?.label || config?.selectionLabel || "Track", {
+    selectionId,
+    depth: 0,
+  })
+    .replace(/\s*\((Air|Ground|Land|Sea Surface|Sea Subsurface|Subsurface|Space)\)\s*/gi, "")
+    .trim();
+  return first || config?.label || "Track";
+}
+
+function getLandUnitWintakGroup(parts = []) {
+  const top = String(parts[0] || "").trim();
+  return WINTAK_LAND_UNIT_TOP_GROUP[top] || "Combat support";
+}
+
+function mapLandUnitBranchPart(part = "", { top = "", index = 0 } = {}) {
+  const raw = String(part || "").trim();
+  const alias = WINTAK_LAND_UNIT_BRANCH_ALIASES[raw];
+  if (alias) return alias;
+  if (top === "Sustainment" && index === 0 && /supply|maintenance|transportation|medical|material|ordnance|quartermaster/i.test(raw)) {
+    return formatTacticalPickerLabel(raw);
+  }
+  return formatTacticalPickerLabel(raw);
+}
+
+function getLandUnitWintakBranchParts(parts = []) {
+  const top = String(parts[0] || "").trim();
+  let tail = parts.slice(1).filter(Boolean);
+  if (!tail.length) {
+    tail = [top || "Unit"];
+  }
+  if (top === "Named Headquarters") {
+    tail = ["Named headquarters", ...tail];
+  } else if (top === "Command and Control") {
+    tail = ["Command and control", ...tail];
+  } else if (top === "Special Entity Subtypes") {
+    tail = tail.length ? tail : ["Headquarters component"];
+  }
+  const mapped = tail.map((part, index) => mapLandUnitBranchPart(part, { top, index })).filter(Boolean);
+  if (top === "Movement and Maneuver") {
+    if (/^Army Aviation|^Aviation/i.test(tail[0] || "")) {
+      const variant = /Rotary/i.test(tail[0] || "") ? "Rotary-wing"
+        : /Fixed/i.test(tail[0] || "") ? "Fixed-wing"
+          : /Composite/i.test(tail[0] || "") ? "Composite"
+            : "";
+      return ["Aviation", variant, ...mapped.slice(1)].filter(Boolean);
+    }
+  }
+  return mapped;
+}
+
+function getTacticalPickerSortWeight(selectionId = "", pathLabels = [], label = "") {
+  const normalizedLabel = String(label || "").trim();
+  if (!pathLabels.length) {
+    const order = WINTAK_ROOT_SORT[selectionId] || [];
+    const index = order.indexOf(normalizedLabel);
+    return index >= 0 ? index : 500;
+  }
+  if (selectionId === "ground_track" && pathLabels.length === 1 && pathLabels[0] === "Unit") {
+    const index = WINTAK_LAND_UNIT_GROUP_ORDER.indexOf(normalizedLabel);
+    return index >= 0 ? index : 500;
+  }
+  return 500;
+}
+
 function isSofMilstdEntry(entry = null) {
   const haystack = [
     entry?.label || "",
@@ -6523,16 +6692,37 @@ function getWintakHierarchyParts(entry, config) {
   const selectionId = String(config?.selectionId || "").trim() || "ground_track";
   const cleanLabel = String(entry?.cleanLabel || entry?.label || "").trim();
   const parts = cleanLabel.split(" : ").map((part) => part.trim()).filter(Boolean);
+  const symbolSet = String(entry?.symbolSetCode || "").padStart(2, "0");
+  if (selectionId === "ground_track") {
+    const root = normalizeTacticalObjectRootLabel(entry, config, parts);
+    if (symbolSet === "10") {
+      return [
+        root,
+        getLandUnitWintakGroup(parts),
+        ...getLandUnitWintakBranchParts(parts),
+      ].filter(Boolean);
+    }
+    return [
+      root,
+      ...parts.map((part, index) => formatTacticalPickerLabel(part, { selectionId, depth: index })).filter(Boolean),
+    ].filter((part, index, all) => index === 0 || part !== all[index - 1]);
+  }
   if (selectionId === "sof_unit") {
     const sofIndex = parts.findIndex((part) => /\bSOF\b|Special Operations Forces|Special Forces/i.test(part));
     const tail = (sofIndex >= 0 ? parts.slice(sofIndex + 1) : parts)
-      .map((part, index) => formatWintakHierarchySegment(part, { selectionId, depth: index + 1 }))
+      .map((part, index) => formatTacticalPickerLabel(part, { selectionId, depth: index + 1 }))
       .filter(Boolean);
     return ["Special operations forces (SOF)", ...tail];
   }
   let normalizedParts = parts
-    .map((part, index) => formatWintakHierarchySegment(part, { selectionId, depth: index }))
+    .map((part, index) => formatTacticalPickerLabel(part, { selectionId, depth: index }))
     .filter(Boolean);
+  if (normalizedParts.length) {
+    const root = normalizeTacticalObjectRootLabel(entry, config, parts);
+    if (root && normalizedParts[0] !== root) {
+      normalizedParts = [root, ...normalizedParts];
+    }
+  }
   if (["air_missile", "space_missile", "mine_warfare"].includes(String(config?.id || ""))) {
     if (normalizedParts[0] === "Weapon") {
       return normalizedParts;
@@ -6696,10 +6886,14 @@ function buildTacticalNavRoots() {
     }
   });
 
-  for (const roots of byDomain.values()) {
-    const sortTree = (nodes) => {
-      nodes.sort((left, right) => String(left.label || "").localeCompare(String(right.label || "")));
-      nodes.forEach((node) => sortTree(node.children));
+  for (const [selectionId, roots] of byDomain.entries()) {
+    const sortTree = (nodes, pathLabels = []) => {
+      nodes.sort((left, right) => {
+        const leftWeight = getTacticalPickerSortWeight(selectionId, pathLabels, left.label);
+        const rightWeight = getTacticalPickerSortWeight(selectionId, pathLabels, right.label);
+        return leftWeight - rightWeight || String(left.label || "").localeCompare(String(right.label || ""));
+      });
+      nodes.forEach((node) => sortTree(node.children, [...pathLabels, node.label]));
     };
     sortTree(roots);
   }
@@ -6837,28 +7031,71 @@ function getTpalCurrentRoots() {
   return getTacticalNavRootsForSelection(_tpalState.selection);
 }
 
-function getTpalSearchResults() {
+function buildTpalNodeSearchText(node = null, selectionLabel = "") {
+  return [
+    selectionLabel,
+    node?.label || "",
+    node?.entry?.cleanLabel || node?.preview?.cleanLabel || "",
+    node?.entry?.label || node?.preview?.label || "",
+    node?.entry?.category || node?.preview?.category || "",
+    node?.entry?.searchText || node?.preview?.searchText || "",
+  ].join(" ").toLowerCase();
+}
+
+function scoreTpalSearchResult(node = null, query = "", searchText = "") {
+  const label = String(node?.label || "").toLowerCase();
+  const cleanLabel = String(node?.entry?.cleanLabel || node?.preview?.cleanLabel || "").toLowerCase();
+  if (label === query || cleanLabel === query) return 0;
+  if (label.startsWith(query)) return 1;
+  if (cleanLabel.startsWith(query)) return 2;
+  if (label.includes(query)) return 3;
+  if (cleanLabel.includes(query)) return 4;
+  return searchText.includes(query) ? 8 : 20;
+}
+
+function getTpalSearchResults({ global = false, limit = 80 } = {}) {
   const query = String(_tpalState.search || "").trim().toLowerCase();
-  if (!query || !_tpalState.selection) {
+  if (!query) {
     return [];
   }
-  const currentNode = getTpalCurrentNode();
-  const bases = currentNode ? [currentNode] : getTpalCurrentRoots();
   const results = [];
-  const visit = (node, trail) => {
+  const familyChoices = getTpalFamilyChoices();
+  const selections = global || !_tpalState.selection
+    ? familyChoices.map((choice) => ({
+        id: choice.selectionId || choice.id,
+        label: choice.label,
+      }))
+    : [{
+        id: _tpalState.selection,
+        label: familyChoices.find((choice) => choice.id === _tpalState.selection || choice.selectionId === _tpalState.selection)?.label
+          || TACTICAL_PALETTE_SELECTION_LABELS[_tpalState.selection]
+          || "",
+      }];
+  const visit = (node, trail, selection) => {
     const nextTrail = [...trail, node.id];
-    const haystack = [
-      node.label,
-      node.entry?.cleanLabel || node.preview?.cleanLabel || "",
-      node.entry?.category || node.preview?.category || "",
-    ].join(" ").toLowerCase();
+    const haystack = buildTpalNodeSearchText(node, selection.label);
     if (node.entry && isTpalEntryAllowed(node.entry) && haystack.includes(query)) {
-      results.push({ node, path: nextTrail, exact: true, searchResult: true });
+      results.push({
+        node,
+        path: nextTrail,
+        exact: true,
+        searchResult: true,
+        selectionId: selection.id,
+        selectionLabel: selection.label,
+        score: scoreTpalSearchResult(node, query, haystack),
+      });
     }
-    getTacticalNavChildren(node).forEach((child) => visit(child, nextTrail));
+    getTacticalNavChildren(node).forEach((child) => visit(child, nextTrail, selection));
   };
-  bases.forEach((node) => visit(node, currentNode ? _tpalState.path.slice(0, -1) : []));
-  return results;
+  selections.forEach((selection) => {
+    const currentNode = !global && selection.id === _tpalState.selection ? getTpalCurrentNode() : null;
+    const bases = currentNode ? [currentNode] : getTacticalNavRootsForSelection(selection.id);
+    const baseTrail = currentNode ? _tpalState.path.slice(0, -1) : [];
+    bases.forEach((node) => visit(node, baseTrail, selection));
+  });
+  return results
+    .sort((left, right) => left.score - right.score || String(left.node.label || "").localeCompare(String(right.node.label || "")))
+    .slice(0, limit);
 }
 
 function getTpalVisibleItems() {
@@ -6974,18 +7211,18 @@ function _tpalSetStep(step) {
     el?.classList.toggle("hidden", i + 1 !== step);
   });
   dom.tacticalPaletteName?.closest("label")?.classList.toggle("hidden", _tpalState.mode === "plan-picker");
-  dom.tacticalPaletteSearch?.closest("label")?.classList.toggle("hidden", step !== 3);
+  dom.tacticalPaletteSearch?.closest("label")?.classList.toggle("hidden", step === 1);
   // Update step indicators
   dom.tacticalPaletteModal?.querySelectorAll(".tpal-step").forEach((el) => {
     const s = Number(el.dataset.step);
     el.classList.toggle("active", s === step);
     el.classList.toggle("done", s < step);
   });
-  dom.tpalBackBtn?.classList.toggle("hidden", step === 1);
+  dom.tpalBackBtn?.classList.toggle("hidden", step === 1 || (isPlanPicker && step === 2));
   const subtitles = isPlanPicker
     ? [
         "Select the unit affiliation.",
-        "Choose the unit symbol family.",
+        "Choose the domain, then search or browse the available unit types.",
         "Navigate the hierarchy and select the exact symbol for this T/O unit.",
       ]
     : [
@@ -7003,12 +7240,33 @@ function _tpalSetStep(step) {
   }
 }
 
+function renderTpalSearchSuggestionRows(results = []) {
+  const aff = _tpalState.affiliation || "friendly";
+  return results.map((item) => {
+    const node = item.node;
+    const pathLabels = item.path
+      .map((nodeId, index) => getTacticalNavNodeAtPath(item.selectionId, item.path.slice(0, index + 1))?.label || "")
+      .filter(Boolean);
+    const displayPath = [item.selectionLabel, ...pathLabels.slice(0, -1)].filter(Boolean).join(" / ");
+    return `<button class="tpal-type-btn tpal-type-btn--suggestion" type="button"
+      data-selection="${escapeHtml(item.selectionId || _tpalState.selection || "")}"
+      data-node-id="${escapeHtml(node.id)}"
+      data-path="${escapeHtml(item.path.join("|"))}"
+      data-exact="1">
+      <span class="tpal-type-symbol">${renderTpalSymbol(node, { affiliation: aff })}</span>
+      <span class="tpal-type-title">${escapeHtml(node.label)}${displayPath ? `<small>${escapeHtml(displayPath)}</small>` : ""}</span>
+      <span class="tpal-type-meta is-select">Select</span>
+    </button>`;
+  }).join("");
+}
+
 function _tpalRenderTrackChoices() {
   if (!dom.tpalStep2) return;
   const aff = _tpalState.affiliation || "friendly";
   const choices = getTpalFamilyChoices();
   const grid = dom.tpalStep2.querySelector(".tpal-domain-grid");
   if (grid) {
+    const suggestions = getTpalSearchResults({ global: true, limit: 10 });
     const renderRows = (items) => items.map((entry) => `
       <button class="tpal-list-row tpal-list-row--family" type="button" data-selection="${entry.id}">
         <span class="tpal-list-row-symbol">${renderTpalSymbol(entry, { affiliation: aff })}</span>
@@ -7019,7 +7277,7 @@ function _tpalRenderTrackChoices() {
     const primaryChoices = choices.filter((entry) => TACTICAL_PALETTE_PRIMARY_SELECTIONS.has(entry.selectionId));
     const specializedChoices = choices.filter((entry) => TACTICAL_PALETTE_SPECIALIZED_SELECTIONS.has(entry.selectionId));
     grid.innerHTML = choices.length
-      ? `${primaryChoices.length ? `<div class="tpal-section-title">Tracks</div>${renderRows(primaryChoices)}` : ""}${specializedChoices.length && _tpalState.mode !== "plan-picker" ? `<div class="tpal-section-title">Specialized</div>${renderRows(specializedChoices)}` : ""}`
+      ? `${suggestions.length ? `<div class="tpal-section-title">Suggestions</div>${renderTpalSearchSuggestionRows(suggestions)}` : ""}${primaryChoices.length ? `<div class="tpal-section-title">Tracks</div>${renderRows(primaryChoices)}` : ""}${specializedChoices.length && _tpalState.mode !== "plan-picker" ? `<div class="tpal-section-title">Specialized</div>${renderRows(specializedChoices)}` : ""}`
       : '<div class="tpal-empty-state">No symbol families are available for this workflow.</div>';
   }
 }
@@ -7037,13 +7295,23 @@ function _tpalRenderTypes() {
   const items = getTpalVisibleItems();
   dom.tpalTypeGrid.innerHTML = items.map((item) => {
     const node = item.node;
+    const hasChildren = getTacticalNavChildren(node).some((child) => isTpalNodeVisible(child));
+    const isFolder = hasChildren && !item.exact;
+    const selectionId = item.selectionId || _tpalState.selection || "";
+    const pathLabels = item.searchResult
+      ? item.path
+          .map((nodeId, index) => getTacticalNavNodeAtPath(selectionId, item.path.slice(0, index + 1))?.label || "")
+          .filter(Boolean)
+      : [];
+    const displayPath = item.searchResult ? [item.selectionLabel, ...pathLabels.slice(0, -1)].filter(Boolean).join(" / ") : "";
     return `<button class="tpal-type-btn" type="button"
+      data-selection="${escapeHtml(selectionId)}"
       data-node-id="${escapeHtml(node.id)}"
       data-path="${escapeHtml(item.path.join("|"))}"
       data-exact="${item.exact ? "1" : "0"}">
       <span class="tpal-type-symbol">${renderTpalSymbol(node, { affiliation: aff })}</span>
-      <span class="tpal-type-title">${escapeHtml(node.label)}</span>
-      <span class="tpal-type-meta" aria-hidden="true">&#8594;</span>
+      <span class="tpal-type-title">${escapeHtml(node.label)}${displayPath ? `<small>${escapeHtml(displayPath)}</small>` : ""}</span>
+      <span class="tpal-type-meta ${isFolder ? "" : "is-select"}">${isFolder ? "More" : "Select"}</span>
     </button>`;
   }).join("");
   if (!items.length) {
@@ -7056,6 +7324,42 @@ function renderTacticalPaletteStep3() {
   ensureTpalSelectionPath();
   if (dom.tpalCategoryList) dom.tpalCategoryList.innerHTML = "";
   _tpalRenderTypes();
+}
+
+function handleTpalTypeButtonSelection(typeBtn) {
+  if (!typeBtn) return false;
+  const selectionId = String(typeBtn.dataset.selection || _tpalState.selection || "").trim();
+  if (selectionId) {
+    _tpalState.selection = selectionId;
+  }
+  const path = String(typeBtn.dataset.path || "").trim()
+    ? String(typeBtn.dataset.path).split("|").filter(Boolean)
+    : (String(typeBtn.dataset.nodeId || "").trim()
+        ? [..._tpalState.path.slice(0, -1), String(typeBtn.dataset.nodeId || "").trim()]
+        : _tpalState.path.slice());
+  const node = getTacticalNavNodeAtPath(_tpalState.selection, path);
+  const entry = node?.entry || node?.preview || null;
+  if (!entry) return false;
+  const hasChildren = getTacticalNavChildren(node).some((child) => isTpalNodeVisible(child));
+  const exact = typeBtn.dataset.exact === "1";
+  if (!exact && hasChildren) {
+    _tpalState.path = path;
+    _tpalState.search = "";
+    if (dom.tacticalPaletteSearch) dom.tacticalPaletteSearch.value = "";
+    renderTacticalPaletteStep3();
+    _tpalSetStep(3);
+    return true;
+  }
+  const sizeSelect = _tpalState.mode === "plan-picker"
+    ? document.getElementById(_tpalState.planTarget === "edit" ? "toEditUnitSize" : "toUnitSize")
+    : null;
+  const currentSize = String(sizeSelect?.value || "").trim();
+  commitTacticalPaletteSelection(entry, {
+    affiliation: _tpalState.affiliation || "friendly",
+    size: currentSize || (entry?.domain === "ground" && milstdUnitEntryAllowsEchelon(entry) ? "team" : ""),
+    mode: _tpalState.mode,
+  });
+  return true;
 }
 
 function refreshPlanUnitTypePickerLabel(catalogId = "", affiliation = "friendly", { target = "create", entry = null } = {}) {
@@ -7093,7 +7397,7 @@ function commitTacticalPaletteSelection(entry, { affiliation, size = "", mode = 
   const objectClass = milstdEntry.objectClass || "unit";
   const catalogId = normalizeToUnitType(uniqueId || milstdEntry.id || DEFAULT_MILSTD_UNIT_ID);
   const allowsEchelon = milstdUnitEntryAllowsEchelon(milstdEntry);
-  const nextSize = allowsEchelon ? (size || "battalion") : "";
+  const nextSize = allowsEchelon ? normalizePlanUnitSize(catalogId, size || DEFAULT_TO_UNIT_SIZE) : "";
   const detail = buildMilstdDetail({}, milstdEntry, aff, nextSize);
   const entryLabel = cleanMilstdUnitLabel(milstdEntry.label || entry.label || "Tactical Item");
   if (mode === "plan-picker") {
@@ -7107,13 +7411,13 @@ function commitTacticalPaletteSelection(entry, { affiliation, size = "", mode = 
     if (affiliationSelect) {
       affiliationSelect.value = aff;
     }
-    if (sizeSelect) {
-      if (nextSize && sizeSelect.querySelector(`option[value="${nextSize}"]`)) {
-        sizeSelect.value = nextSize;
-      }
-      sizeSelect.disabled = !allowsEchelon;
-    }
+    setPlanUnitSizeSelectValue(sizeSelect, catalogId, nextSize);
     refreshPlanUnitTypePickerLabel(catalogId, aff, { target: isEditTarget ? "edit" : "create", entry: milstdEntry });
+    if (isEditTarget) {
+      syncToolbarFromEditDraft();
+    } else {
+      syncSelectedPlanUnitFromToolbar();
+    }
     closeTacticalPaletteModal();
     setStatus(`Selected ${entryLabel} for the T/O builder.`);
     return;
@@ -7152,7 +7456,12 @@ function openTacticalPaletteModal(options = {}) {
   if (dom.tacticalPaletteSearch) {
     dom.tacticalPaletteSearch.value = "";
   }
-  _tpalSetStep(1);
+  if (_tpalState.mode === "plan-picker") {
+    _tpalRenderTrackChoices();
+    _tpalSetStep(2);
+  } else {
+    _tpalSetStep(1);
+  }
   dom.tacticalPaletteModal?.classList.remove("hidden");
   updateModalBodyState();
 }
@@ -7632,12 +7941,12 @@ const AI_VIEW_PROFILES = {
     systemGuidance: "The user is in TOPOLOGY view. Prioritize link analysis, topology reasoning, emitter-to-unit relationships, and relay recommendations.",
   },
   analyze: {
-    label: "ANALYZE",
+    label: "ANALYSIS",
     role: "RF Analysis Assistant",
     purpose: "Ask me to interpret coverage, identify conflicts, suggest deconfliction, or explain terrain impacts on RF propagation.",
     placeholder: "Ask about RF configuration, conflicts, terrain impact, or analysis findingsâ€¦",
     emptyMessage: "Ask me to interpret emitter coverage, identify conflicts, suggest frequency deconfliction, or explain terrain impacts on RF propagation.",
-    systemGuidance: "The user is in ANALYZE view. Prioritize interpretation of the analytics cards, conflicts, terrain impacts, and mitigation recommendations.",
+    systemGuidance: "The user is in ANALYSIS view. Prioritize interpretation of the operational conclusions, relationship metrics, terrain impacts, link findings, and mitigation recommendations.",
   },
 };
 
@@ -10241,16 +10550,21 @@ function positionTopBarDropdown(menu, button) {
   const computedWidth = parseFloat(getComputedStyle(menu).width);
   const menuWidth = Number.isFinite(computedWidth) ? computedWidth : menu.offsetWidth || buttonRect.width;
   const viewportPadding = 12;
+  const triggerCenterX = buttonRect.left + (buttonRect.width / 2);
+  const preferredLeft = triggerCenterX - (menuWidth / 2);
   const left = Math.min(
-    Math.max(viewportPadding, buttonRect.right - menuWidth),
+    Math.max(viewportPadding, preferredLeft),
     Math.max(viewportPadding, window.innerWidth - menuWidth - viewportPadding),
   );
-  const top = buttonRect.bottom + 8;
+  const topBarRect = document.querySelector(".top-bar")?.getBoundingClientRect();
+  const top = Math.round(Math.max(buttonRect.bottom, topBarRect?.bottom ?? buttonRect.bottom)) - 1;
+  const anchorX = Math.min(Math.max(18, triggerCenterX - left), Math.max(18, menuWidth - 18));
   const maxHeight = Math.max(160, window.innerHeight - top - viewportPadding);
 
   menu.style.left = `${left}px`;
   menu.style.top = `${top}px`;
   menu.style.maxHeight = `${maxHeight}px`;
+  menu.style.setProperty("--dropdown-anchor-x", `${anchorX}px`);
 }
 
 function positionOpenTopBarDropdowns() {
@@ -10505,6 +10819,11 @@ function wireEvents() {
 
   // Step 2: domain buttons
   dom.tpalStep2?.addEventListener("click", (event) => {
+    const suggestionBtn = event.target.closest(".tpal-type-btn");
+    if (suggestionBtn) {
+      handleTpalTypeButtonSelection(suggestionBtn);
+      return;
+    }
     const trackBtn = event.target.closest(".tpal-domain-btn");
     const listBtn = event.target.closest(".tpal-list-row--family");
     const targetBtn = listBtn || trackBtn;
@@ -10529,34 +10848,13 @@ function wireEvents() {
   dom.tpalTypeGrid?.addEventListener("click", (event) => {
     const typeBtn = event.target.closest(".tpal-type-btn");
     if (!typeBtn) return;
-    const path = String(typeBtn.dataset.path || "").trim()
-      ? String(typeBtn.dataset.path).split("|").filter(Boolean)
-      : (String(typeBtn.dataset.nodeId || "").trim()
-          ? [..._tpalState.path.slice(0, -1), String(typeBtn.dataset.nodeId || "").trim()]
-          : _tpalState.path.slice());
-    const node = getTacticalNavNodeAtPath(_tpalState.selection, path);
-    const entry = node?.entry || node?.preview || null;
-    if (!entry) return;
-    const hasChildren = getTacticalNavChildren(node).length > 0;
-    const exact = typeBtn.dataset.exact === "1";
-    if (!exact && hasChildren) {
-      _tpalState.path = path;
-      renderTacticalPaletteStep3();
-      return;
-    }
-    const sizeSelect = _tpalState.mode === "plan-picker"
-      ? document.getElementById(_tpalState.planTarget === "edit" ? "toEditUnitSize" : "toUnitSize")
-      : null;
-    const currentSize = String(sizeSelect?.value || "").trim();
-    commitTacticalPaletteSelection(entry, {
-      affiliation: _tpalState.affiliation || "friendly",
-      size: currentSize || (entry?.domain === "ground" && milstdUnitEntryAllowsEchelon(entry) ? "team" : ""),
-      mode: _tpalState.mode,
-    });
+    handleTpalTypeButtonSelection(typeBtn);
   });
   dom.tacticalPaletteSearch?.addEventListener("input", () => {
     _tpalState.search = String(dom.tacticalPaletteSearch?.value || "").trim();
-    if (_tpalState.step === 3) {
+    if (_tpalState.step === 2) {
+      _tpalRenderTrackChoices();
+    } else if (_tpalState.step === 3) {
       renderTacticalPaletteStep3();
     }
   });
@@ -10660,7 +10958,7 @@ function wireEvents() {
   });
   dom.emittersRefreshBtn?.addEventListener("click", () => {
     renderEmittersView();
-    if (state.assets.length) {
+    if (getVisibleEmitterWorkspaceAssets().length) {
       centerEmittersWorkspaceOnAssets();
     }
     setStatus("Emitter view refreshed.");
@@ -11602,7 +11900,7 @@ function applySavedMapState(rawSaved) {
           cotType: unit.cotType || "",
           sidc: unit.sidc || "",
           detail: unit.detail && typeof unit.detail === "object" ? { ...unit.detail } : {},
-          size: unit.size || "battalion",
+          size: unit.size || "",
           x: Number(unit.x) || 0,
           y: Number(unit.y) || 0,
         }))
@@ -13033,8 +13331,9 @@ function switchView(view, skipAnimation) {
   if (dom.viewModeToggle) {
     const viewIndex = { plan: 0, emitters: 1, topology: 1, map: 2, analyze: 3 };
     dom.viewModeToggle.querySelectorAll(".view-mode-tab").forEach(tab => {
-      tab.classList.toggle("active", tab.dataset.view === view);
-      tab.setAttribute("aria-selected", String(tab.dataset.view === view));
+      const isActiveTab = tab.dataset.view === view || (view === "emitters" && tab.dataset.view === "topology");
+      tab.classList.toggle("active", isActiveTab);
+      tab.setAttribute("aria-selected", String(isActiveTab));
     });
     dom.viewModeToggle.setAttribute("data-active", view);
     dom.viewModeToggle.style.setProperty("--view-active-index", String(viewIndex[view] ?? 0));
@@ -14393,7 +14692,7 @@ RF SIM is organized around four views selected from the top navigation bar:
 1. **T/O** is where you build the Table of Organization, define command relationships, and assign unit symbols and hierarchy.
 2. **EMITTERS** is a dedicated workspace for creating, organizing, and configuring RF emitter cards — independent of map placement.
 3. **MAP** is where you place emitters on terrain, import overlays, and inspect the physical battlespace.
-4. **ANALYZE** turns terrain, geometry, emitter settings, and environment into RF findings. The **Topology** sub-view inside ANALYZE lets you inspect link structure and connection quality between emitters or units.
+4. **ANALYSIS** turns terrain, geometry, emitter settings, and environment into RF findings. The **Topology** sub-view inside ANALYSIS lets you inspect link structure and connection quality between emitters or units.
 
 If you use the site in that order, the rest of the workflow becomes much easier to reason about.
 
@@ -14616,11 +14915,11 @@ Small terrain changes can alter line of sight, masking, obstruction clearance, r
 
 ---
 
-## ANALYZE
+## ANALYSIS
 
-## What ANALYZE is for
+## What ANALYSIS is for
 
-ANALYZE turns terrain, geometry, emitter settings, and environment into RF conclusions.
+ANALYSIS turns terrain, geometry, emitter settings, and environment into RF conclusions.
 
 Typical uses:
 
@@ -14630,7 +14929,7 @@ Typical uses:
 - relay and command-post siting
 - risk and vulnerability analysis
 
-### Topology (inside ANALYZE)
+### Topology (inside ANALYSIS)
 
 The **Topology** sub-view shows the RF network structure — who can talk, why, and how radios are grouped.
 
@@ -14674,7 +14973,7 @@ Two emitters will link in Topology only when they share **the same waveform AND 
 3. Place emitters accurately in MAP.
 4. Load terrain and import overlays.
 5. Verify frequencies, waveforms, power, antenna, and height.
-6. Open ANALYZE → Topology to inspect relationships.
+6. Open ANALYSIS > Topology to inspect relationships.
 7. Run RF studies with the scenario in a clean, consistent state.
 
 ## What affects propagation outcomes
@@ -14786,7 +15085,7 @@ Use it when you need to:
 
 ## Phase 4: Inspect the network
 
-- Open ANALYZE → Topology.
+- Open ANALYSIS > Topology.
 - Check unit card grouping and individual emitter links.
 - Look for orphan emitters, overloaded hubs, and fragile paths.
 - Use Auto Layout and Fit View to clean up the display.
@@ -23693,6 +23992,10 @@ function getEmitterWorkspaceAssets() {
   return (state.assets || []).filter((asset) => isEmitterWorkspaceAsset(asset));
 }
 
+function getVisibleEmitterWorkspaceAssets() {
+  return getEmitterWorkspaceAssets().filter((asset) => isTopologyEmitterVisible(asset));
+}
+
 function isEmitterWorkspaceViewActive(view = state.ui?.currentView) {
   return view === "emitters" || view === "topology";
 }
@@ -23795,10 +24098,11 @@ function openMapEmitterPickerModal() {
 
 function renderEmittersView() {
   initEmittersViewIfNeeded();
+  wireTopologyToolbarControls();
   renderAssets();
   requestAnimationFrame(() => {
     renderEmittersWorkspace();
-    if (getEmitterWorkspaceAssets().length) {
+    if (getVisibleEmitterWorkspaceAssets().length) {
       centerEmittersWorkspaceOnAssets();
     }
   });
@@ -23841,7 +24145,7 @@ function centerEmittersWorkspaceOnAssets({ assetId = "", padding = 140 } = {}) {
   }
   const targetAssets = assetId
     ? getEmitterWorkspaceAssets().filter((asset) => asset.id === assetId)
-    : [...getEmitterWorkspaceAssets()];
+    : getVisibleEmitterWorkspaceAssets();
   if (!targetAssets.length) {
     return;
   }
@@ -23868,7 +24172,7 @@ function centerEmittersWorkspaceOnAssets({ assetId = "", padding = 140 } = {}) {
 
 function emittersWorkspaceHasVisibleCards() {
   const canvas = dom.emittersCanvas;
-  const workspaceAssets = getEmitterWorkspaceAssets();
+  const workspaceAssets = getVisibleEmitterWorkspaceAssets();
   if (!canvas || !workspaceAssets.length) {
     return false;
   }
@@ -24230,10 +24534,18 @@ function renderEmittersWorkspace() {
   if (!dom.emittersWorld) {
     return;
   }
-  const workspaceAssets = getEmitterWorkspaceAssets();
+  const allWorkspaceAssets = getEmitterWorkspaceAssets();
+  const workspaceAssets = allWorkspaceAssets.filter((asset) => isTopologyEmitterVisible(asset));
+  if (_emittersWorkspaceState.selectedAssetId && !workspaceAssets.some((asset) => asset.id === _emittersWorkspaceState.selectedAssetId)) {
+    _emittersWorkspaceState.selectedAssetId = "";
+    hideEmittersContextMenu();
+  }
   dom.emittersWorld.innerHTML = "";
   if (dom.emittersEmptyState) {
     dom.emittersEmptyState.classList.toggle("hidden", workspaceAssets.length > 0);
+    dom.emittersEmptyState.innerHTML = allWorkspaceAssets.length
+      ? `<strong>No emitters match this frequency filter.</strong><span>Reset the band filter or enable another band to restore cards.</span>`
+      : `<strong>No emitters placed yet.</strong><span>Add an emitter to create a workspace card.</span>`;
   }
   if (!workspaceAssets.length) {
     return;
@@ -37341,6 +37653,7 @@ const MILSTD_EQUIPMENT_FRAME_PATHS = {
 
 const MILSTD_ECHELON_PATHS = {
   team:      "images/milstd/Echelon/111.svg",
+  fireteam:  "images/milstd/Echelon/111.svg",
   squad:     "images/milstd/Echelon/112.svg",
   section:   "images/milstd/Echelon/113.svg",
   platoon:   "images/milstd/Echelon/114.svg",
@@ -37509,6 +37822,35 @@ function normalizeToUnitType(type) {
   return getDoctrinalCatalogEntryById(normalized)?.id || normalizeMilstdUniqueId(normalized) || DEFAULT_MILSTD_UNIT_ID;
 }
 
+function formatToUnitLabelPart(value) {
+  return String(value || "")
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function formatToUnitSizeLabel(size = "") {
+  const normalized = String(size || "").trim();
+  return TO_UNIT_SIZE_LABELS[normalized] || formatToUnitLabelPart(normalized);
+}
+
+function normalizePlanUnitSize(type = DEFAULT_MILSTD_UNIT_ID, size = "") {
+  const normalizedType = normalizeToUnitType(type);
+  if (!catalogAllowsEchelon(normalizedType)) {
+    return "";
+  }
+  const normalizedSize = String(size || "").trim();
+  return TO_UNIT_SIZE_LABELS[normalizedSize] ? normalizedSize : DEFAULT_TO_UNIT_SIZE;
+}
+
+function inferPlanUnitSizeFromLabel(label = "", type = DEFAULT_MILSTD_UNIT_ID) {
+  const text = String(label || "").trim();
+  if (!text) return "";
+  const normalizedType = normalizeToUnitType(type);
+  return TO_UNIT_SIZE_ORDER.find((size) => text === buildDefaultToUnitLabel(size, normalizedType)) || "";
+}
+
 function normalizeToUnit(unit) {
   if (!unit || typeof unit !== "object") return unit;
   const detail = unit.detail && typeof unit.detail === "object" ? { ...unit.detail } : {};
@@ -37558,28 +37900,158 @@ function normalizePlanUnit(unit = {}) {
     || buildCatalogCotType(normalized.catalogId, normalized.affiliation || "friendly")
     || ""
   ).trim();
-  normalized.label = (normalized.label || "").trim() || (normalized.designator || "").trim() || buildDefaultToUnitLabel(normalized.size || "battalion", normalized.type);
+  const normalizedInitialSize = normalizePlanUnitSize(normalized.catalogId || normalized.type, normalized.size);
+  normalized.label = (normalized.label || "").trim() || (normalized.designator || "").trim() || buildDefaultToUnitLabel(normalizedInitialSize, normalized.type);
   normalized.designator = String(normalized.designator || "").trim();
   normalized.affiliation = normalized.affiliation || "friendly";
-  normalized.size = normalized.size || "battalion";
+  const inferredSize = !normalized.designator ? inferPlanUnitSizeFromLabel(normalized.label, normalized.catalogId || normalized.type) : "";
+  normalized.size = normalizePlanUnitSize(normalized.catalogId || normalized.type, inferredSize || normalized.size);
   normalized.x = Number(normalized.x) || 0;
   normalized.y = Number(normalized.y) || 0;
   return normalized;
 }
 
-function formatToUnitLabelPart(value) {
-  return String(value || "")
-    .split("_")
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
 function buildDefaultToUnitLabel(size, type) {
-  const sizeLabel = formatToUnitLabelPart(size);
+  const sizeLabel = formatToUnitSizeLabel(size);
   const entry = getDoctrinalCatalogEntryById(normalizeToUnitType(type));
   const typeLabel = entry?.label || String(normalizeToUnitType(type) || DEFAULT_MILSTD_UNIT_ID).replace(/_/g, " ");
   return `${sizeLabel} ${typeLabel}`.trim();
+}
+
+let _syncingPlanUnitControls = false;
+
+function getPlanUnitControlElements(target = "create") {
+  const isEditTarget = target === "edit";
+  return {
+    affiliationSelect: document.getElementById(isEditTarget ? "toEditAffiliation" : "toAffiliation"),
+    typeSelect: document.getElementById(isEditTarget ? "toEditUnitType" : "toUnitType"),
+    sizeSelect: document.getElementById(isEditTarget ? "toEditUnitSize" : "toUnitSize"),
+  };
+}
+
+function setSelectValueIfPresent(selectEl, value = "", fallback = "") {
+  if (!selectEl) return "";
+  const text = String(value || "");
+  const option = Array.from(selectEl.options || []).find((entry) => entry.value === text);
+  if (option) {
+    selectEl.value = text;
+    return text;
+  }
+  const fallbackText = String(fallback || "");
+  const fallbackOption = Array.from(selectEl.options || []).find((entry) => entry.value === fallbackText);
+  if (fallbackOption) {
+    selectEl.value = fallbackText;
+    return fallbackText;
+  }
+  selectEl.value = "";
+  return "";
+}
+
+function setPlanUnitSizeSelectValue(sizeSelect, type = DEFAULT_MILSTD_UNIT_ID, size = "") {
+  if (!sizeSelect) return "";
+  const normalizedType = normalizeToUnitType(type);
+  const allowsEchelon = catalogAllowsEchelon(normalizedType);
+  sizeSelect.disabled = !allowsEchelon;
+  if (!allowsEchelon) {
+    sizeSelect.value = "";
+    return "";
+  }
+  const normalizedSize = normalizePlanUnitSize(normalizedType, size);
+  return setSelectValueIfPresent(sizeSelect, normalizedSize, DEFAULT_TO_UNIT_SIZE);
+}
+
+function syncPlanUnitControls(values = {}, { target = "create", entry = null } = {}) {
+  const { affiliationSelect, typeSelect, sizeSelect } = getPlanUnitControlElements(target);
+  const type = normalizeToUnitType(values.catalogId || values.type || values.unitType || typeSelect?.value || DEFAULT_MILSTD_UNIT_ID);
+  const affiliation = normalizeTacticalAffiliation(values.affiliation || affiliationSelect?.value || "friendly");
+  _syncingPlanUnitControls = true;
+  if (affiliationSelect) setSelectValueIfPresent(affiliationSelect, affiliation, "friendly");
+  if (typeSelect) setSelectValueIfPresent(typeSelect, type, DEFAULT_MILSTD_UNIT_ID);
+  const size = setPlanUnitSizeSelectValue(sizeSelect, type, values.size || sizeSelect?.value || DEFAULT_TO_UNIT_SIZE);
+  _syncingPlanUnitControls = false;
+  refreshPlanUnitTypePickerLabel(type, affiliation, { target, entry });
+  return { affiliation, type, size };
+}
+
+function isPlanUnitAutoGeneratedLabel(unit = {}) {
+  const label = String(unit?.label || "").trim();
+  if (!label) return true;
+  if (String(unit?.designator || "").trim()) return false;
+  const type = normalizeToUnitType(unit.catalogId || unit.type);
+  return TO_UNIT_SIZE_ORDER.some((size) => label === buildDefaultToUnitLabel(size, type));
+}
+
+function applyPlanUnitControlValues(unit, values = {}) {
+  if (!unit) return null;
+  const wasAutoLabel = isPlanUnitAutoGeneratedLabel(unit);
+  const type = normalizeToUnitType(values.catalogId || values.type || unit.catalogId || unit.type);
+  const affiliation = normalizeTacticalAffiliation(values.affiliation || unit.affiliation || "friendly");
+  const size = normalizePlanUnitSize(type, values.size ?? unit.size);
+  const nextLabel = values.label !== undefined
+    ? String(values.label || "").trim()
+    : (wasAutoLabel ? buildDefaultToUnitLabel(size, type) : String(unit.label || "").trim());
+  const designator = values.designator !== undefined
+    ? String(values.designator || "").trim()
+    : String(unit.designator || "").trim();
+  Object.assign(unit, normalizePlanUnit({
+    ...unit,
+    label: nextLabel || designator || buildDefaultToUnitLabel(size, type),
+    designator,
+    affiliation,
+    type,
+    catalogId: type,
+    cotType: buildCatalogCotType(type, affiliation) || getMilstdSymbolDefaultCotType(getMilstdSymbolCatalogEntry(type), affiliation),
+    size,
+  }));
+  return unit;
+}
+
+function getSelectedPlanUnit() {
+  return Number.isFinite(Number(_toState.selectedUnit))
+    ? _toState.units.find((entry) => Number(entry.id) === Number(_toState.selectedUnit)) || null
+    : null;
+}
+
+function syncSelectedPlanUnitToToolbar() {
+  const unit = getSelectedPlanUnit();
+  if (!unit) return false;
+  syncPlanUnitControls(normalizePlanUnit(unit), { target: "create" });
+  return true;
+}
+
+function syncEditModalFromPlanUnit(unit) {
+  if (!unit || Number(_toState.editingUnitId) !== Number(unit.id)) return false;
+  syncPlanUnitControls(normalizePlanUnit(unit), { target: "edit" });
+  return true;
+}
+
+function syncToolbarFromEditDraft() {
+  if (_syncingPlanUnitControls || !Number.isFinite(Number(_toState.editingUnitId))) return;
+  const { affiliationSelect, typeSelect, sizeSelect } = getPlanUnitControlElements("edit");
+  syncPlanUnitControls({
+    affiliation: affiliationSelect?.value || "friendly",
+    type: typeSelect?.value || DEFAULT_MILSTD_UNIT_ID,
+    size: sizeSelect?.value || DEFAULT_TO_UNIT_SIZE,
+  }, { target: "create" });
+}
+
+function syncSelectedPlanUnitFromToolbar({ render = true, persist = true } = {}) {
+  if (_syncingPlanUnitControls) return false;
+  const unit = getSelectedPlanUnit();
+  if (!unit) return false;
+  const { affiliationSelect, typeSelect, sizeSelect } = getPlanUnitControlElements("create");
+  const updated = applyPlanUnitControlValues(unit, {
+    affiliation: affiliationSelect?.value || "friendly",
+    type: typeSelect?.value || DEFAULT_MILSTD_UNIT_ID,
+    size: sizeSelect?.value || DEFAULT_TO_UNIT_SIZE,
+  });
+  if (!updated) return false;
+  syncPlanUnitControls(updated, { target: "create" });
+  syncEditModalFromPlanUnit(updated);
+  if (render) renderToView();
+  syncTacticalObjectFromPlanUnit(updated.id);
+  if (persist) saveMapState();
+  return true;
 }
 
 function serializeToPlanState() {
@@ -37597,7 +38069,7 @@ function serializeToPlanState() {
         cotType: normalized.cotType || "",
         sidc: String(normalized.sidc || normalized.detail?.milsymId || "").trim(),
         detail: normalized.detail && typeof normalized.detail === "object" ? { ...normalized.detail } : {},
-        size: normalized.size || "battalion",
+        size: normalized.size || "",
         x: Number(normalized.x) || 0,
         y: Number(normalized.y) || 0,
       };
@@ -37612,13 +38084,14 @@ function serializeToPlanState() {
 
 function milstd2525Svg(unit) {
   const spec = getMilstdLayerSpec(unit);
-  const renderLayer = (path) => `<img src="${path}" class="milstd-layer" alt="" loading="lazy" decoding="async" onerror="this.style.display='none'">`;
-  return `<span class="milstd-stack ms2525-icon" aria-hidden="true">
+  const domainClass = `milstd-stack--domain-${String(spec.domain || "ground").replace(/[^a-z0-9_-]/gi, "")}`;
+  const renderLayer = (path, modifierClass = "") => `<img src="${path}" class="milstd-layer${modifierClass ? ` ${modifierClass}` : ""}" alt="" loading="lazy" decoding="async" onerror="this.style.display='none'">`;
+  return `<span class="milstd-stack ms2525-icon ${domainClass}" aria-hidden="true">
     ${spec.framePath ? renderLayer(spec.framePath) : ""}
     ${spec.mainPath ? renderLayer(spec.mainPath) : ""}
     ${spec.modifierPaths.map((path) => renderLayer(path)).join("")}
     ${spec.fallbackText ? `<span class="milstd-fallback-text">${esc(spec.fallbackText)}</span>` : ""}
-    ${spec.echelonPath ? renderLayer(spec.echelonPath) : ""}
+    ${spec.echelonPath ? renderLayer(spec.echelonPath, "milstd-layer--echelon") : ""}
   </span>`;
 }
 
@@ -37626,12 +38099,13 @@ function renderToUnitIcon(unit) {
   return milstd2525Svg(unit);
 }
 
-function closeToEditModal() {
+function closeToEditModal({ syncToolbar = true } = {}) {
   _toState.editingUnitId = null;
   document.getElementById("toEditModal")?.classList.add("hidden");
   document.body.classList.remove("emitter-modal-open");
   const validation = document.getElementById("toEditValidation");
   if (validation) validation.textContent = "";
+  if (syncToolbar) syncSelectedPlanUnitToToolbar();
 }
 
 function openToEditModal(unitId = _toState.selectedUnit) {
@@ -37647,11 +38121,8 @@ function openToEditModal(unitId = _toState.selectedUnit) {
   if (!labelInput || !designatorInput || !affiliationSelect || !typeSelect || !sizeSelect) return;
   labelInput.value = normalized.label || "";
   designatorInput.value = normalized.designator || "";
-  affiliationSelect.value = normalized.affiliation || "friendly";
-  typeSelect.value = normalizeToUnitType(normalized.catalogId || normalized.type);
-  sizeSelect.value = normalized.size || "battalion";
-  sizeSelect.disabled = !catalogAllowsEchelon(typeSelect.value || DEFAULT_MILSTD_UNIT_ID);
-  refreshPlanUnitTypePickerLabel(typeSelect.value, affiliationSelect.value, { target: "edit" });
+  syncPlanUnitControls(normalized, { target: "edit" });
+  syncPlanUnitControls(normalized, { target: "create" });
   const validation = document.getElementById("toEditValidation");
   if (validation) validation.textContent = "";
   document.getElementById("toEditModal")?.classList.remove("hidden");
@@ -37674,20 +38145,18 @@ function saveToEditModal() {
   const validation = document.getElementById("toEditValidation");
   if (!labelInput || !designatorInput || !affiliationSelect || !typeSelect || !sizeSelect) return;
   const type = normalizeToUnitType(typeSelect.value);
-  const size = sizeSelect.value || "battalion";
+  const size = normalizePlanUnitSize(type, sizeSelect.value);
   const designator = (designatorInput.value || "").trim();
   const label = (labelInput.value || "").trim() || designator || buildDefaultToUnitLabel(size, type);
   const affiliation = affiliationSelect.value || "friendly";
-  Object.assign(unit, normalizePlanUnit({
-    ...unit,
+  applyPlanUnitControlValues(unit, {
     label,
     designator,
     affiliation,
     type,
     catalogId: type,
-    cotType: buildCatalogCotType(type, affiliation),
     size,
-  }));
+  });
   if (validation) validation.textContent = "";
   closeToEditModal();
   renderToView();
@@ -37713,29 +38182,45 @@ function initPlanViewIfNeeded() {
   populateDoctrinalUnitTypeSelect(unitTypeSelect);
   populateDoctrinalUnitTypeSelect(editTypeSelect);
   if (unitSizeSelect && editSizeSelect) editSizeSelect.innerHTML = unitSizeSelect.innerHTML;
-  if (unitSizeSelect) unitSizeSelect.disabled = !catalogAllowsEchelon(unitTypeSelect?.value || DEFAULT_MILSTD_UNIT_ID);
-  if (editSizeSelect) editSizeSelect.disabled = !catalogAllowsEchelon(editTypeSelect?.value || DEFAULT_MILSTD_UNIT_ID);
-  refreshPlanUnitTypePickerLabel(unitTypeSelect?.value || DEFAULT_MILSTD_UNIT_ID, unitAffiliationSelect?.value || "friendly", { target: "create" });
-  refreshPlanUnitTypePickerLabel(editTypeSelect?.value || DEFAULT_MILSTD_UNIT_ID, editAffiliationSelect?.value || "friendly", { target: "edit" });
+  syncPlanUnitControls({
+    affiliation: unitAffiliationSelect?.value || "friendly",
+    type: unitTypeSelect?.value || DEFAULT_MILSTD_UNIT_ID,
+    size: unitSizeSelect?.value || DEFAULT_TO_UNIT_SIZE,
+  }, { target: "create" });
+  syncPlanUnitControls({
+    affiliation: editAffiliationSelect?.value || "friendly",
+    type: editTypeSelect?.value || DEFAULT_MILSTD_UNIT_ID,
+    size: editSizeSelect?.value || DEFAULT_TO_UNIT_SIZE,
+  }, { target: "edit" });
   unitAffiliationSelect?.addEventListener("change", () => {
     refreshPlanUnitTypePickerLabel(unitTypeSelect?.value || DEFAULT_MILSTD_UNIT_ID, unitAffiliationSelect.value || "friendly", { target: "create" });
+    syncSelectedPlanUnitFromToolbar();
   });
   unitTypeSelect?.addEventListener("change", () => {
     refreshPlanUnitTypePickerLabel(unitTypeSelect.value || DEFAULT_MILSTD_UNIT_ID, unitAffiliationSelect?.value || "friendly", { target: "create" });
-    if (unitSizeSelect) unitSizeSelect.disabled = !catalogAllowsEchelon(unitTypeSelect.value || DEFAULT_MILSTD_UNIT_ID);
+    setPlanUnitSizeSelectValue(unitSizeSelect, unitTypeSelect.value || DEFAULT_MILSTD_UNIT_ID, unitSizeSelect?.value || DEFAULT_TO_UNIT_SIZE);
+    syncSelectedPlanUnitFromToolbar();
+  });
+  unitSizeSelect?.addEventListener("change", () => {
+    syncSelectedPlanUnitFromToolbar();
   });
   editAffiliationSelect?.addEventListener("change", () => {
     refreshPlanUnitTypePickerLabel(editTypeSelect?.value || DEFAULT_MILSTD_UNIT_ID, editAffiliationSelect.value || "friendly", { target: "edit" });
+    syncToolbarFromEditDraft();
   });
   editTypeSelect?.addEventListener("change", () => {
     refreshPlanUnitTypePickerLabel(editTypeSelect.value || DEFAULT_MILSTD_UNIT_ID, editAffiliationSelect?.value || "friendly", { target: "edit" });
-    if (editSizeSelect) editSizeSelect.disabled = !catalogAllowsEchelon(editTypeSelect.value || DEFAULT_MILSTD_UNIT_ID);
+    setPlanUnitSizeSelectValue(editSizeSelect, editTypeSelect.value || DEFAULT_MILSTD_UNIT_ID, editSizeSelect?.value || DEFAULT_TO_UNIT_SIZE);
+    syncToolbarFromEditDraft();
+  });
+  editSizeSelect?.addEventListener("change", () => {
+    syncToolbarFromEditDraft();
   });
   // â”€â”€ Wire toolbar buttons â”€â”€
   document.getElementById("toAddUnitBtn")?.addEventListener("click", () => {
     const aff  = document.getElementById("toAffiliation")?.value || "friendly";
     const type = document.getElementById("toUnitType")?.value || DEFAULT_MILSTD_UNIT_ID;
-    const size = document.getElementById("toUnitSize")?.value || "battalion";
+    const size = normalizePlanUnitSize(type, document.getElementById("toUnitSize")?.value || DEFAULT_TO_UNIT_SIZE);
     const des  = (document.getElementById("toUnitDesignator")?.value || "").trim();
     const label = des || buildDefaultToUnitLabel(size, type);
     const cx = canvas.clientWidth  / 2 - _toState.panX / _toState.zoom;
@@ -37972,7 +38457,7 @@ function initPlanViewIfNeeded() {
 
 function addToUnit(props) {
   const type = normalizeToUnitType(props?.catalogId || props?.type);
-  const size = props?.size || "battalion";
+  const size = normalizePlanUnitSize(type, props?.size || DEFAULT_TO_UNIT_SIZE);
   const designator = (props?.designator || "").trim();
   const label = (props?.label || "").trim() || designator || buildDefaultToUnitLabel(size, type);
   const unit = normalizePlanUnit({
@@ -37997,6 +38482,7 @@ function renderToView() {
   world.innerHTML = "";
   for (const unit of _toState.units) renderToUnit(normalizePlanUnit(unit));
   renderToEdges();
+  syncSelectedPlanUnitToToolbar();
   if (!dom.toEmitterManagerModal?.classList.contains("hidden")) {
     renderToEmitterManagerModal();
   }
@@ -38043,6 +38529,7 @@ function renderToUnit(unit) {
     const liveUnit = _toState.units.find((entry) => entry.id === normalized.id);
     if (!liveUnit) return;
     _toState.selectedUnit = liveUnit.id;
+    syncSelectedPlanUnitToToolbar();
     document.querySelectorAll(".to-unit").forEach(u => u.classList.remove("selected"));
     el.classList.add("selected");
     _toState.dragging = {
@@ -38088,6 +38575,7 @@ function renderToUnit(unit) {
       return;
     }
     _toState.selectedUnit = normalized.id;
+    syncSelectedPlanUnitToToolbar();
   });
 
   // Right-click context menu
@@ -38095,6 +38583,7 @@ function renderToUnit(unit) {
     e.preventDefault();
     e.stopPropagation();
     _toState.selectedUnit = normalized.id;
+    syncSelectedPlanUnitToToolbar();
     document.querySelectorAll(".to-unit").forEach(u => u.classList.remove("selected"));
     el.classList.add("selected");
     showToContextMenu(e.clientX, e.clientY);
@@ -38386,7 +38875,8 @@ async function renderTopologyView(options = {}) {
   wireTopologyToolbarControls();
 
   // Only assets that have a frequencyMHz (i.e. are radio emitters)
-  const allEmitters = (state.assets || []).filter((a) => a.frequencyMHz > 0 && isTopologyEmitterVisible(a));
+  const radioEmitters = (state.assets || []).filter((a) => a.frequencyMHz > 0);
+  const allEmitters = radioEmitters.filter((a) => isTopologyEmitterVisible(a));
 
   // Build a nameâ†’unitId lookup for fallback matching
   const unitByLabel = new Map(); // normalized label â†’ unit
@@ -38497,7 +38987,12 @@ async function renderTopologyView(options = {}) {
       ];
 
   if (!posEntries.length) {
-    if (empty) empty.classList.remove("hidden");
+    if (empty) {
+      empty.innerHTML = radioEmitters.length && !allEmitters.length
+        ? `<span>No emitters match this frequency filter.</span><span class="fine-print">Reset the band filter or enable another band to restore topology links.</span>`
+        : `<span>No emitters placed on the map yet.</span><span class="fine-print">Place radio emitters in the MAP view to see topology links here.</span>`;
+      empty.classList.remove("hidden");
+    }
     svg.innerHTML = ""; nodes.innerHTML = "";
     return;
   }
@@ -40113,7 +40608,8 @@ function isSatcomWaveform(wf = "") {
 function getEmitterTopologyBand(emitter) {
   if (!emitter) return "VHF";
   if (emitter.ext?.satcomEnabled || isSatcomWaveform(emitter.ext?.waveform || emitter.waveform || "")) return "SATCOM";
-  const mhz = Number(emitter.frequencyMHz) || 0;
+  const mhz = Number(emitter.frequencyMHz);
+  if (!Number.isFinite(mhz) || mhz <= 0) return "VHF";
   if (mhz < 30) return "HF";
   if (mhz < 300) return "VHF";
   return "UHF";
@@ -40132,21 +40628,64 @@ function isTopologyEmitterVisible(emitter) {
   return getTopologyBandFilter().includes(getEmitterTopologyBand(emitter));
 }
 
-function updateTopologyFilterButtonLabel() {
-  if (!dom.topoFilterFreqBtn) return;
+function getFrequencyBandFilterGroups() {
+  return [
+    {
+      button: dom.topoFilterFreqBtn,
+      menu: dom.topoFilterFreqMenu,
+      resetBtn: dom.topoBandResetBtn,
+      inputs: [dom.topoBandHF, dom.topoBandVHF, dom.topoBandUHF, dom.topoBandSATCOM],
+    },
+    {
+      button: dom.emittersFilterFreqBtn,
+      menu: dom.emittersFilterFreqMenu,
+      resetBtn: dom.emittersBandResetBtn,
+      inputs: [dom.emittersBandHF, dom.emittersBandVHF, dom.emittersBandUHF, dom.emittersBandSATCOM],
+    },
+  ].filter((group) => group.button || group.menu || group.inputs.some(Boolean));
+}
+
+function getFrequencyBandFilterLabel() {
   const selected = getTopologyBandFilter();
-  dom.topoFilterFreqBtn.textContent = selected.length === TOPOLOGY_BANDS.length
+  return selected.length === TOPOLOGY_BANDS.length
     ? "All Frequencies"
     : (selected.length ? selected.join(", ") : "No Frequencies");
 }
 
+function closeFrequencyBandFilterMenus(exceptGroup = null) {
+  getFrequencyBandFilterGroups().forEach((group) => {
+    if (group === exceptGroup) return;
+    group.menu?.classList.add("hidden");
+    group.button?.setAttribute("aria-expanded", "false");
+  });
+}
+
+function updateBandFilteredViews({ fitTopology = false, centerEmitters = false } = {}) {
+  syncTopologyToolbarUi();
+  if (state.ui?.currentView === "topology") {
+    renderTopologyView({ fitView: fitTopology });
+  }
+  if (state.ui?.currentView === "emitters") {
+    renderEmittersWorkspace();
+    if (centerEmitters && getVisibleEmitterWorkspaceAssets().length) {
+      centerEmittersWorkspaceOnAssets();
+    }
+  }
+  saveMapState();
+}
+
 function syncTopologyToolbarUi() {
   const selected = new Set(getTopologyBandFilter());
-  if (dom.topoBandHF) dom.topoBandHF.checked = selected.has("HF");
-  if (dom.topoBandVHF) dom.topoBandVHF.checked = selected.has("VHF");
-  if (dom.topoBandUHF) dom.topoBandUHF.checked = selected.has("UHF");
-  if (dom.topoBandSATCOM) dom.topoBandSATCOM.checked = selected.has("SATCOM");
-  updateTopologyFilterButtonLabel();
+  const label = getFrequencyBandFilterLabel();
+  getFrequencyBandFilterGroups().forEach((group) => {
+    group.inputs.forEach((input) => {
+      if (input) input.checked = selected.has(input.value);
+    });
+    if (group.button) {
+      group.button.textContent = label;
+      group.button.title = label;
+    }
+  });
   const mode = getTopologyDisplayMode();
   dom.topoDisplayUnitsBtn?.classList.toggle("is-active", mode === "units");
   dom.topoDisplayUnitsBtn?.setAttribute("aria-selected", String(mode === "units"));
@@ -40176,22 +40715,34 @@ function wireTopologyToolbarControls() {
   const sig = _topoToolbarAbort.signal;
   syncTopologyToolbarUi();
 
-  dom.topoFilterFreqBtn?.addEventListener("click", (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const nextOpen = dom.topoFilterFreqMenu?.classList.contains("hidden");
-    dom.topoFilterFreqMenu?.classList.toggle("hidden", !nextOpen);
-    dom.topoFilterFreqBtn?.setAttribute("aria-expanded", String(!!nextOpen));
-  }, { signal: sig });
+  getFrequencyBandFilterGroups().forEach((group) => {
+    group.button?.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const nextOpen = group.menu?.classList.contains("hidden");
+      closeFrequencyBandFilterMenus(group);
+      group.menu?.classList.toggle("hidden", !nextOpen);
+      group.button?.setAttribute("aria-expanded", String(!!nextOpen));
+    }, { signal: sig });
 
-  [dom.topoBandHF, dom.topoBandVHF, dom.topoBandUHF, dom.topoBandSATCOM].forEach((input) => {
-    input?.addEventListener("change", () => {
-      const selected = [dom.topoBandHF, dom.topoBandVHF, dom.topoBandUHF, dom.topoBandSATCOM]
-        .filter((el) => el?.checked)
-        .map((el) => el.value);
-      state.ui.topologyBandFilter = selected;
-      syncTopologyToolbarUi();
-      if (state.ui?.currentView === "topology") renderTopologyView({ fitView: true });
+    group.menu?.addEventListener("click", (e) => {
+      e.stopPropagation();
+    }, { signal: sig });
+
+    group.inputs.forEach((input) => {
+      input?.addEventListener("change", () => {
+        state.ui.topologyBandFilter = group.inputs
+          .filter((el) => el?.checked)
+          .map((el) => el.value);
+        updateBandFilteredViews({ fitTopology: true, centerEmitters: true });
+      }, { signal: sig });
+    });
+
+    group.resetBtn?.addEventListener("click", (e) => {
+      e.preventDefault();
+      state.ui.topologyBandFilter = TOPOLOGY_BANDS.slice();
+      closeFrequencyBandFilterMenus();
+      updateBandFilteredViews({ fitTopology: true, centerEmitters: true });
     }, { signal: sig });
   });
 
@@ -40206,10 +40757,11 @@ function wireTopologyToolbarControls() {
   });
 
   document.addEventListener("click", (e) => {
-    if (!dom.topoFilterFreqMenu || !dom.topoFilterFreqBtn) return;
-    if (dom.topoFilterFreqMenu.contains(e.target) || dom.topoFilterFreqBtn.contains(e.target)) return;
-    dom.topoFilterFreqMenu.classList.add("hidden");
-    dom.topoFilterFreqBtn.setAttribute("aria-expanded", "false");
+    const target = e.target;
+    const clickedInside = getFrequencyBandFilterGroups().some((group) => (
+      group.menu?.contains(target) || group.button?.contains(target)
+    ));
+    if (!clickedInside) closeFrequencyBandFilterMenus();
   }, { signal: sig });
 }
 
@@ -40611,34 +41163,860 @@ function buildTopoAiContext(options = {}) {
   });
 }
 
-/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-   ANALYZE VIEW â€” RF Analytics Dashboard
-â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
-function getAnalyzeEmitters() {
-  return (state.assets || [])
-    .filter((asset) => Number(asset.frequencyMHz) > 0)
-    .map((asset) => {
-      const toUnit = asset.toUnitId ? _toState.units.find((u) => u.id === asset.toUnitId) : null;
-      return {
-        ...asset,
-        frequencyMHz: Number(asset.frequencyMHz) || 0,
-        powerW: Number(asset.powerW) || 0,
-        bandwidthKHz: Number(asset.bandwidthKHz ?? asset.ext?.bandwidthKHz) || 25,
-        waveform: asset.ext?.waveform || asset.waveform || "",
-        antenna: asset.ext?.antennaType || asset.antennaType || asset.antenna || "",
-        elevation: Number(asset.elevation ?? asset.elev) || 0,
-        toUnit,
-      };
-    });
+/*
+   ANALYSIS VIEW - RF relationship dashboard
+   This overrides the earlier analyze renderers while preserving the internal
+   route name so saved UI state continues to open the same view.
+*/
+const ANALYSIS_LINK_PAIR_LIMIT = 96;
+let _analysisRefreshWired = false;
+
+function formatAnalysisInteger(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.round(number).toLocaleString() : "-";
+}
+
+function formatAnalysisDecimal(value, digits = 1, suffix = "") {
+  const number = Number(value);
+  return Number.isFinite(number) ? `${number.toFixed(digits)}${suffix}` : "-";
+}
+
+function formatAnalysisDistance(km) {
+  const value = Number(km);
+  if (!Number.isFinite(value)) return "No map path";
+  if (value < 1) return `${Math.round(value * 1000)} m`;
+  return `${value.toFixed(value >= 10 ? 0 : 1)} km`;
+}
+
+function formatAnalysisFrequency(mhz) {
+  const value = Number(mhz);
+  if (!Number.isFinite(value) || value <= 0) return "-";
+  return `${value.toFixed(value >= 1000 ? 1 : 3)} MHz`;
+}
+
+function formatAnalysisDb(value, digits = 1) {
+  const number = Number(value);
+  return Number.isFinite(number) ? `${number.toFixed(digits)} dB` : "-";
+}
+
+function formatAnalysisWatts(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return "-";
+  return `${number >= 10 ? Math.round(number) : number.toFixed(1)} W`;
+}
+
+function averageAnalysisValue(values) {
+  const finite = values.map(Number).filter(Number.isFinite);
+  if (!finite.length) return null;
+  return finite.reduce((sum, value) => sum + value, 0) / finite.length;
+}
+
+function getAnalysisScoreTone(score) {
+  const value = Number(score);
+  if (!Number.isFinite(value)) return "none";
+  if (value >= 85) return "good";
+  if (value >= 65) return "ok";
+  if (value >= 45) return "fair";
+  if (value >= 20) return "poor";
+  return "bad";
 }
 
 function getAnalyzeScoreClass(score) {
-  if (score >= 85) return "good";
-  if (score >= 45) return "fair";
-  if (score >= 20) return "poor";
+  const tone = getAnalysisScoreTone(score);
+  if (tone === "good" || tone === "ok") return "good";
+  if (tone === "fair") return "fair";
+  if (tone === "poor") return "poor";
   return "none";
 }
 
+function getAnalysisEmitterName(asset) {
+  return String(asset?.emitterLabel || asset?.name || asset?.label || asset?.id || "Emitter").trim();
+}
+
+function getAnalysisUnitName(unit) {
+  if (!unit) return "Unlinked";
+  const normalized = normalizePlanUnit({ ...unit });
+  return String(normalized.label || normalized.designator || unit.label || unit.designator || `Unit ${unit.id}`).trim();
+}
+
+function getAnalysisUnitPosition(unit) {
+  const tacticalObject = getTacticalObjectByPlanUnitId(unit?.id);
+  const coords = tacticalObject?.coordinates;
+  if (!Array.isArray(coords) || coords.length < 2) return null;
+  const lat = Number(coords[0]);
+  const lon = Number(coords[1]);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  return {
+    lat,
+    lon,
+    source: "Unit anchor",
+    tacticalObject,
+  };
+}
+
+function getAnalysisEmitterPosition(asset) {
+  const effective = getAssetEffectiveMapPosition(asset);
+  if (effective) {
+    const lat = Number(effective.lat);
+    const lon = Number(effective.lon);
+    if (Number.isFinite(lat) && Number.isFinite(lon)) {
+      return {
+        lat,
+        lon,
+        source: effective.tacticalObject ? "Unit anchor" : "Emitter marker",
+        tacticalObject: effective.tacticalObject || null,
+      };
+    }
+  }
+  const lat = Number(asset?.lat);
+  const lon = Number(asset?.lon ?? asset?.lng);
+  if (Number.isFinite(lat) && Number.isFinite(lon)) {
+    return { lat, lon, source: "Emitter marker", tacticalObject: null };
+  }
+  return null;
+}
+
+function getAnalysisTerrainSample(position, fallbackElevation) {
+  if (!position) {
+    const fallback = Number(fallbackElevation);
+    return {
+      elevationM: Number.isFinite(fallback) ? fallback : null,
+      terrainName: "",
+      source: Number.isFinite(fallback) ? "Emitter elevation" : "",
+    };
+  }
+  let elevationM = null;
+  let terrainName = "";
+  try {
+    const sampled = sampleTerrainElevation(position.lat, position.lon);
+    if (Number.isFinite(Number(sampled))) {
+      elevationM = Number(sampled);
+    }
+  } catch (error) {
+    elevationM = null;
+  }
+  try {
+    const terrain = findBestLocalTerrainForCoordinate(position.lat, position.lon);
+    terrainName = terrain?.name || terrain?.label || terrain?.id || "";
+  } catch (error) {
+    terrainName = "";
+  }
+  const fallback = Number(fallbackElevation);
+  if (!Number.isFinite(elevationM) && Number.isFinite(fallback)) {
+    elevationM = fallback;
+  }
+  return {
+    elevationM,
+    terrainName,
+    source: Number.isFinite(elevationM) && terrainName ? "Local terrain" : Number.isFinite(elevationM) ? "Emitter elevation" : "",
+  };
+}
+
+function normalizeAnalysisEmitter(asset, index = 0) {
+  const linkedUnit = Number.isFinite(Number(asset?.toUnitId))
+    ? getPlanUnitById(Number(asset.toUnitId))
+    : null;
+  const toUnit = linkedUnit ? normalizePlanUnit({ ...linkedUnit }) : null;
+  const nets = getEmitterNets(asset);
+  const primaryNet = nets.find((net) => Number(net.frequencyMHz) > 0) || nets[0] || {};
+  const frequencyMHz = Number(asset?.frequencyMHz ?? primaryNet.frequencyMHz) || 0;
+  const bandwidthKHz = Number(asset?.bandwidthKHz ?? asset?.ext?.bandwidthKHz ?? primaryNet.bandwidthKHz) || 25;
+  const waveform = String(asset?.ext?.waveform || asset?.waveform || primaryNet.waveform || "").trim();
+  const antenna = String(asset?.ext?.antennaType || asset?.antennaType || asset?.antenna || asset?.profileName || "").trim();
+  const position = getAnalysisEmitterPosition(asset);
+  const terrain = getAnalysisTerrainSample(position, asset?.elevation ?? asset?.elev ?? asset?.altitudeM);
+  const topologyBand = getEmitterTopologyBand({
+    ...asset,
+    frequencyMHz,
+    waveform,
+    ext: { ...(asset?.ext || {}), waveform },
+  });
+  const analysisBand = topologyBand === "SATCOM" ? "SATCOM" : freqBand(frequencyMHz * 1e6);
+  const name = getAnalysisEmitterName(asset) || `Emitter ${index + 1}`;
+  return {
+    ...asset,
+    id: asset?.id ?? `analysis-emitter-${index}`,
+    name,
+    emitterLabel: name,
+    frequencyMHz,
+    bandwidthKHz,
+    waveform,
+    antenna,
+    powerW: Number(asset?.powerW) || 0,
+    antennaHeightM: Number.isFinite(Number(asset?.antennaHeightM)) ? Number(asset.antennaHeightM) : 2,
+    antennaGainDbi: Number.isFinite(Number(asset?.antennaGainDbi)) ? Number(asset.antennaGainDbi) : undefined,
+    receiverSensitivityDbm: Number.isFinite(Number(asset?.receiverSensitivityDbm)) ? Number(asset.receiverSensitivityDbm) : undefined,
+    systemLossDb: Number.isFinite(Number(asset?.systemLossDb)) ? Number(asset.systemLossDb) : undefined,
+    ext: {
+      ...(asset?.ext || {}),
+      waveform,
+      bandwidthKHz,
+    },
+    toUnit,
+    unitId: toUnit?.id ?? null,
+    unitLabel: toUnit ? getAnalysisUnitName(toUnit) : "Unlinked",
+    force: asset?.force || toUnit?.affiliation || "unknown",
+    position,
+    positionSource: position?.source || "Not mapped",
+    isPlaced: Boolean(position),
+    lat: position?.lat ?? null,
+    lon: position?.lon ?? null,
+    lng: position?.lon ?? null,
+    elevation: terrain.elevationM ?? 0,
+    elevationM: terrain.elevationM,
+    terrainName: terrain.terrainName,
+    terrainSource: terrain.source,
+    nets,
+    topologyBand,
+    analysisBand,
+  };
+}
+
+function getAnalyzeEmitters() {
+  return (state.assets || [])
+    .map((asset, index) => normalizeAnalysisEmitter(asset, index))
+    .filter((asset) => Number(asset.frequencyMHz) > 0)
+    .sort((a, b) => String(a.unitLabel).localeCompare(String(b.unitLabel)) || String(a.name).localeCompare(String(b.name)));
+}
+
+function getAnalysisUnits(emitters) {
+  const emittersByUnit = new Map();
+  for (const emitter of emitters) {
+    if (!Number.isFinite(Number(emitter.unitId))) continue;
+    const key = Number(emitter.unitId);
+    if (!emittersByUnit.has(key)) emittersByUnit.set(key, []);
+    emittersByUnit.get(key).push(emitter);
+  }
+  return (_toState.units || []).map((unit) => {
+    const normalized = normalizePlanUnit({ ...unit });
+    const position = getAnalysisUnitPosition(normalized);
+    const terrain = getAnalysisTerrainSample(position, null);
+    const parentLink = (_toState.links || []).find((link) => Number(link.childId) === Number(normalized.id));
+    const parent = parentLink ? getPlanUnitById(parentLink.parentId) : null;
+    const childLinks = (_toState.links || []).filter((link) => Number(link.parentId) === Number(normalized.id));
+    return {
+      ...normalized,
+      label: getAnalysisUnitName(normalized),
+      position,
+      isMapped: Boolean(position),
+      elevationM: terrain.elevationM,
+      terrainName: terrain.terrainName,
+      terrainSource: terrain.source,
+      linkedEmitters: emittersByUnit.get(Number(normalized.id)) || [],
+      parentLabel: parent ? getAnalysisUnitName(parent) : "",
+      childCount: childLinks.length,
+    };
+  });
+}
+
+function getAnalysisEmitterLinkStats(emitter, assessments) {
+  const related = assessments.filter((entry) => entry.emA.id === emitter.id || entry.emB.id === emitter.id);
+  return {
+    count: related.length,
+    averageScore: averageAnalysisValue(related.map((entry) => entry.quality?.score)),
+    blockedCount: related.filter((entry) => entry.quality?.terrain?.blocked).length,
+    weakCount: related.filter((entry) => Number(entry.quality?.score) < 45).length,
+    best: related.slice().sort((a, b) => Number(b.quality?.score) - Number(a.quality?.score))[0] || null,
+    worst: related.slice().sort((a, b) => Number(a.quality?.score) - Number(b.quality?.score))[0] || null,
+  };
+}
+
+function getAnalysisRelationship(emA, emB) {
+  const sameUnit = Number.isFinite(Number(emA.unitId)) && Number(emA.unitId) === Number(emB.unitId);
+  const unitA = emA.toUnit || null;
+  const unitB = emB.toUnit || null;
+  let sameParent = false;
+  if (!sameUnit && unitA && unitB) {
+    const parentA = (_toState.links || []).find((link) => Number(link.childId) === Number(unitA.id))?.parentId;
+    const parentB = (_toState.links || []).find((link) => Number(link.childId) === Number(unitB.id))?.parentId;
+    sameParent = Number.isFinite(Number(parentA)) && Number(parentA) === Number(parentB);
+  }
+  return {
+    sameUnit,
+    sameParent,
+    label: sameUnit ? "Same unit" : sameParent ? "Sibling units" : unitA && unitB ? "Cross-unit" : "Unlinked",
+  };
+}
+
+function getAnalysisPairPriority(emA, emB) {
+  let score = 0;
+  if (emA.isPlaced && emB.isPlaced) score += 20;
+  if (emA.unitId && emB.unitId) score += 8;
+  if (emA.topologyBand === emB.topologyBand) score += 8;
+  if (String(emA.waveform || "").toUpperCase() && String(emA.waveform || "").toUpperCase() === String(emB.waveform || "").toUpperCase()) score += 7;
+  const deltaMHz = Math.abs(Number(emA.frequencyMHz) - Number(emB.frequencyMHz));
+  const channelTolMHz = Math.max(0.025, Math.max(Number(emA.bandwidthKHz) || 25, Number(emB.bandwidthKHz) || 25) / 1000);
+  if (deltaMHz <= channelTolMHz) score += 10;
+  if (emA.position && emB.position) {
+    const distanceKm = haversineKm(emA.lat, emA.lon, emB.lat, emB.lon);
+    if (Number.isFinite(distanceKm)) score += Math.max(0, 12 - Math.min(distanceKm, 60) / 5);
+  }
+  return score;
+}
+
+async function buildAnalyzeLinkAssessments(emitters) {
+  const pairs = [];
+  for (let i = 0; i < emitters.length; i += 1) {
+    for (let j = i + 1; j < emitters.length; j += 1) {
+      pairs.push([emitters[i], emitters[j]]);
+    }
+  }
+  pairs.sort((left, right) => getAnalysisPairPriority(right[0], right[1]) - getAnalysisPairPriority(left[0], left[1]));
+  const limitedPairs = pairs.slice(0, ANALYSIS_LINK_PAIR_LIMIT);
+  const assessed = await Promise.all(limitedPairs.map(async ([emA, emB]) => {
+    const quality = emA.isPlaced && emB.isPlaced
+      ? await assessLinkQuality(emA, emB)
+      : buildUnplacedLinkQuality(emA, emB);
+    const relationship = getAnalysisRelationship(emA, emB);
+    return {
+      emA,
+      emB,
+      quality,
+      relationship,
+      scoreClass: getAnalyzeScoreClass(quality.score),
+      tone: getAnalysisScoreTone(quality.score),
+      explanation: summarizeLinkReason(quality, Number(quality.score) >= 65),
+      suggestions: buildLinkImprovementSuggestions(emA, emB, quality),
+    };
+  }));
+  return assessed.sort((a, b) => Number(b.quality?.score) - Number(a.quality?.score));
+}
+
+function buildAnalysisFrequencyClusters(emitters) {
+  const sorted = emitters
+    .filter((emitter) => Number(emitter.frequencyMHz) > 0)
+    .slice()
+    .sort((a, b) => Number(a.frequencyMHz) - Number(b.frequencyMHz));
+  const clusters = [];
+  let current = [];
+  for (const emitter of sorted) {
+    if (!current.length) {
+      current = [emitter];
+      continue;
+    }
+    const previous = current[current.length - 1];
+    const tolerance = Math.max(0.05, Math.max(Number(previous.bandwidthKHz) || 25, Number(emitter.bandwidthKHz) || 25) / 1000);
+    if (emitter.topologyBand === previous.topologyBand && Math.abs(Number(emitter.frequencyMHz) - Number(previous.frequencyMHz)) <= tolerance) {
+      current.push(emitter);
+    } else {
+      if (current.length > 1) clusters.push(current);
+      current = [emitter];
+    }
+  }
+  if (current.length > 1) clusters.push(current);
+  return clusters
+    .map((cluster) => ({
+      emitters: cluster,
+      band: cluster[0].topologyBand,
+      lowMHz: Math.min(...cluster.map((entry) => Number(entry.frequencyMHz))),
+      highMHz: Math.max(...cluster.map((entry) => Number(entry.frequencyMHz))),
+      names: cluster.map((entry) => entry.name),
+    }))
+    .sort((a, b) => b.emitters.length - a.emitters.length);
+}
+
+function buildAnalysisFindings(model) {
+  const { emitters, units, assessments, stats } = model;
+  const findings = [];
+  if (!emitters.length) {
+    findings.push({
+      tone: "poor",
+      title: "No RF network is available for assessment.",
+      body: "Create or configure emitters with frequencies before Analysis can evaluate spectrum, placement, or link health.",
+    });
+    return findings;
+  }
+  if (stats.unplacedEmitters > 0) {
+    findings.push({
+      tone: "fair",
+      title: "Map placement is limiting RF confidence.",
+      body: `${stats.unplacedEmitters} emitter${stats.unplacedEmitters === 1 ? "" : "s"} lack a marker or linked unit anchor, so terrain, distance, and LOS cannot be resolved for every relationship.`,
+    });
+  }
+  if (stats.unlinkedEmitters > 0) {
+    findings.push({
+      tone: "fair",
+      title: "T/O correlation is incomplete.",
+      body: `${stats.unlinkedEmitters} emitter${stats.unlinkedEmitters === 1 ? "" : "s"} are not tied to a unit, which weakens command relationship reasoning and unit-level network conclusions.`,
+    });
+  }
+  if (stats.terrainCoverageRatio < 0.75 && stats.placedEmitters > 0) {
+    findings.push({
+      tone: "fair",
+      title: "Terrain data coverage is partial.",
+      body: `${stats.terrainSampledEmitters} of ${stats.placedEmitters} mapped emitter positions have a local elevation sample. Missing terrain keeps some paths at lower confidence.`,
+    });
+  }
+  if (stats.blockedLinks > 0) {
+    findings.push({
+      tone: "poor",
+      title: "Terrain is shaping the network.",
+      body: `${stats.blockedLinks} assessed path${stats.blockedLinks === 1 ? "" : "s"} show terrain blockage. Prioritize higher ground, relay placement, or SATCOM/BLOS alternatives for those links.`,
+    });
+  }
+  const weakLinks = assessments.filter((entry) => Number(entry.quality?.score) < 45);
+  if (weakLinks.length) {
+    const weakest = weakLinks.slice().sort((a, b) => Number(a.quality.score) - Number(b.quality.score))[0];
+    findings.push({
+      tone: "poor",
+      title: "Weak link relationships need action.",
+      body: `${weakest.emA.name} to ${weakest.emB.name} is the weakest assessed path (${weakest.quality.label}). Recommended fix: ${weakest.suggestions.join("; ")}.`,
+    });
+  }
+  if (stats.frequencyClusters.length) {
+    const largest = stats.frequencyClusters[0];
+    findings.push({
+      tone: "fair",
+      title: "Spectrum concentration needs review.",
+      body: `${largest.emitters.length} ${largest.band} emitters sit in a tight channel cluster from ${largest.lowMHz.toFixed(3)} to ${largest.highMHz.toFixed(3)} MHz. Confirm this is intentional netting, not accidental congestion.`,
+    });
+  }
+  const unitsWithoutEmitters = units.filter((unit) => !unit.linkedEmitters.length);
+  if (unitsWithoutEmitters.length && units.some((unit) => unit.linkedEmitters.length)) {
+    findings.push({
+      tone: "note",
+      title: "Some units have no RF assets linked.",
+      body: `${unitsWithoutEmitters.length} unit${unitsWithoutEmitters.length === 1 ? "" : "s"} in the T/O have no linked emitter, so Analysis cannot evaluate their communications role.`,
+    });
+  }
+  if (!weakLinks.length && stats.averageLinkScore != null && stats.averageLinkScore >= 70 && stats.unplacedEmitters === 0) {
+    findings.push({
+      tone: "good",
+      title: "Assessed RF relationships are generally healthy.",
+      body: `Average link health is ${Math.round(stats.averageLinkScore)} across ${stats.assessedLinks} assessed relationship${stats.assessedLinks === 1 ? "" : "s"}, with no weak links in the current sample.`,
+    });
+  }
+  if (!findings.length) {
+    findings.push({
+      tone: "note",
+      title: "Scenario is ready for deeper comparison.",
+      body: "The current data set is coherent. Add more mapped emitters, terrain, or unit links to expose additional constraints.",
+    });
+  }
+  return findings.slice(0, 7);
+}
+
+function buildAnalysisModel(emitters, assessments) {
+  const units = getAnalysisUnits(emitters);
+  const placed = emitters.filter((emitter) => emitter.isPlaced);
+  const linked = emitters.filter((emitter) => emitter.toUnit);
+  const terrainSampled = placed.filter((emitter) => Number.isFinite(Number(emitter.elevationM)));
+  const mappedUnits = units.filter((unit) => unit.isMapped);
+  const assessmentsWithScores = assessments.filter((entry) => Number.isFinite(Number(entry.quality?.score)));
+  const averageLinkScore = averageAnalysisValue(assessmentsWithScores.map((entry) => entry.quality.score));
+  const blockedLinks = assessments.filter((entry) => entry.quality?.terrain?.blocked).length;
+  const frequencyClusters = buildAnalysisFrequencyClusters(emitters);
+  const bandCounts = emitters.reduce((acc, emitter) => {
+    acc[emitter.topologyBand] = (acc[emitter.topologyBand] || 0) + 1;
+    return acc;
+  }, {});
+  const terrainCoverageRatio = placed.length ? terrainSampled.length / placed.length : 0;
+  const linkedRatio = emitters.length ? linked.length / emitters.length : 0;
+  const placedRatio = emitters.length ? placed.length / emitters.length : 0;
+  const linkScoreComponent = averageLinkScore == null ? (emitters.length > 1 ? 0.12 : 0.3) : averageLinkScore / 100;
+  const readinessScore = emitters.length
+    ? Math.round(clamp(
+      8
+      + placedRatio * 24
+      + linkedRatio * 20
+      + terrainCoverageRatio * 14
+      + linkScoreComponent * 28
+      + (frequencyClusters.length ? 0 : 6),
+      0,
+      100,
+    ))
+    : 0;
+  const readinessLabel = readinessScore >= 75 ? "High confidence"
+    : readinessScore >= 55 ? "Usable"
+      : readinessScore >= 30 ? "Limited"
+        : "Not ready";
+  const unitSummaries = units.map((unit) => {
+    const unitAssessments = assessments.filter((entry) => (
+      Number(entry.emA.unitId) === Number(unit.id) || Number(entry.emB.unitId) === Number(unit.id)
+    ));
+    return {
+      ...unit,
+      averageLinkScore: averageAnalysisValue(unitAssessments.map((entry) => entry.quality?.score)),
+      weakLinks: unitAssessments.filter((entry) => Number(entry.quality?.score) < 45).length,
+      blockedLinks: unitAssessments.filter((entry) => entry.quality?.terrain?.blocked).length,
+    };
+  });
+  const stats = {
+    emitterCount: emitters.length,
+    placedEmitters: placed.length,
+    unplacedEmitters: emitters.length - placed.length,
+    linkedEmitters: linked.length,
+    unlinkedEmitters: emitters.length - linked.length,
+    mappedUnits: mappedUnits.length,
+    unitCount: units.length,
+    unitsWithEmitters: units.filter((unit) => unit.linkedEmitters.length).length,
+    assessedLinks: assessments.length,
+    strongLinks: assessments.filter((entry) => Number(entry.quality?.score) >= 65).length,
+    weakLinks: assessments.filter((entry) => Number(entry.quality?.score) < 45).length,
+    blockedLinks,
+    terrainSampledEmitters: terrainSampled.length,
+    terrainCoverageRatio,
+    averageLinkScore,
+    readinessScore,
+    readinessLabel,
+    frequencyClusters,
+    bandCounts,
+  };
+  const model = { emitters, units, unitSummaries, assessments, stats };
+  model.findings = buildAnalysisFindings(model);
+  return model;
+}
+
+function wireAnalysisControls() {
+  if (_analysisRefreshWired) return;
+  const refresh = document.getElementById("analyzeRefreshBtn");
+  if (!refresh) return;
+  refresh.addEventListener("click", () => {
+    void renderAnalyzeView();
+  });
+  _analysisRefreshWired = true;
+}
+
+async function renderAnalyzeView() {
+  wireAnalysisControls();
+  const refresh = document.getElementById("analyzeRefreshBtn");
+  if (refresh) refresh.disabled = true;
+  try {
+    const emitters = getAnalyzeEmitters();
+    const assessments = emitters.length > 1 ? await buildAnalyzeLinkAssessments(emitters) : [];
+    const model = buildAnalysisModel(emitters, assessments);
+    renderAnalysisExecutive(model);
+    renderAnalysisMetrics(model);
+    renderAnalysisNetwork(model);
+    renderAnalyzeFreq(model);
+    renderAnalyzeTerrain(model);
+    renderAnalyzeConflicts(model);
+    renderAnalyzeWaveform(model);
+    const summary = document.getElementById("analysisRunSummary");
+    if (summary) {
+      summary.textContent = `${model.stats.emitterCount} emitters | ${model.stats.assessedLinks} links | ${model.stats.readinessLabel}`;
+    }
+  } finally {
+    if (refresh) refresh.disabled = false;
+  }
+}
+
+function renderAnalysisExecutive(model) {
+  const body = document.getElementById("analysisExecutiveBody");
+  const label = document.getElementById("analysisReadinessLabel");
+  if (!body) return;
+  const { stats, findings } = model;
+  const tone = getAnalysisScoreTone(stats.readinessScore);
+  if (label) label.textContent = stats.readinessLabel;
+  body.innerHTML = `
+    <div class="analysis-executive-grid">
+      <div class="analysis-score-ring ${tone}" style="--analysis-score:${stats.readinessScore}">
+        <strong>${formatAnalysisInteger(stats.readinessScore)}</strong>
+        <span>confidence</span>
+      </div>
+      <div class="analysis-findings">
+        ${findings.map((finding) => `
+          <div class="analysis-finding ${esc(finding.tone)}">
+            <span class="analysis-finding-marker"></span>
+            <div>
+              <strong>${esc(finding.title)}</strong>
+              <p>${esc(finding.body)}</p>
+            </div>
+          </div>
+        `).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderAnalysisMetrics(model) {
+  const strip = document.getElementById("analysisMetricStrip");
+  if (!strip) return;
+  const { stats } = model;
+  const metrics = [
+    {
+      label: "RF Emitters",
+      value: stats.emitterCount,
+      sub: `${stats.placedEmitters} mapped | ${stats.linkedEmitters} linked`,
+      tone: stats.unplacedEmitters || stats.unlinkedEmitters ? "fair" : "good",
+    },
+    {
+      label: "Link Health",
+      value: stats.averageLinkScore == null ? "-" : Math.round(stats.averageLinkScore),
+      sub: `${stats.strongLinks} strong | ${stats.weakLinks} weak`,
+      tone: getAnalysisScoreTone(stats.averageLinkScore ?? 0),
+    },
+    {
+      label: "Terrain Coverage",
+      value: stats.placedEmitters ? `${Math.round(stats.terrainCoverageRatio * 100)}%` : "-",
+      sub: `${stats.terrainSampledEmitters} sampled | ${stats.blockedLinks} blocked`,
+      tone: stats.blockedLinks ? "poor" : stats.terrainCoverageRatio >= 0.75 ? "good" : "fair",
+    },
+    {
+      label: "T/O Correlation",
+      value: stats.unitCount ? `${stats.unitsWithEmitters}/${stats.unitCount}` : "-",
+      sub: `${stats.mappedUnits} mapped unit anchors`,
+      tone: stats.unitCount && stats.unitsWithEmitters ? "good" : "fair",
+    },
+  ];
+  strip.innerHTML = metrics.map((metric) => `
+    <div class="analysis-metric ${esc(metric.tone)}">
+      <span>${esc(metric.label)}</span>
+      <strong>${esc(metric.value)}</strong>
+      <small>${esc(metric.sub)}</small>
+    </div>
+  `).join("");
+}
+
+function renderAnalysisNetwork(model) {
+  const body = document.getElementById("analysisNetworkBody");
+  if (!body) return;
+  const rows = model.unitSummaries
+    .filter((unit) => unit.linkedEmitters.length || unit.isMapped)
+    .sort((a, b) => b.linkedEmitters.length - a.linkedEmitters.length || String(a.label).localeCompare(String(b.label)))
+    .slice(0, 10);
+  const unlinked = model.emitters.filter((emitter) => !emitter.toUnit).slice(0, 6);
+  if (!rows.length && !unlinked.length) {
+    body.innerHTML = `<div class="analyze-placeholder">No unit or emitter relationships to evaluate.</div>`;
+    return;
+  }
+  body.innerHTML = `
+    <div class="analysis-network-list">
+      ${rows.map((unit) => {
+        const score = unit.averageLinkScore;
+        const pct = score == null ? 0 : clamp(score, 0, 100);
+        const tone = getAnalysisScoreTone(score ?? 0);
+        return `
+          <div class="analysis-network-row">
+            <div class="analysis-network-main">
+              <strong>${esc(unit.label)}</strong>
+              <span>${unit.linkedEmitters.length} emitter${unit.linkedEmitters.length === 1 ? "" : "s"}${unit.parentLabel ? ` | parent ${esc(unit.parentLabel)}` : ""}</span>
+            </div>
+            <div class="analysis-health">
+              <span>${score == null ? "-" : Math.round(score)}</span>
+              <div class="analysis-health-track"><i class="${tone}" style="width:${pct}%"></i></div>
+            </div>
+          </div>
+        `;
+      }).join("")}
+      ${unlinked.length ? `
+        <div class="analysis-unlinked">
+          <strong>Standalone emitters</strong>
+          <span>${unlinked.map((emitter) => esc(emitter.name)).join(", ")}</span>
+        </div>
+      ` : ""}
+    </div>
+  `;
+}
+
+function renderAnalyzeFreq(model) {
+  const body = document.getElementById("analyzeFreqBody");
+  if (!body) return;
+  const emitters = Array.isArray(model) ? model : model.emitters;
+  const stats = Array.isArray(model) ? buildAnalysisModel(emitters, []).stats : model.stats;
+  if (!emitters.length) {
+    body.innerHTML = `<div class="analyze-placeholder" id="analyzeFreqPlaceholder">No emitter frequency data.</div>`;
+    return;
+  }
+  const order = ["HF", "VHF", "UHF", "SATCOM"];
+  const entries = order
+    .map((band) => [band, stats.bandCounts[band] || 0])
+    .filter((entry) => entry[1] > 0);
+  const max = Math.max(...entries.map((entry) => entry[1]), 1);
+  const clusters = stats.frequencyClusters || [];
+  body.innerHTML = `
+    <div class="analysis-bars">
+      ${entries.map(([band, count]) => `
+        <div class="analysis-bar-row">
+          <span>${esc(band)}</span>
+          <div class="analysis-bar-track"><i class="${esc(band.toLowerCase())}" style="width:${Math.max(8, (count / max) * 100)}%"></i></div>
+          <strong>${count}</strong>
+        </div>
+      `).join("")}
+    </div>
+    <div class="analysis-spectrum-detail">
+      <strong>Channel clusters</strong>
+      ${clusters.length ? clusters.slice(0, 4).map((cluster) => `
+        <div class="analysis-cluster">
+          <span>${esc(cluster.band)} ${cluster.lowMHz.toFixed(3)}-${cluster.highMHz.toFixed(3)} MHz</span>
+          <small>${cluster.emitters.length} emitters: ${cluster.names.slice(0, 4).map((name) => esc(name)).join(", ")}${cluster.names.length > 4 ? "..." : ""}</small>
+        </div>
+      `).join("") : `<p>No tight same-band clusters detected.</p>`}
+    </div>
+  `;
+}
+
+function renderAnalyzeTerrain(model) {
+  const body = document.getElementById("analyzeTerrainBody");
+  if (!body) return;
+  const emitters = Array.isArray(model) ? model : model.emitters;
+  const assessments = Array.isArray(model) ? [] : model.assessments;
+  if (!emitters.length) {
+    body.innerHTML = `<div class="analyze-placeholder" id="analyzeTerrainPlaceholder">No emitters to evaluate.</div>`;
+    return;
+  }
+  const placed = emitters.filter((emitter) => emitter.isPlaced);
+  const elevations = placed.map((emitter) => Number(emitter.elevationM)).filter(Number.isFinite);
+  const minElev = elevations.length ? Math.min(...elevations) : 0;
+  const maxElev = elevations.length ? Math.max(...elevations) : 1;
+  const rows = emitters.slice()
+    .sort((a, b) => (Number(b.elevationM) || -99999) - (Number(a.elevationM) || -99999))
+    .slice(0, 16)
+    .map((emitter) => {
+      const related = getAnalysisEmitterLinkStats(emitter, assessments);
+      const elevation = Number(emitter.elevationM);
+      const pct = Number.isFinite(elevation) ? clamp(((elevation - minElev) / Math.max(maxElev - minElev, 1)) * 100, 8, 100) : 0;
+      const tone = related.blockedCount ? "poor" : Number.isFinite(elevation) ? "good" : "fair";
+      return `
+        <div class="analysis-terrain-row">
+          <div class="analysis-terrain-main">
+            <strong>${esc(emitter.name)}</strong>
+            <span>${esc(emitter.positionSource)}${emitter.terrainName ? ` | ${esc(emitter.terrainName)}` : ""}</span>
+          </div>
+          <div class="analysis-terrain-meter">
+            <small>${Number.isFinite(elevation) ? `${elevation.toFixed(0)} m` : "No elev"}</small>
+            <div class="analysis-bar-track"><i class="${tone}" style="width:${pct}%"></i></div>
+            ${related.blockedCount ? `<em>${related.blockedCount} blocked</em>` : `<em>${related.count ? `${related.count} paths` : "No paths"}</em>`}
+          </div>
+        </div>
+      `;
+    }).join("");
+  body.innerHTML = `
+    <div class="analysis-terrain-summary">
+      <span>${placed.length}/${emitters.length} mapped</span>
+      <span>${elevations.length} elevation samples</span>
+      <span>${assessments.filter((entry) => entry.quality?.terrain?.blocked).length} blocked paths</span>
+    </div>
+    <div id="analyzeTerrainList" class="analyze-terrain-list">${rows}</div>
+  `;
+}
+
+function renderAnalyzeConflicts(model) {
+  const body = document.getElementById("analyzeConflictsBody");
+  if (!body) return;
+  const emitters = Array.isArray(model) ? model : model.emitters;
+  const assessments = Array.isArray(model) ? model : model.assessments;
+  if (!assessments.length) {
+    body.innerHTML = `<div class="analyze-placeholder" id="analyzeConflictsPlaceholder">${emitters.length > 1 ? "No analyzed links yet." : "Add at least two emitters to evaluate link relationships."}</div>`;
+    return;
+  }
+  const used = new Set();
+  const weakest = assessments.slice().sort((a, b) => Number(a.quality?.score) - Number(b.quality?.score)).slice(0, 6);
+  const strongest = assessments.slice().sort((a, b) => Number(b.quality?.score) - Number(a.quality?.score)).slice(0, 3);
+  const rows = [...weakest, ...strongest].filter((entry) => {
+    const key = [entry.emA.id, entry.emB.id].sort().join(":");
+    if (used.has(key)) return false;
+    used.add(key);
+    return true;
+  }).slice(0, 8);
+  body.innerHTML = `
+    <div id="analyzeConflictsList" class="analyze-conflicts-list">
+      ${rows.map((entry) => {
+        const q = entry.quality || {};
+        const tone = getAnalysisScoreTone(q.score);
+        const terrainText = q.notPlaced ? "Not mapped"
+          : q.terrain?.blocked ? "Terrain blocked"
+            : q.terrain ? "Terrain clear"
+              : q.isSatcom ? "BLOS/SATCOM"
+                : "No terrain sample";
+        return `
+          <div class="analysis-link-item ${tone}">
+            <div class="analysis-link-score ${getAnalyzeScoreClass(q.score)}">${formatAnalysisInteger(q.score)}</div>
+            <div class="analysis-link-copy">
+              <strong>${esc(entry.emA.name)} to ${esc(entry.emB.name)}</strong>
+              <span>${esc(q.label || "Unscored")} | ${esc(entry.relationship.label)} | ${formatAnalysisDistance(q.distKm)} | ${esc(terrainText)} | margin ${formatAnalysisDb(q.marginDb)}</span>
+              <p>${esc(entry.explanation)} ${entry.suggestions.length ? `Fix: ${esc(entry.suggestions.join("; "))}.` : ""}</p>
+            </div>
+          </div>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+function renderAnalyzeWaveform(model) {
+  const body = document.getElementById("analyzeWaveformBody");
+  if (!body) return;
+  const emitters = Array.isArray(model) ? model : model.emitters;
+  const assessments = Array.isArray(model) ? [] : model.assessments;
+  if (!emitters.length) {
+    body.innerHTML = `<div class="analyze-placeholder" id="analyzeWaveformPlaceholder">No emitter configuration data.</div>`;
+    return;
+  }
+  const rows = emitters.slice(0, 50).map((emitter) => {
+    const stats = getAnalysisEmitterLinkStats(emitter, assessments);
+    const coord = emitter.position
+      ? formatCoordinate(emitter.position.lat, emitter.position.lon, state.settings.coordinateSystem)
+      : "Not mapped";
+    const unitText = emitter.toUnit ? emitter.unitLabel : "Unlinked";
+    const linkScore = stats.averageScore == null ? "-" : Math.round(stats.averageScore);
+    return `<tr>
+      <td><span class="analysis-unit-name">${esc(unitText)}</span></td>
+      <td>${esc(emitter.name)}</td>
+      <td>${esc(emitter.positionSource)}<br><small>${esc(coord)}</small></td>
+      <td>${esc(emitter.topologyBand)}<br><small>${formatAnalysisFrequency(emitter.frequencyMHz)}</small></td>
+      <td>${esc(emitter.waveform || "-")}</td>
+      <td>${formatAnalysisWatts(emitter.powerW)}<br><small>${esc(emitter.antenna || "Antenna not set")}</small></td>
+      <td><span class="analyze-link-score ${getAnalyzeScoreClass(stats.averageScore)}">${esc(linkScore)}</span></td>
+    </tr>`;
+  }).join("");
+  body.innerHTML = `
+    <div id="analyzeWaveformTable" class="analyze-table-wrap analysis-correlation-table">
+      <table>
+        <thead><tr><th>Unit</th><th>Emitter</th><th>Location</th><th>Band / Freq</th><th>Waveform</th><th>RF Loadout</th><th>Avg Link</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+function buildAnalyzeAiContext(options = {}) {
+  const compact = options.compact !== false;
+  const emitterLimit = compact ? 28 : 60;
+  const unitLimit = compact ? 32 : _toState.units.length;
+  const linkLimit = compact ? 50 : _toState.links.length;
+  const emitters = getAnalyzeEmitters();
+  const units = getAnalysisUnits(emitters);
+  const staticModel = buildAnalysisModel(emitters, []);
+  return JSON.stringify({
+    view: "analysis",
+    summary: staticModel.stats,
+    emitters: emitters.slice(0, emitterLimit).map((emitter) => ({
+      id: emitter.id,
+      name: emitter.name,
+      unit: emitter.unitLabel,
+      force: emitter.force,
+      band: emitter.topologyBand,
+      frequencyMHz: emitter.frequencyMHz,
+      bandwidthKHz: emitter.bandwidthKHz,
+      waveform: emitter.waveform,
+      antenna: emitter.antenna,
+      powerW: emitter.powerW,
+      position: emitter.position ? {
+        lat: roundAiNumber(emitter.position.lat),
+        lon: roundAiNumber(emitter.position.lon),
+        source: emitter.positionSource,
+      } : null,
+      elevationM: Number.isFinite(Number(emitter.elevationM)) ? roundAiNumber(emitter.elevationM) : null,
+      terrain: emitter.terrainName || null,
+    })),
+    toUnits: units.slice(0, unitLimit).map((unit) => ({
+      id: unit.id,
+      label: unit.label,
+      size: unit.size,
+      affiliation: unit.affiliation,
+      type: unit.type,
+      mapped: unit.isMapped,
+      linkedEmitterCount: unit.linkedEmitters.length,
+      parent: unit.parentLabel || null,
+    })),
+    toLinks: _toState.links.slice(0, linkLimit),
+  });
+}
+
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   ANALYSIS VIEW - legacy RF analytics renderer
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function summarizeLinkReason(quality, positive = false) {
   const reason = (quality?.reasons || []).find((entry) => positive
     ? /clear|strong|compatible|matching|inside|tight|satcom/i.test(entry)
@@ -40672,43 +42050,6 @@ function buildLinkImprovementSuggestions(emA, emB, quality) {
     suggestions.push("preserve current configuration and monitor for terrain or weather-driven degradation");
   }
   return suggestions.slice(0, 2);
-}
-
-async function buildAnalyzeLinkAssessments(emitters) {
-  const pairs = [];
-  for (let i = 0; i < emitters.length; i += 1) {
-    for (let j = i + 1; j < emitters.length; j += 1) {
-      pairs.push([emitters[i], emitters[j]]);
-    }
-  }
-  const limitedPairs = pairs.slice(0, 28);
-  const assessed = await Promise.all(limitedPairs.map(async ([emA, emB]) => {
-    const quality = await assessLinkQuality(emA, emB);
-    return {
-      emA,
-      emB,
-      quality,
-      scoreClass: getAnalyzeScoreClass(quality.score),
-      explanation: summarizeLinkReason(quality, quality.score >= 65),
-      suggestions: buildLinkImprovementSuggestions(emA, emB, quality),
-    };
-  }));
-  return assessed.sort((a, b) => b.quality.score - a.quality.score);
-}
-
-async function renderAnalyzeView() {
-  const emitters = getAnalyzeEmitters();
-  const assessments = emitters.length > 1
-    ? await buildAnalyzeLinkAssessments(emitters)
-    : [];
-  renderAnalyzeCoverage(emitters, assessments);
-  renderAnalyzeFreq(emitters);
-  renderAnalyzeTerrain(emitters, assessments);
-  renderAnalyzeConflicts(emitters, assessments);
-  renderAnalyzeWaveform(emitters, assessments);
-  document.getElementById("analyzeRefreshBtn")?.addEventListener("click", () => {
-    void renderAnalyzeView();
-  }, { once: true });
 }
 
 function renderAnalyzeCoverage(emitters, assessments = []) {
@@ -40747,7 +42088,7 @@ function renderAnalyzeCoverage(emitters, assessments = []) {
   `;
 }
 
-function renderAnalyzeFreq(emitters) {
+function renderAnalyzeFreqLegacy(emitters) {
   const body  = document.getElementById("analyzeFreqBody");
   const ph    = document.getElementById("analyzeFreqPlaceholder");
   if (!body) return;
@@ -40780,7 +42121,7 @@ function renderAnalyzeFreq(emitters) {
   `;
 }
 
-function renderAnalyzeTerrain(emitters, assessments = []) {
+function renderAnalyzeTerrainLegacy(emitters, assessments = []) {
   const list = document.getElementById("analyzeTerrainList");
   const ph   = document.getElementById("analyzeTerrainPlaceholder");
   if (!list) return;
@@ -40807,7 +42148,7 @@ function renderAnalyzeTerrain(emitters, assessments = []) {
   }).join("");
 }
 
-function renderAnalyzeConflicts(emitters, assessments = []) {
+function renderAnalyzeConflictsLegacy(emitters, assessments = []) {
   const list = document.getElementById("analyzeConflictsList");
   const ph   = document.getElementById("analyzeConflictsPlaceholder");
   if (!list) return;
@@ -40849,7 +42190,7 @@ function renderAnalyzeConflicts(emitters, assessments = []) {
   `).join("");
 }
 
-function renderAnalyzeWaveform(emitters, assessments = []) {
+function renderAnalyzeWaveformLegacy(emitters, assessments = []) {
   const wrap = document.getElementById("analyzeWaveformTable");
   const ph   = document.getElementById("analyzeWaveformPlaceholder");
   if (!wrap) return;
@@ -40880,7 +42221,7 @@ function renderAnalyzeWaveform(emitters, assessments = []) {
   `;
 }
 
-function buildAnalyzeAiContext(options = {}) {
+function buildAnalyzeAiContextLegacy(options = {}) {
   const compact = options.compact !== false;
   const emitterLimit = compact ? 20 : 40;
   const unitLimit = compact ? 24 : _toState.units.length;
