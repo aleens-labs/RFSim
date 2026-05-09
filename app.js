@@ -36891,25 +36891,14 @@ function clearToSelection() {
 
 function getToUnitConnectorAnchors(unit, world) {
   if (!unit || !world) return null;
+  // .to-unit uses transform: translate(-50%, -50%), so unit.x/y is the visual center.
+  // Use offsetHeight to get the actual rendered card height; fall back to 143.
   const unitEl = Array.from(world.querySelectorAll(".to-unit")).find((entry) => String(entry.dataset.id) === String(unit.id));
-  if (!unitEl) {
-    return {
-      centerX: unit.x,
-      topY: unit.y - 72,
-      bottomY: unit.y + 72,
-    };
-  }
-  const cardEl = unitEl.querySelector(".to-unit-card") || unitEl;
-  const unitWidth = unitEl.offsetWidth || cardEl.offsetWidth || 143;
-  const unitHeight = unitEl.offsetHeight || cardEl.offsetHeight || 143;
-  const cardWidth = cardEl.offsetWidth || unitWidth;
-  const cardHeight = cardEl.offsetHeight || unitHeight;
-  const cardOffsetLeft = cardEl.offsetLeft || 0;
-  const cardOffsetTop = cardEl.offsetTop || 0;
+  const halfH = unitEl ? unitEl.offsetHeight / 2 : 72;
   return {
-    centerX: unit.x + cardOffsetLeft + cardWidth / 2 - unitWidth / 2,
-    topY: unit.y + cardOffsetTop - unitHeight / 2,
-    bottomY: unit.y + cardOffsetTop + cardHeight - unitHeight / 2,
+    centerX: unit.x,
+    topY: unit.y - halfH,
+    bottomY: unit.y + halfH,
   };
 }
 
