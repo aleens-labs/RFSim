@@ -296,6 +296,40 @@ function parseTakGeoChatEvent(xml = "") {
   };
 }
 
+function parseTakSchemaDetail(xml = "") {
+  const contactMatch = String(xml || "").match(/<contact\b([^>]*)\/?>/i);
+  const groupMatch = String(xml || "").match(/<__group\b([^>]*)\/?>/i);
+  const usericonMatch = String(xml || "").match(/<usericon\b([^>]*)\/?>/i);
+  const milsymMatch = String(xml || "").match(/<__milsym\b([^>]*)\/?>/i);
+  const trackMatch = String(xml || "").match(/<track\b([^>]*)\/?>/i);
+  const takvMatch = String(xml || "").match(/<takv\b([^>]*)\/?>/i);
+  const remarksMatch = String(xml || "").match(/<remarks\b([^>]*)>([\s\S]*?)<\/remarks>/i);
+  const linkMatches = [...String(xml || "").matchAll(/<link\b([^>]*)(?:\/>|>[\s\S]*?<\/link>)/ig)];
+
+  const contactAttrs = contactMatch ? parseXmlAttributes(contactMatch[1]) : {};
+  const groupAttrs = groupMatch ? parseXmlAttributes(groupMatch[1]) : {};
+  const usericonAttrs = usericonMatch ? parseXmlAttributes(usericonMatch[1]) : {};
+  const milsymAttrs = milsymMatch ? parseXmlAttributes(milsymMatch[1]) : {};
+  const trackAttrs = trackMatch ? parseXmlAttributes(trackMatch[1]) : {};
+  const takvAttrs = takvMatch ? parseXmlAttributes(takvMatch[1]) : {};
+  const remarksAttrs = remarksMatch ? parseXmlAttributes(remarksMatch[1]) : {};
+  const remarksText = decodeXmlEntities((remarksMatch?.[2] || "").trim());
+  const links = linkMatches.map((match) => parseXmlAttributes(match[1] || "")).filter((attrs) => Object.keys(attrs).length);
+
+  return {
+    contact: Object.keys(contactAttrs).length ? contactAttrs : null,
+    group: Object.keys(groupAttrs).length ? groupAttrs : null,
+    usericon: usericonAttrs.iconsetpath ? { iconsetpath: String(usericonAttrs.iconsetpath).trim() } : null,
+    milsym: milsymAttrs.id ? { id: String(milsymAttrs.id).trim() } : null,
+    track: Object.keys(trackAttrs).length ? trackAttrs : null,
+    takv: Object.keys(takvAttrs).length ? takvAttrs : null,
+    remarks: remarksText || Object.keys(remarksAttrs).length
+      ? { ...remarksAttrs, text: remarksText }
+      : null,
+    links,
+  };
+}
+
 function parseTakCotEvent(xml = "") {
   const eventMatch = String(xml || "").match(/<event\b([^>]*)>/i);
   const pointMatch = String(xml || "").match(/<point\b([^>]*)\/?>/i);
@@ -305,18 +339,10 @@ function parseTakCotEvent(xml = "") {
 
   const eventAttrs = parseXmlAttributes(eventMatch[1]);
   const pointAttrs = parseXmlAttributes(pointMatch[1]);
-  const contactMatch = String(xml || "").match(/<contact\b([^>]*)\/?>/i);
-  const groupMatch = String(xml || "").match(/<__group\b([^>]*)\/?>/i);
-  const usericonMatch = String(xml || "").match(/<usericon\b([^>]*)\/?>/i);
-  const milsymMatch = String(xml || "").match(/<__milsym\b([^>]*)\/?>/i);
-  const remarksMatch = String(xml || "").match(/<remarks[^>]*>([\s\S]*?)<\/remarks>/i);
-  const contactAttrs = contactMatch ? parseXmlAttributes(contactMatch[1]) : {};
-  const groupAttrs = groupMatch ? parseXmlAttributes(groupMatch[1]) : {};
-  const usericonAttrs = usericonMatch ? parseXmlAttributes(usericonMatch[1]) : {};
-  const milsymAttrs = milsymMatch ? parseXmlAttributes(milsymMatch[1]) : {};
-  const sidc = String(milsymAttrs.id || "").trim();
-  const usericonPath = String(usericonAttrs.iconsetpath || "").trim();
-  const remarks = decodeXmlEntities((remarksMatch?.[1] || "").trim());
+  const detail = parseTakSchemaDetail(xml);
+  const sidc = String(detail?.milsym?.id || "").trim();
+  const usericonPath = String(detail?.usericon?.iconsetpath || "").trim();
+  const remarks = String(detail?.remarks?.text || "").trim();
   const lat = Number(pointAttrs.lat);
   const lon = Number(pointAttrs.lon);
   if (!eventAttrs.uid || !Number.isFinite(lat) || !Number.isFinite(lon)) {
@@ -328,8 +354,8 @@ function parseTakCotEvent(xml = "") {
     return null;
   }
   const callsign = (
-    contactAttrs.callsign
-    || groupAttrs.name
+    detail?.contact?.callsign
+    || detail?.group?.name
     || remarks
     || eventAttrs.uid
   ).trim();
@@ -347,11 +373,8 @@ function parseTakCotEvent(xml = "") {
     time: String(eventAttrs.time || "").trim(),
     start: String(eventAttrs.start || "").trim(),
     stale: String(eventAttrs.stale || "").trim(),
-    team: String(groupAttrs.name || "").trim(),
-    role: String(groupAttrs.role || "").trim(),
-    usericonPath,
     sidc,
-    remarks,
+    detail,
   };
 }
 
@@ -374,10 +397,7 @@ function serializeTakConnectorContact(contact) {
     time: contact.time,
     start: contact.start,
     stale: contact.stale,
-    team: contact.team,
-    role: contact.role,
-    usericonPath: contact.usericonPath,
-    remarks: contact.remarks,
+    detail: contact.detail && typeof contact.detail === "object" ? contact.detail : null,
     lastSeenAt: contact.lastSeenAt,
   };
 }
@@ -479,7 +499,14 @@ function buildTakGpsCotEvent({
   if (endpoint) {
     contactAttrs.push(`endpoint="${escapeXmlText(endpoint)}"`);
   }
-  return `<event version="2.0" uid="${escapeXmlText(uid)}" type="${escapeXmlText(cotType)}" how="${escapeXmlText(how)}" time="${now.toISOString()}" start="${now.toISOString()}" stale="${stale.toISOString()}"><point lat="${Number(lat).toFixed(6)}" lon="${Number(lon).toFixed(6)}" hae="${Number.isFinite(Number(hae)) ? Number(hae).toFixed(1) : "0.0"}" ce="${Number.isFinite(Number(ce)) ? Number(ce).toFixed(1) : "25.0"}" le="${Number.isFinite(Number(le)) ? Number(le).toFixed(1) : "35.0"}"/><detail><contact ${contactAttrs.join(" ")}/><__group name="${escapeXmlText(team)}" role="${escapeXmlText(role)}"/><track speed="0.0" course="0.0"/><takv os="Browser" device="RF Sim" platform="RF Sim Web" version="1.0"/><remarks>${escapeXmlText(displayType ? `RF SIM GPS PLI • ${displayType}` : "RF SIM GPS PLI")}</remarks></detail></event>`;
+  const detailXml = [
+    `<contact ${contactAttrs.join(" ")}/>`,
+    `<__group name="${escapeXmlText(team)}" role="${escapeXmlText(role)}"/>`,
+    `<track speed="0.0" course="0.0"/>`,
+    `<takv os="Browser" device="RF Sim" platform="RF Sim Web" version="1.0"/>`,
+    `<remarks>${escapeXmlText(displayType ? `RF SIM GPS PLI • ${displayType}` : "RF SIM GPS PLI")}</remarks>`,
+  ].join("");
+  return `<event version="2.0" uid="${escapeXmlText(uid)}" type="${escapeXmlText(cotType)}" how="${escapeXmlText(how)}" time="${now.toISOString()}" start="${now.toISOString()}" stale="${stale.toISOString()}"><point lat="${Number(lat).toFixed(6)}" lon="${Number(lon).toFixed(6)}" hae="${Number.isFinite(Number(hae)) ? Number(hae).toFixed(1) : "0.0"}" ce="${Number.isFinite(Number(ce)) ? Number(ce).toFixed(1) : "25.0"}" le="${Number.isFinite(Number(le)) ? Number(le).toFixed(1) : "35.0"}"/><detail>${detailXml}</detail></event>`;
 }
 
 function buildGeoChatCotEvent({ fromUid, fromCallsign, toUid, toCallsign, text, chatroom = "All Chat Rooms" } = {}) {

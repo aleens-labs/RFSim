@@ -1296,7 +1296,7 @@ function deriveTacticalUnitTypeFromCotType(cotType = "", fallbackDomain = "") {
   return deriveTacticalUnitTypeFromDomain(fallbackDomain || deriveTacticalDomainFromCotType(cotType));
 }
 
-function buildTakUserIconPath(cotType = "") {
+function buildTakSchema2525UserIconPath(cotType = "") {
   const normalized = String(cotType || "").trim();
   const parts = normalized.split("-").filter(Boolean);
   if (parts.length < 3 || parts[0].toLowerCase() !== "a") {
@@ -1304,6 +1304,97 @@ function buildTakUserIconPath(cotType = "") {
   }
   const affiliationPath = `a-${parts[1].toLowerCase()}`;
   return `COT_MAPPING_2525B/${affiliationPath}/${normalized}`;
+}
+
+function normalizeTakSchemaDetail(value = {}, fallback = {}) {
+  const source = value && typeof value === "object" ? value : {};
+  const flatFallback = fallback && typeof fallback === "object" ? fallback : {};
+  const contact = source.contact && typeof source.contact === "object" ? { ...source.contact } : {};
+  if (!contact.callsign && flatFallback.callsign) contact.callsign = String(flatFallback.callsign).trim();
+  if (!contact.endpoint && flatFallback.endpoint) contact.endpoint = String(flatFallback.endpoint).trim();
+
+  const group = source.group && typeof source.group === "object" ? { ...source.group } : {};
+  if (!group.name && flatFallback.team) group.name = String(flatFallback.team).trim();
+  if (!group.role && flatFallback.role) group.role = String(flatFallback.role).trim();
+
+  const track = source.track && typeof source.track === "object" ? { ...source.track } : {};
+  if (track.course == null && flatFallback.course != null) track.course = String(flatFallback.course);
+  if (track.speed == null && flatFallback.speed != null) track.speed = String(flatFallback.speed);
+  if (track.slope == null && flatFallback.slope != null) track.slope = String(flatFallback.slope);
+
+  const remarks = source.remarks && typeof source.remarks === "object" ? { ...source.remarks } : {};
+  if (!remarks.text && flatFallback.remarks) remarks.text = String(flatFallback.remarks);
+  if (!remarks.source && flatFallback.source) remarks.source = String(flatFallback.source);
+  if (!remarks.sourceID && flatFallback.sourceID) remarks.sourceID = String(flatFallback.sourceID);
+  if (!remarks.time && flatFallback.time) remarks.time = String(flatFallback.time);
+  if (!remarks.to && flatFallback.to) remarks.to = String(flatFallback.to);
+
+  const usericon = source.usericon && typeof source.usericon === "object" ? { ...source.usericon } : {};
+  if (!usericon.iconsetpath && flatFallback.usericonPath) usericon.iconsetpath = String(flatFallback.usericonPath).trim();
+
+  const milsym = source.milsym && typeof source.milsym === "object" ? { ...source.milsym } : {};
+  if (!milsym.id && flatFallback.milsymId) milsym.id = String(flatFallback.milsymId).trim();
+
+  const links = Array.isArray(source.links)
+    ? source.links.filter((entry) => entry && typeof entry === "object").map((entry) => ({ ...entry }))
+    : [];
+  const takv = source.takv && typeof source.takv === "object" ? { ...source.takv } : null;
+
+  return {
+    contact: Object.keys(contact).length ? contact : null,
+    group: Object.keys(group).length ? group : null,
+    track: Object.keys(track).length ? track : null,
+    remarks: Object.keys(remarks).length ? remarks : null,
+    usericon: Object.keys(usericon).length ? usericon : null,
+    milsym: Object.keys(milsym).length ? milsym : null,
+    links,
+    takv,
+  };
+}
+
+function buildTakSchemaDetailXml({
+  contact = null,
+  group = null,
+  track = null,
+  remarks = null,
+  usericon = null,
+  milsym = null,
+  links = [],
+  takv = null,
+} = {}) {
+  const normalized = normalizeTakSchemaDetail({ contact, group, track, remarks, usericon, milsym, links, takv });
+  return [
+    normalized.contact?.callsign
+      ? `<contact${normalized.contact.callsign ? ` callsign="${escapeHtml(normalized.contact.callsign)}"` : ""}${normalized.contact.endpoint ? ` endpoint="${escapeHtml(normalized.contact.endpoint)}"` : ""}${normalized.contact.emailAddress ? ` emailAddress="${escapeHtml(normalized.contact.emailAddress)}"` : ""}${normalized.contact.phone ? ` phone="${escapeHtml(normalized.contact.phone)}"` : ""}${normalized.contact.xmppUsername ? ` xmppUsername="${escapeHtml(normalized.contact.xmppUsername)}"` : ""}/>`
+      : "",
+    normalized.group
+      ? `<__group name="${escapeHtml(normalized.group.name || state.takIdentity.team || "Cyan")}" role="${escapeHtml(normalized.group.role || state.takIdentity.role || "Team Member")}"/>`
+      : "",
+    normalized.track
+      ? `<track${normalized.track.course != null ? ` course="${escapeHtml(normalized.track.course)}"` : ` course="0"`}${normalized.track.speed != null ? ` speed="${escapeHtml(normalized.track.speed)}"` : ` speed="0"`}${normalized.track.slope != null ? ` slope="${escapeHtml(normalized.track.slope)}"` : ""}/>`
+      : "",
+    normalized.milsym?.id ? `<__milsym id="${escapeHtml(normalized.milsym.id)}"/>` : "",
+    normalized.usericon?.iconsetpath ? `<usericon iconsetpath="${escapeHtml(normalized.usericon.iconsetpath)}"/>` : "",
+    ...normalized.links.map((link) => {
+      const attrs = [
+        link.uid ? ` uid="${escapeHtml(link.uid)}"` : "",
+        link.type ? ` type="${escapeHtml(link.type)}"` : "",
+        link.relation ? ` relation="${escapeHtml(link.relation)}"` : "",
+        link.parent_callsign ? ` parent_callsign="${escapeHtml(link.parent_callsign)}"` : "",
+        link.production_time ? ` production_time="${escapeHtml(link.production_time)}"` : "",
+        link.callsign ? ` callsign="${escapeHtml(link.callsign)}"` : "",
+        link.remarks ? ` remarks="${escapeHtml(link.remarks)}"` : "",
+        link.point ? ` point="${escapeHtml(link.point)}"` : "",
+      ].join("");
+      return attrs ? `<link${attrs}/>` : "";
+    }),
+    normalized.takv
+      ? `<takv${normalized.takv.os ? ` os="${escapeHtml(normalized.takv.os)}"` : ""}${normalized.takv.device ? ` device="${escapeHtml(normalized.takv.device)}"` : ""}${normalized.takv.platform ? ` platform="${escapeHtml(normalized.takv.platform)}"` : ""}${normalized.takv.version ? ` version="${escapeHtml(normalized.takv.version)}"` : ""}/>`
+      : "",
+    normalized.remarks
+      ? `<remarks${normalized.remarks.source ? ` source="${escapeHtml(normalized.remarks.source)}"` : ""}${normalized.remarks.sourceID ? ` sourceID="${escapeHtml(normalized.remarks.sourceID)}"` : ""}${normalized.remarks.time ? ` time="${escapeHtml(normalized.remarks.time)}"` : ""}${normalized.remarks.to ? ` to="${escapeHtml(normalized.remarks.to)}"` : ""}>${escapeHtml(normalized.remarks.text || "")}</remarks>`
+      : "",
+  ].filter(Boolean).join("");
 }
 
 function deriveTacticalUnitTypeFromDomain(domain = "ground") {
@@ -1361,7 +1452,7 @@ function normalizeTacticalObject(raw = {}) {
   const coordinates = normalizeTacticalCoordinates(geometryType, raw.coordinates);
   const detail = buildMilstdDetail(rawDetail, milstdEntry, affiliation, size);
   if (!detail.milsymId && raw.cotType && (!detail.usericonPath || String(detail.usericonPath).startsWith("COT_MAPPING_2525B/"))) {
-    const usericonPath = buildTakUserIconPath(raw.cotType);
+    const usericonPath = buildTakSchema2525UserIconPath(raw.cotType);
     if (usericonPath) {
       detail.usericonPath = usericonPath;
     }
@@ -4291,7 +4382,11 @@ function removeTakLiveRuntimeObject(uid) {
 
 function buildTakLiveObject(contact, profile) {
   const cotType = String(contact?.cotType || "");
-  const sidc = String(contact?.sidc || contact?.milsymId || "").trim();
+  const schemaDetail = normalizeTakSchemaDetail(contact?.detail, {
+    callsign: contact?.callsign,
+    milsymId: contact?.sidc,
+  });
+  const sidc = String(contact?.sidc || schemaDetail?.milsym?.id || "").trim();
   const symbolUniqueId = normalizeMilstdUniqueId(contact?.symbolUniqueId || extractMilstdUniqueIdFromSidc(sidc) || "");
   const domain = deriveTacticalDomainFromCotType(cotType);
   const objectClass = String(cotType || "").toLowerCase().startsWith("a-") || sidc || symbolUniqueId ? "unit" : "track";
@@ -4299,12 +4394,13 @@ function buildTakLiveObject(contact, profile) {
     ? deriveTacticalAffiliationFromMilstdSidc(sidc, deriveTacticalAffiliationFromCotType(cotType))
     : deriveTacticalAffiliationFromCotType(cotType);
   const detail = {
-    team: contact?.team || "",
-    role: contact?.role || "",
+    team: schemaDetail?.group?.name || "",
+    role: schemaDetail?.group?.role || "",
     lastSeenAt: contact?.lastSeenAt || "",
-    usericonPath: contact?.usericonPath || buildTakUserIconPath(cotType),
+    usericonPath: schemaDetail?.usericon?.iconsetpath || buildTakSchema2525UserIconPath(cotType),
     milsymId: sidc,
     milsymUniqueId: symbolUniqueId,
+    takSchema: schemaDetail,
   };
   return normalizeTacticalObject({
     id: `live-${contact.uid}`,
@@ -4320,9 +4416,9 @@ function buildTakLiveObject(contact, profile) {
     symbolUniqueId,
     sidc,
     size: "team",
-    name: contact.callsign || contact.uid,
-    designator: contact.callsign || "",
-    remarks: contact?.remarks || "",
+    name: schemaDetail?.contact?.callsign || contact.uid,
+    designator: schemaDetail?.contact?.callsign || "",
+    remarks: schemaDetail?.remarks?.text || "",
     detail,
     staleAt: contact.stale || "",
     provider: profile?.label || "TAK",
@@ -5042,16 +5138,16 @@ function buildTakTacticalCotEvent(object) {
   const team = tactical.detail?.team || state.takIdentity.team || "Cyan";
   const role = tactical.detail?.role || state.takIdentity.role || "Team Member";
   const milsymId = String(tactical.sidc || tactical.detail?.milsymId || "").trim();
-  const usericonPath = milsymId ? "" : (tactical.detail?.usericonPath || buildTakUserIconPath(tactical.cotType));
+  const usericonPath = milsymId ? "" : (tactical.detail?.usericonPath || buildTakSchema2525UserIconPath(tactical.cotType));
   const remarks = tactical.remarks || tactical.name || "RF SIM Tactical Object";
-  const detailNodes = [
-    `<contact callsign="${escapeHtml(callsign)}"/>`,
-    `<__group name="${escapeHtml(team)}" role="${escapeHtml(role)}"/>`,
-    tactical.objectClass === "track" ? `<track course="0" speed="0"/>` : "",
-    milsymId ? `<__milsym id="${escapeHtml(milsymId)}"/>` : "",
-    usericonPath ? `<usericon iconsetpath="${escapeHtml(usericonPath)}"/>` : "",
-    `<remarks>${escapeHtml(remarks)}</remarks>`,
-  ].filter(Boolean).join("");
+  const detailNodes = buildTakSchemaDetailXml({
+    contact: { callsign },
+    group: { name: team, role },
+    track: tactical.objectClass === "track" ? { course: "0", speed: "0" } : null,
+    milsym: milsymId ? { id: milsymId } : null,
+    usericon: usericonPath ? { iconsetpath: usericonPath } : null,
+    remarks: { text: remarks },
+  });
   return `<event version="2.0" uid="${escapeHtml(tactical.uid)}" type="${escapeHtml(tactical.cotType)}" how="h-g-i-g-o" time="${now.toISOString()}" start="${now.toISOString()}" stale="${stale.toISOString()}"><point lat="${Number(lat).toFixed(6)}" lon="${Number(lon).toFixed(6)}" hae="0.0" ce="25.0" le="35.0"/><detail>${detailNodes}</detail></event>`;
 }
 
@@ -5165,17 +5261,6 @@ function toggleTakStreamingForContent(contentId) {
   setStatus(`${getMapContentName(contentId) || "Item"} TAK streaming ${nextEnabled ? "enabled" : "disabled"}.`);
 }
 
-function buildTakDetailNodes({ callsign, team, role, remarks, usericonPath = "", milsymId = "", extraNodes = [] } = {}) {
-  return [
-    callsign ? `<contact callsign="${escapeHtml(callsign)}"/>` : "",
-    team || role ? `<__group name="${escapeHtml(team || state.takIdentity.team || "Cyan")}" role="${escapeHtml(role || state.takIdentity.role || "Team Member")}"/>` : "",
-    milsymId ? `<__milsym id="${escapeHtml(milsymId)}"/>` : "",
-    usericonPath ? `<usericon iconsetpath="${escapeHtml(usericonPath)}"/>` : "",
-    remarks ? `<remarks>${escapeHtml(remarks)}</remarks>` : "",
-    ...extraNodes,
-  ].filter(Boolean).join("");
-}
-
 function getTakAnchorFromCoordinates(geometryType, coordinates) {
   if (geometryType === "Point" && Array.isArray(coordinates) && coordinates.length >= 2) {
     return [Number(coordinates[0]), Number(coordinates[1])];
@@ -5224,11 +5309,11 @@ function buildTakAssetCotEvent(asset) {
     staleAt: tak.staleAt,
     lat,
     lon,
-    detailNodes: buildTakDetailNodes({
-      callsign: takObject.callsign,
-      remarks: asset.notes || takObject.detail?.remarks || "RF SIM Asset",
-      usericonPath: buildTakUserIconPath(takObject.cotType),
-      extraNodes: ["<track course=\"0\" speed=\"0\"/>"],
+    detailNodes: buildTakSchemaDetailXml({
+      contact: { callsign: takObject.callsign },
+      track: { course: "0", speed: "0" },
+      usericon: { iconsetpath: buildTakSchema2525UserIconPath(takObject.cotType) },
+      remarks: { text: asset.notes || takObject.detail?.remarks || "RF SIM Asset" },
     }),
   });
 }
@@ -5246,7 +5331,7 @@ function buildTakImportedCotEvent(item) {
       .map((entry) => [Number(entry?.[0]), Number(entry?.[1])])
       .filter(([entryLat, entryLon]) => Number.isFinite(entryLat) && Number.isFinite(entryLon));
   const extraNodes = coordinatePairs.length > 1
-    ? coordinatePairs.map(([entryLat, entryLon]) => `<link point="${entryLat.toFixed(6)},${entryLon.toFixed(6)}"/>`)
+    ? coordinatePairs.map(([entryLat, entryLon]) => ({ point: `${entryLat.toFixed(6)},${entryLon.toFixed(6)}` }))
     : [];
   return buildTakPointCotEvent({
     uid: takObject.uid,
@@ -5255,10 +5340,10 @@ function buildTakImportedCotEvent(item) {
     staleAt: tak.staleAt,
     lat,
     lon,
-    detailNodes: buildTakDetailNodes({
-      callsign: takObject.callsign,
-      remarks: item.name || "RF SIM Drawing",
-      extraNodes,
+    detailNodes: buildTakSchemaDetailXml({
+      contact: { callsign: takObject.callsign },
+      remarks: { text: item.name || "RF SIM Drawing" },
+      links: extraNodes,
     }),
   });
 }
