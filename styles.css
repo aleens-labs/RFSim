@@ -5302,11 +5302,11 @@ button:focus {
 @media (max-width: 760px) {
   .map-stage {
     --map-overlay-top: 10px;
-    --map-overlay-left: 58px;
+    --map-overlay-left: 52px;
     --map-overlay-gap: 8px;
-    --map-view-toggle-w: 96px;
-    --map-geo-search-w: min(44vw, 360px);
-    --map-offline-w: 96px;
+    --map-view-toggle-w: 92px;
+    --map-geo-search-w: min(42vw, 320px);
+    --map-offline-w: 92px;
   }
 
   .top-bar {
@@ -5391,8 +5391,8 @@ button:focus {
 
   .cesium-inclinometer {
     top: calc(var(--map-overlay-top) + var(--map-overlay-control-h) + 8px);
-    left: calc(var(--map-overlay-left) + 48px);
-    width: 132px;
+    left: calc(var(--map-overlay-left) + 42px);
+    width: 118px;
   }
 }
 
