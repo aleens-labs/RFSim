@@ -1140,7 +1140,7 @@ body.panel-collapsed .control-panel {
 .map-panel-actions,
 .map-contents-card .button-row {
   overflow: visible;
-  gap: 6px;
+  gap: 0;
 }
 
 .map-panel-actions {
@@ -1151,9 +1151,12 @@ body.panel-collapsed .control-panel {
 
 #mapContentsActions {
   display: grid;
-  grid-template-columns: repeat(8, minmax(32px, 1fr));
+  grid-template-columns: repeat(8, minmax(0, 1fr));
   align-items: stretch;
+  gap: 0;
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 
 #mapContentsActions > button,
@@ -1168,16 +1171,45 @@ body.panel-collapsed .control-panel {
 #mapContentsActions > .draw-dropdown-wrapper,
 #mapContentsActions > .export-dropdown-wrapper {
   display: flex;
+  align-items: stretch;
 }
 
 #mapContentsActions .mc-icon-btn {
   width: 100%;
   min-width: 0;
-  height: 34px;
-  min-height: 34px;
+  height: 30px;
+  min-height: 30px;
   padding: 0;
+  border-radius: 0;
+  border-left-width: 0;
   align-items: center;
   justify-content: center;
+  box-sizing: border-box;
+}
+
+#mapContentsActions > :first-child .mc-icon-btn,
+#mapContentsActions > button:first-child {
+  border-left-width: 1px;
+  border-top-left-radius: 4px;
+  border-bottom-left-radius: 4px;
+}
+
+#mapContentsActions > :last-child .mc-icon-btn,
+#mapContentsActions > button:last-child {
+  border-top-right-radius: 4px;
+  border-bottom-right-radius: 4px;
+}
+
+#mapContentsActions .terrain-heatmap-icon,
+#mapContentsActions .terrain-contour-icon {
+  width: 22px;
+  height: 22px;
+}
+
+#mapContentsActions .add-emitter-plus {
+  bottom: 1px;
+  right: 2px;
+  font-size: 0.55rem;
 }
 
 .map-panel-view {
@@ -2731,7 +2763,7 @@ body.theme-light .ai-agent-mode-indicator {
 }
 
 .ai-textarea-flip textarea {
-  padding-right: 30px;
+  padding-right: 22px;
   transform: none;
 }
 .ai-chat-form textarea {
@@ -2748,38 +2780,38 @@ body.theme-light .ai-agent-mode-indicator {
   top: 1px;
   right: 1px;
   z-index: 2;
-  width: 28px;
-  height: 28px;
+  width: 20px;
+  height: 20px;
   padding: 0;
   border: 0;
-  background: linear-gradient(225deg, rgba(var(--accent-rgb), 0.16), transparent 58%);
+  background: transparent;
   color: var(--text-muted);
   cursor: ns-resize;
-  opacity: 0.82;
+  opacity: 0.62;
 }
 
 .ai-textarea-resize-handle::before,
 .ai-textarea-resize-handle::after {
   content: "";
   position: absolute;
-  border-top: 2px solid currentColor;
-  border-right: 2px solid currentColor;
+  border-top: 1.5px solid currentColor;
+  border-right: 1.5px solid currentColor;
   pointer-events: none;
 }
 
 .ai-textarea-resize-handle::before {
-  top: 6px;
-  right: 6px;
-  width: 11px;
-  height: 11px;
+  top: 5px;
+  right: 5px;
+  width: 7px;
+  height: 7px;
 }
 
 .ai-textarea-resize-handle::after {
-  top: 11px;
-  right: 11px;
-  width: 6px;
-  height: 6px;
-  opacity: 0.58;
+  top: 9px;
+  right: 9px;
+  width: 3px;
+  height: 3px;
+  opacity: 0.5;
 }
 
 .ai-textarea-resize-handle:hover,
