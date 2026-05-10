@@ -10464,13 +10464,10 @@ body.emitter-modal-open {
   right: 14px;
   bottom: 14px;
   z-index: 500;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-  width: fit-content;
-  max-width: calc(100% - 28px);
-  padding: 8px 10px;
+  display: grid;
+  gap: 5px;
+  width: min(304px, calc(100% - 28px));
+  padding: 9px 10px 8px;
   border: 1px solid rgba(148, 163, 184, 0.28);
   border-radius: 6px;
   background: rgba(10, 15, 24, 0.86);
@@ -10481,30 +10478,29 @@ body.emitter-modal-open {
   backdrop-filter: blur(8px);
 }
 
-.sensor-emitter-detail-legend span {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-width: 0;
+.sensor-emitter-detail-legend strong {
+  color: var(--text);
+  font-size: 0.78rem;
+  line-height: 1;
 }
 
-.sensor-emitter-legend-chip {
-  width: 18px;
+.sensor-emitter-detail-legend .spectrum-bar {
+  width: 100%;
   height: 8px;
-  border-radius: 999px;
-  display: inline-block;
 }
 
-.sensor-emitter-legend-chip.high {
-  background: #38bdf8;
+.sensor-emitter-detail-legend .legend-scale {
+  gap: 8px;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 0.62rem;
+  line-height: 1;
 }
 
-.sensor-emitter-legend-chip.mid {
-  background: #34d399;
-}
-
-.sensor-emitter-legend-chip.low {
-  background: #f59e0b;
+.sensor-emitter-detail-legend-note {
+  color: var(--text-secondary);
+  font-size: 0.68rem;
+  line-height: 1;
 }
 
 .sensor-editor-modal {

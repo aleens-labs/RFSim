@@ -13256,6 +13256,16 @@ function findBestLocalTerrainForCoordinate(lat, lon) {
   return terrains[0] ?? null;
 }
 
+function getCachedIonTerrainsCoveringCoordinate(lat, lon) {
+  return Array.from(state.ionTerrainCache.values())
+    .filter((terrain) => terrainContainsCoordinate(terrain, lat, lon))
+    .sort((left, right) => getTerrainCellResolutionMeters(left, lat) - getTerrainCellResolutionMeters(right, lat));
+}
+
+function findBestCachedIonTerrainForCoordinate(lat, lon) {
+  return getCachedIonTerrainsCoveringCoordinate(lat, lon)[0] ?? null;
+}
+
 function getLocalTerrainsCoveringCoordinate(lat, lon) {
   return state.terrains
     .filter((terrain) => terrainContainsCoordinate(terrain, lat, lon))
@@ -13414,7 +13424,7 @@ function getBuildingPropagationModeLabel(mode = getBuildingPropagationMode()) {
 function buildCesiumTerrainProviderKey() {
   const mode = getEffectiveCesiumTerrainMode();
   if (mode === "cesium-world") {
-    return `world:${dom.cesiumIonToken.value.trim()}`;
+    return `world:${(dom.cesiumIonToken.value || DEFAULT_CESIUM_ION_TOKEN || "").trim()}`;
   }
   if (mode === "custom") {
     return `custom:${dom.customTerrainUrl.value.trim()}`;
@@ -25716,12 +25726,22 @@ function buildSensorEvaluationProfileContext(sensor, asset, emission, sensorPosi
   const terrain = getTopologyTerrainForPath(sensorPosition.lat, sensorPosition.lon, emitterPosition.lat, emitterPosition.lon);
   const propagationModel = getTopologyPropagationModel();
   const clearancePolicy = propagationModel === "itu-buildings-weather" ? "fresnel-60-buildings" : "fresnel-60";
+  const fallbackDistanceM = haversineKm(emitterPosition.lat, emitterPosition.lon, sensorPosition.lat, sensorPosition.lon) * 1000;
+  const gridMeters = clamp(fallbackDistanceM / 48, 30, 750);
+  const terrainGridRequest = terrain ? null : buildSensorTerrainGridRequest({
+    purpose: "sensor-eval-terrain",
+    bounds: boundsFromTwoPositions(sensorPosition, emitterPosition, Math.max(500, gridMeters * 3)),
+    gridMeters,
+    propagationModel,
+    cacheParts: [sensor?.id || "", asset?.id || "", emission?.id || "primary"],
+  });
+  const cacheTerrain = terrain || terrainGridRequest?.virtualTerrain || null;
   const cacheKey = [
     "sensor-eval",
     sensor?.id || "",
     emission?.id || "primary",
     buildTopologyPathProfileCacheKey({
-      terrain,
+      terrain: cacheTerrain,
       propagationModel,
       clearancePolicy,
       endpointA: txEndpoint,
@@ -25729,12 +25749,13 @@ function buildSensorEvaluationProfileContext(sensor, asset, emission, sensorPosi
     }),
   ].join("|");
   return {
-    terrain,
+    terrain: cacheTerrain,
+    terrainGridRequest,
     propagationModel,
     clearancePolicy,
     cacheKey,
     payload: {
-      terrainId: terrain?.id || "",
+      terrainId: cacheTerrain?.id || "",
       txAsset: txEndpoint,
       rxTarget: rxEndpoint,
       weather: state.weather,
@@ -25807,7 +25828,15 @@ function requestSensorWorkerEvaluationProfile(context) {
     return;
   }
   const promise = (async () => {
-    if (context.terrain && !state.terrainReadyIds.has(context.terrain.id)) {
+    if (context.terrainGridRequest) {
+      const terrainId = await ensureIonTerrainGrid(
+        context.terrainGridRequest.bounds,
+        context.terrainGridRequest.gridMeters,
+        context.terrainGridRequest.cacheKey,
+        { propagationModel: context.propagationModel },
+      );
+      context.payload.terrainId = terrainId;
+    } else if (context.terrain && !state.terrainReadyIds.has(context.terrain.id)) {
       try {
         await cacheTerrainInWorker(context.terrain);
       } catch {}
@@ -25846,6 +25875,7 @@ function consumeSensorEvaluationProfileResult(payload = {}) {
     entry.resolve(result);
   }
   scheduleSensorEvaluationRender();
+  refreshSensorEmitterDetailModal();
   pumpSensorEvaluationQueue();
 }
 
@@ -25901,6 +25931,70 @@ function getSensorEvaluationPlacementLabel(sensorPosition, emitterPosition) {
   if (!sensorPosition) return "Sensor not placed";
   if (!emitterPosition) return "Emitter not placed";
   return "";
+}
+
+function boundsFromTwoPositions(positionA, positionB, paddingMeters = 0) {
+  const minLat = Math.min(Number(positionA.lat), Number(positionB.lat));
+  const maxLat = Math.max(Number(positionA.lat), Number(positionB.lat));
+  const minLon = Math.min(Number(positionA.lon), Number(positionB.lon));
+  const maxLon = Math.max(Number(positionA.lon), Number(positionB.lon));
+  const centerLat = (minLat + maxLat) / 2;
+  const latPad = metersToLatitudeDegrees(Math.max(0, Number(paddingMeters) || 0));
+  const lonPad = metersToLongitudeDegrees(Math.max(0, Number(paddingMeters) || 0), centerLat);
+  return {
+    sw: { lat: minLat - latPad, lon: minLon - lonPad },
+    ne: { lat: maxLat + latPad, lon: maxLon + lonPad },
+  };
+}
+
+function estimateTerrainGridShape(bounds, gridMeters) {
+  const centerLat = (Number(bounds.sw.lat) + Number(bounds.ne.lat)) / 2;
+  const latStepDeg = metersToLatitudeDegrees(gridMeters);
+  const lonStepDeg = metersToLongitudeDegrees(gridMeters, centerLat);
+  return {
+    rows: Math.max(2, Math.round((bounds.ne.lat - bounds.sw.lat) / latStepDeg) + 1),
+    cols: Math.max(2, Math.round((bounds.ne.lon - bounds.sw.lon) / lonStepDeg) + 1),
+  };
+}
+
+function buildIonTerrainGridId(cacheKey, propagationModel) {
+  return `ion:${cacheKey}:${usesOsmBuildingsInPropagation(propagationModel) ? "buildings" : "terrain"}:${state.settings.buildingMaterialPreset}`;
+}
+
+function buildSensorTerrainGridRequest({ purpose, bounds, gridMeters, propagationModel, cacheParts = [] }) {
+  if (!usesConfiguredCesiumTerrain() && !state.terrains.length) return null;
+  const normalizedGridMeters = Math.max(10, Number(gridMeters) || 100);
+  const shape = estimateTerrainGridShape(bounds, normalizedGridMeters);
+  const terrainMode = getEffectiveCesiumTerrainMode();
+  const cacheKey = [
+    purpose,
+    bounds.sw.lat.toFixed(5),
+    bounds.sw.lon.toFixed(5),
+    bounds.ne.lat.toFixed(5),
+    bounds.ne.lon.toFixed(5),
+    Math.round(normalizedGridMeters),
+    propagationModel,
+    usesOsmBuildingsInPropagation(propagationModel) ? "buildings" : "terrain",
+    state.settings.buildingMaterialPreset,
+    getBuildingPropagationMode(),
+    terrainMode,
+    buildLoadedTerrainCacheKey(),
+    buildCesiumTerrainProviderKey(),
+    ...cacheParts,
+  ].join(":");
+  return {
+    bounds,
+    gridMeters: normalizedGridMeters,
+    cacheKey,
+    virtualTerrain: {
+      id: buildIonTerrainGridId(cacheKey, propagationModel),
+      bounds,
+      rows: shape.rows,
+      cols: shape.cols,
+      sourceType: terrainMode === "custom" ? "cesium-custom" : (state.terrains.length ? "hybrid" : "cesium-world"),
+      terrainCompleteness: "pending",
+    },
+  };
 }
 
 function getSensorEvaluableEmitterAssets() {
@@ -26296,12 +26390,20 @@ function buildSensorEmitterDetailCoverageContext(selection) {
   const distanceM = Number.isFinite(Number(entry?.distanceM)) ? Number(entry.distanceM) : fallbackDistanceM;
   const radiusMeters = clamp(Math.max(distanceM * 1.15, 1500), 1500, 250000);
   const gridMeters = clamp(radiusMeters / 70, 50, 4000);
+  const terrainGridRequest = terrain ? null : buildSensorTerrainGridRequest({
+    purpose: "sensor-detail-coverage-terrain",
+    bounds: boundsFromCenter(emitterPosition.lat, emitterPosition.lon, radiusMeters),
+    gridMeters,
+    propagationModel,
+    cacheParts: [sensor?.id || "", asset?.id || "", emission?.id || "primary"],
+  });
+  const cacheTerrain = terrain || terrainGridRequest?.virtualTerrain || null;
   const cacheKey = [
     "sensor-detail-coverage",
     Math.round(radiusMeters),
     Math.round(gridMeters),
     buildTopologyPathProfileCacheKey({
-      terrain,
+      terrain: cacheTerrain,
       propagationModel,
       clearancePolicy,
       endpointA: txAsset,
@@ -26310,8 +26412,9 @@ function buildSensorEmitterDetailCoverageContext(selection) {
   ].join("|");
   return {
     cacheKey,
-    terrain,
-    terrainId: terrain?.id || "",
+    terrain: cacheTerrain,
+    terrainGridRequest,
+    terrainId: cacheTerrain?.id || "",
     radiusMeters,
     gridMeters,
     propagationModel,
@@ -26353,7 +26456,15 @@ async function requestSensorEmitterDetailCoverage(selection) {
     dom.sensorEmitterDetailLegend.textContent = "Coverage overlay pending...";
   }
   try {
-    if (context.terrain && !state.terrainReadyIds.has(context.terrain.id)) {
+    if (context.terrainGridRequest) {
+      setSensorEmitterDetailStatus("Sampling terrain grid for sensor coverage...", "pending");
+      context.terrainId = await ensureIonTerrainGrid(
+        context.terrainGridRequest.bounds,
+        context.terrainGridRequest.gridMeters,
+        context.terrainGridRequest.cacheKey,
+        { propagationModel: context.propagationModel },
+      );
+    } else if (context.terrain && !state.terrainReadyIds.has(context.terrain.id)) {
       await cacheTerrainInWorker(context.terrain);
     }
     if (_sensorEmitterDetailState.coverageRequestId !== requestId) return;
@@ -26431,10 +26542,15 @@ function renderSensorEmitterDetailCoverageOverlay(coverage) {
   setSensorEmitterDetailStatus(`Coverage overlay ready | ${model} | ${cells.toLocaleString()} cells`, "ready");
   if (dom.sensorEmitterDetailLegend) {
     dom.sensorEmitterDetailLegend.innerHTML = `
-      <span><i class="sensor-emitter-legend-chip high"></i>High RSSI</span>
-      <span><i class="sensor-emitter-legend-chip mid"></i>Mid</span>
-      <span><i class="sensor-emitter-legend-chip low"></i>Low</span>
-      <span>Radius ${escapeHtml(formatDistance(coverage.radiusMeters))}</span>
+      <strong>RSSI Legend</strong>
+      <div class="spectrum-bar"></div>
+      <div class="legend-scale">
+        <span>-120 dBm</span>
+        <span>-90 dBm</span>
+        <span>-60 dBm</span>
+        <span>-40 dBm</span>
+      </div>
+      <div class="sensor-emitter-detail-legend-note">Radius ${escapeHtml(formatDistance(coverage.radiusMeters))}</div>
     `;
   }
 }
@@ -26466,6 +26582,26 @@ function openSensorEmitterDetailModal(sensorId, assetId, emissionId = "") {
   setSensorEmitterDetailStatus(entry.limitingReason || entry.label || "Evaluating relationship.", entry.className || "");
   renderSensorEmitterDetailMap(selection);
   requestSensorEmitterDetailCoverage(selection);
+}
+
+function refreshSensorEmitterDetailModal() {
+  if (!dom.sensorEmitterDetailModal || dom.sensorEmitterDetailModal.classList.contains("hidden")) return;
+  if (!_sensorEmitterDetailState.sensorId || !_sensorEmitterDetailState.assetId) return;
+  const selection = getSensorEmitterDetailSelection(
+    _sensorEmitterDetailState.sensorId,
+    _sensorEmitterDetailState.assetId,
+    _sensorEmitterDetailState.emissionId,
+  );
+  if (!selection) return;
+  const { entry } = selection;
+  if (dom.sensorEmitterDetailSubtitle) {
+    const emissionLabel = entry.emission?.name || entry.sourceEmission?.name || "Emission";
+    const frequencyLabel = Number.isFinite(Number(entry.emission?.frequencyMHz)) ? formatEmitterWorkspaceFrequency(entry.emission.frequencyMHz) : "No frequency";
+    dom.sensorEmitterDetailSubtitle.textContent = `${emissionLabel} | ${frequencyLabel} | ${entry.label || entry.status || "Evaluation"}`;
+  }
+  if (dom.sensorEmitterDetailBody) {
+    dom.sensorEmitterDetailBody.innerHTML = renderSensorEmitterDetailContent(selection);
+  }
 }
 
 function closeSensorEmitterDetailModal() {
@@ -31236,6 +31372,7 @@ async function resolveTerrainIdForSimulation(asset) {
     bounds,
     Number(dom.gridMeters.value),
     `sim:${asset.id}:${radiusMeters}:${dom.gridMeters.value}:${propagationModel}:${usesOsmBuildingsInPropagation(propagationModel) ? "buildings" : "terrain"}:${state.settings.buildingMaterialPreset}:${getBuildingPropagationMode()}:${buildLoadedTerrainCacheKey()}:${buildCesiumTerrainProviderKey()}`,
+    { propagationModel },
   );
 }
 
@@ -31247,7 +31384,7 @@ async function resolveTerrainIdForPlanning(polygon, gridMeters) {
   const bounds = boundsFromPolygon(polygon);
   const propagationModel = dom.propagationModel.value;
   const key = `plan:${polygon.map((point) => `${point.lat.toFixed(4)},${point.lon.toFixed(4)}`).join("|")}:${gridMeters}:${propagationModel}:${usesOsmBuildingsInPropagation(propagationModel) ? "buildings" : "terrain"}:${state.settings.buildingMaterialPreset}:${getBuildingPropagationMode()}:${buildLoadedTerrainCacheKey()}:${buildCesiumTerrainProviderKey()}`;
-  return await ensureIonTerrainGrid(bounds, gridMeters, key);
+  return await ensureIonTerrainGrid(bounds, gridMeters, key, { propagationModel });
 }
 
 async function ensureTerrainReady(terrainId) {
@@ -31259,7 +31396,7 @@ async function ensureTerrainReady(terrainId) {
   }
 }
 
-async function ensureIonTerrainGrid(bounds, gridMeters, cacheKey) {
+async function ensureIonTerrainGrid(bounds, gridMeters, cacheKey, options = {}) {
   throwIfSimulationCanceled(state.simulationProgress.requestId);
   const cached = state.ionTerrainCache.get(cacheKey);
   if (cached) {
@@ -31267,17 +31404,18 @@ async function ensureIonTerrainGrid(bounds, gridMeters, cacheKey) {
     return cached.id;
   }
 
+  const propagationModel = options.propagationModel || dom.propagationModel.value;
   const hasLocalTerrain = state.terrains.length > 0;
   const hasCesiumTerrain = usesConfiguredCesiumTerrain();
   setStatus(hasLocalTerrain && hasCesiumTerrain
     ? "Blending local terrain with streamed Cesium terrain for propagation..."
-    : usesOsmBuildingsInPropagation()
+    : usesOsmBuildingsInPropagation(propagationModel)
       ? "Preparing terrain and OSM buildings for propagation..."
       : hasLocalTerrain
         ? "Preparing local terrain for propagation..."
         : "Sampling Cesium terrain for propagation...");
   updateSimulationTerrainPrepProgress(0.02, "Resolving terrain source...", "9%");
-  const terrain = await sampleCesiumTerrainGrid(bounds, gridMeters, cacheKey);
+  const terrain = await sampleCesiumTerrainGrid(bounds, gridMeters, cacheKey, { propagationModel });
   throwIfSimulationCanceled(state.simulationProgress.requestId);
   state.ionTerrainCache.set(cacheKey, terrain);
   updateSimulationTerrainPrepProgress(0.96, "Caching sampled terrain...", "31%");
@@ -31285,10 +31423,10 @@ async function ensureIonTerrainGrid(bounds, gridMeters, cacheKey) {
   return terrain.id;
 }
 
-async function sampleCesiumTerrainGrid(bounds, gridMeters, cacheKey) {
+async function sampleCesiumTerrainGrid(bounds, gridMeters, cacheKey, options = {}) {
   await ensureCesiumLoaded();
   const requestId = state.simulationProgress.requestId;
-  const propagationModel = dom.propagationModel.value;
+  const propagationModel = options.propagationModel || dom.propagationModel.value;
   const includeBuildings = usesOsmBuildingsInPropagation(propagationModel);
   const cesiumMode = getEffectiveCesiumTerrainMode();
   const canUseCesium = cesiumMode === "cesium-world" || cesiumMode === "custom";
@@ -44570,10 +44708,14 @@ function getTopologyTerrainForPath(latA, lonA, latB, lonB) {
   const midLon = (lonA + lonB) / 2;
   const midpointTerrain = findBestLocalTerrainForCoordinate(midLat, midLon);
   if (midpointTerrain) return midpointTerrain;
+  const midpointIonTerrain = findBestCachedIonTerrainForCoordinate(midLat, midLon);
+  if (midpointIonTerrain) return midpointIonTerrain;
   const activeTerrain = getActiveTerrain();
   if (activeTerrain && terrainContainsCoordinate(activeTerrain, midLat, midLon)) return activeTerrain;
   return findBestLocalTerrainForCoordinate(latA, lonA)
     || findBestLocalTerrainForCoordinate(latB, lonB)
+    || findBestCachedIonTerrainForCoordinate(latA, lonA)
+    || findBestCachedIonTerrainForCoordinate(latB, lonB)
     || activeTerrain
     || null;
 }
