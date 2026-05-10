@@ -25276,6 +25276,13 @@ const SENSOR_GRAPHIC_URLS = Object.freeze({
   "USRP B200.png": new URL("./images/sensor_graphics/USRP B200.png", import.meta.url).href,
 });
 
+const SENSOR_GRAPHIC_CACHE_VERSION = "20260510-sensor-refresh";
+
+function versionSensorGraphicSrc(src = "") {
+  if (!src) return "";
+  return `${src}${src.includes("?") ? "&" : "?"}v=${SENSOR_GRAPHIC_CACHE_VERSION}`;
+}
+
 function normalizeSensorGraphicLookup(value = "") {
   return String(value || "")
     .toUpperCase()
@@ -25319,7 +25326,8 @@ function getSensorGraphicFile(sensorOrProfile) {
 
 function getSensorGraphicSrc(sensorOrProfile) {
   const fileName = getSensorGraphicFile(sensorOrProfile);
-  return fileName ? (SENSOR_GRAPHIC_URLS[fileName] || `images/sensor_graphics/${encodeURIComponent(fileName)}`) : "";
+  const src = fileName ? (SENSOR_GRAPHIC_URLS[fileName] || `images/sensor_graphics/${encodeURIComponent(fileName)}`) : "";
+  return versionSensorGraphicSrc(src);
 }
 
 function renderSensorGraphic(sensorOrProfile, variant = "workspace") {
