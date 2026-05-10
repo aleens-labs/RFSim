@@ -2085,6 +2085,8 @@ const dom = {
   collapsePanelIcon: document.querySelector("#collapsePanelIcon"),
   controlPanel: document.querySelector("#controlPanel"),
   mcSelectBtn: document.querySelector("#mcSelectBtn"),
+  mcSelectDropdown: document.querySelector("#mcSelectDropdown"),
+  mcSelectLassoBtn: document.querySelector("#mcSelectLassoBtn"),
   undoBanner: document.querySelector("#undoBanner"),
   undoBannerMsg: document.querySelector("#undoBannerMsg"),
   undoBannerBtn: document.querySelector("#undoBannerBtn"),
@@ -2649,6 +2651,8 @@ const dom = {
   cesiumInclinometer: document.querySelector("#cesiumInclinometer"),
   cesiumPitchValue: document.querySelector("#cesiumPitchValue"),
   cesiumRollValue: document.querySelector("#cesiumRollValue"),
+  cesiumTiltSlider: document.querySelector("#cesiumTiltSlider"),
+  cesiumRotationSlider: document.querySelector("#cesiumRotationSlider"),
   aiPanel: document.querySelector("#aiPanel"),
   collapseAiPanelBtn: document.querySelector("#collapseAiPanelBtn"),
   collapseAiPanelIcon: document.querySelector("#collapseAiPanelIcon"),
@@ -2788,6 +2792,16 @@ const state = {
   mcSelectMode: false,
   mcSelectedIds: new Set(),
   mcLastClickedId: null,
+  mapLasso: {
+    active: false,
+    drawing: false,
+    pointerId: null,
+    points: [],
+    screenPoints: [],
+    previewLayer: null,
+    handlerStates: null,
+    ignoreClickUntil: 0,
+  },
   undoStack: [],          // [{label, snapshots:[{contentId, restoreFn}]}]
   redoStack: [],          // [{label, snapshots:[{contentId, restoreFn}]}]
   undoBannerTimerId: null,
@@ -3968,6 +3982,75 @@ function simulationUsesBuildingModel(propagationModel) {
   return propagationModel === "itu-buildings-weather";
 }
 
+function formatApiErrorFieldName(field = "") {
+  return String(field || "")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^./, (char) => char.toUpperCase());
+}
+
+function formatApiErrorValue(value) {
+  if (value === null || value === undefined) {
+    return "";
+  }
+  if (value instanceof Error) {
+    return value.message || "";
+  }
+  if (typeof value === "string") {
+    return value.trim();
+  }
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => formatApiErrorValue(entry))
+      .filter(Boolean)
+      .join(" ");
+  }
+  if (typeof value !== "object") {
+    return String(value);
+  }
+
+  const messages = [];
+  const formErrors = Array.isArray(value.formErrors) ? value.formErrors : [];
+  formErrors.forEach((entry) => {
+    const message = formatApiErrorValue(entry);
+    if (message) messages.push(message);
+  });
+  const fieldErrors = value.fieldErrors && typeof value.fieldErrors === "object"
+    ? value.fieldErrors
+    : null;
+  if (fieldErrors) {
+    Object.entries(fieldErrors).forEach(([field, entries]) => {
+      const message = formatApiErrorValue(entries);
+      if (message) {
+        messages.push(`${formatApiErrorFieldName(field) || "Field"}: ${message}`);
+      }
+    });
+  }
+  if (messages.length) {
+    return messages.join(" ");
+  }
+
+  for (const key of ["error", "message", "detail", "details", "reason"]) {
+    if (Object.prototype.hasOwnProperty.call(value, key)) {
+      const message = formatApiErrorValue(value[key]);
+      if (message) return message;
+    }
+  }
+  return "";
+}
+
+function formatApiErrorPayload(payload, status = 0) {
+  const message = formatApiErrorValue(payload?.error ?? payload?.message ?? payload);
+  if (message) return message;
+  if (status === 400) return "The request was not valid. Check the fields and try again.";
+  if (status === 401) return "Sign in failed. Check your username and password.";
+  if (status === 409) return "That item already exists.";
+  if (status === 429) return "Too many requests. Please try again shortly.";
+  if (status >= 500) return "The server had a problem. Please try again shortly.";
+  return status ? `API request failed (${status}).` : "Request failed.";
+}
 
 async function apiFetch(path, options = {}) {
   const headers = new Headers(options.headers ?? {});
@@ -3998,7 +4081,7 @@ async function apiFetch(path, options = {}) {
 
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(payload.error ?? payload.message ?? `API request failed (${response.status}).`);
+    throw new Error(formatApiErrorPayload(payload, response.status));
   }
 
   return payload;
@@ -4329,6 +4412,23 @@ function getAssetEffectiveMapPosition(asset) {
     lon: Number(tacticalObject.coordinates[1]),
     tacticalObject,
   };
+}
+
+function getAssetAssessableMapPosition(asset) {
+  const effective = getAssetEffectiveMapPosition(asset);
+  if (effective) {
+    return {
+      lat: Number(effective.lat),
+      lon: Number(effective.lon),
+      source: effective.tacticalObject ? "linked-unit" : "emitter-marker",
+      tacticalObject: effective.tacticalObject || null,
+    };
+  }
+  return null;
+}
+
+function hasAssetAssessableMapPosition(asset) {
+  return Boolean(getAssetAssessableMapPosition(asset));
 }
 
 function openTacticalPopupPanel(tacticalId, panel = "summary", emitterId = "") {
@@ -5788,12 +5888,14 @@ function linkEmitterAssetToPlanUnit(assetId, unitId = _toEmitterManagerState.uni
   if (!unit || !asset) {
     return false;
   }
-  asset.toUnitId = Number(unit.id);
+  syncEmitterAssetToPlanUnit(asset, Number(unit.id));
   if (_currentEmitterEditId === asset.id) {
     updateEmitterToLinkBadge(unit);
   }
   renderAssets();
   refreshLinkedViews();
+  renderMapContents();
+  syncCesiumEntities();
   saveMapState();
   setStatus(`Linked ${asset.emitterLabel || asset.name || "Emitter"} to ${unit.label || unit.designator || `Unit ${unit.id}`}.`);
   return true;
@@ -5911,6 +6013,81 @@ function serializePlanUnitForAi(unit) {
 
 function getTacticalObjectByPlanUnitId(unitId) {
   return state.tacticalObjects.find((entry) => Number(entry.linkedPlanUnitId) === Number(unitId)) ?? null;
+}
+
+function normalizePlanUnitIdOrNull(value) {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function removeAssetIdFromMappedTacticalObjects(assetId, { exceptPlanUnitId = null, renderLayer = true } = {}) {
+  const normalizedAssetId = String(assetId || "");
+  if (!normalizedAssetId) {
+    return false;
+  }
+  const exceptId = normalizePlanUnitIdOrNull(exceptPlanUnitId);
+  let changed = false;
+  state.tacticalObjects.forEach((object) => {
+    if (exceptId !== null && Number(object.linkedPlanUnitId) === exceptId) {
+      return;
+    }
+    const currentIds = Array.isArray(object.linkedAssetIds)
+      ? object.linkedAssetIds.map(String)
+      : [];
+    if (!currentIds.includes(normalizedAssetId)) {
+      return;
+    }
+    object.linkedAssetIds = currentIds.filter((id) => id !== normalizedAssetId);
+    object.lastModified = nowIso();
+    changed = true;
+    if (renderLayer) {
+      renderTacticalObjectLayer(object);
+    }
+  });
+  return changed;
+}
+
+function syncEmitterAssetToPlanUnit(asset, unitId, { renderLayer = true } = {}) {
+  if (!asset?.id) {
+    return false;
+  }
+  const nextUnitId = normalizePlanUnitIdOrNull(unitId);
+  removeAssetIdFromMappedTacticalObjects(asset.id, { exceptPlanUnitId: nextUnitId, renderLayer });
+  if (nextUnitId === null) {
+    delete asset.toUnitId;
+    return true;
+  }
+
+  asset.toUnitId = nextUnitId;
+  const object = getTacticalObjectByPlanUnitId(nextUnitId);
+  if (object) {
+    const linkedIds = new Set((object.linkedAssetIds || []).map(String));
+    const assetId = String(asset.id);
+    if (!linkedIds.has(assetId)) {
+      linkedIds.add(assetId);
+      object.linkedAssetIds = [...linkedIds];
+      object.lastModified = nowIso();
+      if (renderLayer) {
+        renderTacticalObjectLayer(object);
+      }
+    }
+  }
+  return true;
+}
+
+function syncEmitterAssetStoredToLink(asset, options = {}) {
+  if (!asset?.id) {
+    return false;
+  }
+  const unitId = normalizePlanUnitIdOrNull(asset.toUnitId);
+  if (unitId !== null) {
+    return syncEmitterAssetToPlanUnit(asset, unitId, options);
+  }
+  removeAssetIdFromMappedTacticalObjects(asset.id, options);
+  return true;
 }
 
 function buildPlanUnitPlacementTemplate(unit) {
@@ -6036,14 +6213,16 @@ function updateLinkedAssetsForTacticalUnit(object, linkedAssetIds = []) {
   if (!Number.isFinite(Number(object?.linkedPlanUnitId))) {
     return;
   }
+  const planUnitId = Number(object.linkedPlanUnitId);
   state.assets.forEach((asset) => {
     if (nextIds.has(String(asset.id))) {
-      asset.toUnitId = Number(object.linkedPlanUnitId);
-    } else if (Number(asset.toUnitId) === Number(object.linkedPlanUnitId)) {
-      asset.toUnitId = null;
+      syncEmitterAssetToPlanUnit(asset, planUnitId, { renderLayer: false });
+    } else if (Number(asset.toUnitId) === planUnitId) {
+      syncEmitterAssetToPlanUnit(asset, null, { renderLayer: false });
     }
   });
   object.linkedAssetIds = [...nextIds];
+  object.lastModified = nowIso();
   renderAssets();
 }
 
@@ -6057,7 +6236,7 @@ function deleteTacticalObject(objectId, { silent = false } = {}) {
       if (!confirmed) {
         return;
       }
-      linkedAssets.forEach((asset) => { asset.toUnitId = null; });
+      linkedAssets.forEach((asset) => syncEmitterAssetToPlanUnit(asset, null, { renderLayer: false }));
       renderAssets();
     }
     _toState.links = _toState.links.filter((link) => link.parentId !== Number(object.linkedPlanUnitId) && link.childId !== Number(object.linkedPlanUnitId));
@@ -6371,7 +6550,7 @@ function saveTacticalEditor() {
   if (!isUnitTacticalObject(updated) && Number.isFinite(Number(original.linkedPlanUnitId))) {
     state.assets.forEach((asset) => {
       if (Number(asset.toUnitId) === Number(original.linkedPlanUnitId)) {
-        asset.toUnitId = null;
+        syncEmitterAssetToPlanUnit(asset, null, { renderLayer: false });
       }
     });
     _toState.links = _toState.links.filter((link) => link.parentId !== Number(original.linkedPlanUnitId) && link.childId !== Number(original.linkedPlanUnitId));
@@ -6396,6 +6575,11 @@ function saveTacticalEditor() {
     if (!state.mapContentOrder.includes(contentId)) {
       state.mapContentOrder.push(contentId);
     }
+  }
+  if (Number.isFinite(Number(updated.linkedPlanUnitId))) {
+    renderToView();
+    renderAssets();
+    refreshEmitterWorkspaceViews({ topology: true });
   }
   renderTacticalObjectLayer(updated);
   renderMapContents();
@@ -9005,7 +9189,7 @@ function setAuthScreenStatus(message = "", isError = false) {
   const fallback = state.authScreenMode === "register"
     ? "Create an account to enter the workspace."
     : "Sign in or use guest mode to continue.";
-  dom.authScreenStatus.textContent = message || fallback;
+  dom.authScreenStatus.textContent = formatApiErrorValue(message) || fallback;
   dom.authScreenStatus.classList.toggle("error", Boolean(isError));
 }
 
@@ -9376,7 +9560,7 @@ function xhrPutProject(projectId, body, token) {
       if (xhr.status >= 200 && xhr.status < 300) {
         resolve(payload);
       } else {
-        const error = new Error(payload.error ?? `HTTP ${xhr.status}`);
+        const error = new Error(formatApiErrorPayload(payload, xhr.status));
         error.status = xhr.status;
         error.payload = payload;
         reject(error);
@@ -10338,6 +10522,14 @@ const emitterModal = {
     }
     const profileRef = this.resolveProfileRefForPayload(payload);
     const data = buildEmitterAssetFromProfilePayload(payload, { profileRef });
+    const pendingToUnitId = window._pendingToUnitId;
+    if (pendingToUnitId !== undefined) {
+      if (pendingToUnitId === null) {
+        delete data.toUnitId;
+      } else if (Number.isFinite(Number(pendingToUnitId))) {
+        data.toUnitId = Number(pendingToUnitId);
+      }
+    }
     const isEmittersWorkspaceView = isEmitterWorkspaceViewActive();
 
     let resolvedLocation = null;
@@ -10356,10 +10548,11 @@ const emitterModal = {
       if (asset) {
         Object.assign(asset, data);
         // Commit TO link if pending
-        if (window._pendingToUnitId !== undefined) {
-          if (window._pendingToUnitId === null) delete asset.toUnitId;
-          else asset.toUnitId = window._pendingToUnitId;
+        if (pendingToUnitId !== undefined) {
+          syncEmitterAssetToPlanUnit(asset, pendingToUnitId);
           clearPendingToLink();
+        } else {
+          syncEmitterAssetStoredToLink(asset);
         }
         const keepWorkspaceOnly = isEmittersWorkspaceView && !state.assetMarkers.has(asset.id);
         if (resolvedLocation && !keepWorkspaceOnly) {
@@ -10382,6 +10575,7 @@ const emitterModal = {
         asset.lastModified = nowIso();
         updateAssetMarker(asset);
         renderAssets();
+        refreshEmitterWorkspaceViews({ assetId: asset.id, center: true, topology: true });
         renderMapContents();
         syncCesiumEntities();
         saveMapState();
@@ -10811,6 +11005,8 @@ function wireEvents() {
   dom.mapPanelModeToggle?.addEventListener("click", toggleMapPanelMode);
   initViewModeToggle();
   dom.mcSelectBtn.addEventListener("click", toggleMcSelectMode);
+  dom.mcSelectBtn.addEventListener("contextmenu", openMcSelectToolMenu);
+  dom.mcSelectDropdown?.addEventListener("click", onMcSelectToolMenuClick);
   dom.undoBannerBtn.addEventListener("click", performUndo);
   dom.undoBannerDismiss.addEventListener("click", dismissUndoBanner);
   dom.panelDivider.addEventListener("mousedown", beginPanelResize);
@@ -10907,6 +11103,7 @@ function wireEvents() {
   document.addEventListener("click", closeTopBarMenus);
   document.addEventListener("click", closeTerrainHeatmapDropdown);
   document.addEventListener("click", closeTerrainContourDropdown);
+  document.addEventListener("click", closeMcSelectToolMenu);
   document.addEventListener("click", closeMapContentsMenu);
   document.addEventListener("click", closeRenamePopover);
   addModalBackdropClose(dom.shapeStyleModal, () => closeShapeStylePanel({ stopEditing: false }));
@@ -11239,6 +11436,7 @@ function wireEvents() {
       else if (state.relocatingCircleItemId) { finishCircleRelocation(null); }
       else if (state.placingTactical || state.pendingTacticalPlacement) { cancelPendingTacticalPlacement(); cancelDrawing(); }
       else if (state.settingsMenuOpen) closeSettingsMenu();
+      else if (state.mapLasso.active) cancelMapLassoSelection({ statusMessage: "Lasso selection canceled." });
       else if (state.draw.mode) cancelDrawing();
       else if (state.mcSelectMode) toggleMcSelectMode();
       else if (state.tacticalEditor.mode) closeTacticalEditorModal();
@@ -11285,6 +11483,12 @@ function wireEvents() {
   dom.gridlinesColor.addEventListener("input", onSettingsChanged);
   dom.view3dToggleBtn.addEventListener("click", toggle3dView);
   dom.cesiumCompassBtn.addEventListener("click", resetCesiumNorthUp);
+  dom.cesiumTiltSlider?.addEventListener("input", onCesiumCameraSliderInput);
+  dom.cesiumRotationSlider?.addEventListener("input", onCesiumCameraSliderInput);
+  [dom.cesiumTiltSlider, dom.cesiumRotationSlider].forEach((slider) => {
+    slider?.addEventListener("pointerdown", (event) => event.stopPropagation());
+    slider?.addEventListener("click", (event) => event.stopPropagation());
+  });
   dom.basemapSelect.addEventListener("change", onBasemapChange);
   dom.customTileUrl.addEventListener("change", onBasemapChange);
   dom.terrainSourceSelect.addEventListener("change", onTerrainSourceSettingsChanged);
@@ -14882,6 +15086,7 @@ function renderDocumentMarkdown(text) {
 const SETTINGS_DOCUMENTATION_MD = "# RF SIM Operator Guide\n\n## Quick Start\n\n### Recommended operator flow\n\nRF SIM works best when you build the scenario in this order:\n\n```text\nT/O -\u003e EMITTERS -\u003e MAP -\u003e ANALYSIS\n```\n\n1. Build the unit structure in **T/O**.\n2. Create and configure radios in **EMITTERS**.\n3. Place emitters and tactical items in **MAP**.\n4. Review conclusions, metrics, links, terrain, and correlation in **ANALYSIS**.\n\n\u003e **Operator habit:** build structure first, then radios, then geography, then conclusions. Most confusing results come from skipping one of those layers.\n\n### Fast setup checklist\n\n- In **T/O**, click **Select Unit Type** and use **Choose Unit Symbology** to pick accurate unit symbols.\n- Add units, set size, and connect the hierarchy.\n- Use **Auto Layout** and **Fit View** after meaningful hierarchy edits.\n- In **EMITTERS**, create emitter cards and configure nets, frequency, waveform, power, antenna, and linked unit.\n- In **MAP**, use **Map Contents** to add emitters, tactical items, folders, overlays, terrain heatmap, contour lines, and imports.\n- Use **Place on Map** or map placement workflows when an emitter needs a geographic location.\n- In **ANALYSIS**, read operational conclusions first, then inspect the detailed relationship, link, terrain, and T/O correlation panels.\n\n### What each top tab is for\n\n| Tab | Primary job | Best used for |\n|---|---|---|\n| T/O | Force structure | Unit hierarchy, symbology, size, command relationships |\n| EMITTERS | RF/network workspace | Emitter cards, topology controls, Unit Cards vs Emitters, nets, filters |\n| MAP | Geographic workspace | Placement, overlays, terrain, weather, tactical items, Map Contents |\n| ANALYSIS | Insight workspace | Operational conclusions, metrics, link health, terrain coverage, T/O correlation |\n\n## Core Concepts\n\n### Units\n\nA **unit** is an organizational node in the T/O. It has a name, designator, affiliation, symbol, size, and parent-child relationships.\n\nUse units for:\n\n- headquarters, companies, platoons, teams, relays, sustainment nodes, ISR, EW, fires, logistics, and command posts\n- showing who reports to whom\n- giving AI and ANALYSIS a command structure to reason over\n- grouping linked emitters into **Unit Cards** in EMITTERS\n\n### Emitters\n\nAn **emitter** is an RF asset: a radio, relay, antenna system, SATCOM terminal, sensor link, or other communications node.\n\nEmitters carry technical details such as:\n\n- frequency and band\n- waveform and channel spacing\n- transmit power and losses\n- antenna type, gain, height, and pattern\n- linked T/O unit\n- map placement status\n\n\u003e **Important:** EMITTERS can hold cards that are not yet on the map. Those are valid workspace emitters, but terrain and distance analysis only becomes meaningful after placement.\n\n### Map contents\n\n**Map Contents** is the left-panel inventory for placed and imported map objects. It includes emitters that have been placed, tactical items, folders, imported overlays, shapes, routes, and other map-managed content.\n\nUse it to:\n\n- search map contents\n- add or import layers\n- organize content into folders\n- toggle heatmap and contour overlays\n- manage tactical items and placed emitters\n\n### Terrain, elevation, and environment\n\nTerrain affects line of sight, Fresnel clearance, masking, relay utility, and likely coverage. RF SIM can use local terrain data and configured 3D terrain services depending on settings.\n\nWeather and environmental context can also shape planning assumptions, especially for SATCOM, higher-frequency links, aviation, and terrain-dependent relay planning.\n\n### Analysis and AI\n\n**ANALYSIS** turns the scenario into conclusions. It looks across emitters, units, locations, terrain, and relationships. **AI Chat** helps explain and document what is in the scenario, but it should be treated as planning support, not a substitute for RF validation.\n\n## T/O\n\n### Purpose\n\nT/O is where the operator builds the Table of Organization before placing equipment on terrain.\n\nUse T/O to:\n\n- create units\n- choose accurate symbology\n- assign unit size\n- define command hierarchy\n- link emitters to units\n- keep the operational structure readable\n\n### Unit hierarchy\n\nCreate a hierarchy that reflects how the force actually operates. A clean hierarchy helps the EMITTERS view group radios correctly and helps ANALYSIS explain relationships.\n\nRecommended sequence:\n\n1. Add the highest command node first.\n2. Add subordinate units.\n3. Link parent and child units.\n4. Add support, sustainment, relay, fires, ISR, EW, and logistics nodes where they matter.\n5. Run **Auto Layout**.\n6. Run **Fit View**.\n\n### Symbology picker\n\nClick **Select Unit Type** to open **Choose Unit Symbology**. The picker follows the current track workflow and lets you search at every level.\n\nUse the picker to choose:\n\n- affiliation: Friendly, Hostile, Neutral, or Unknown\n- track family: air, ground, sea surface, space, subsurface, SOF, and specialized sets\n- unit category and branch\n- deeper modifiers where available\n\nThe rendered preview should become more specific as you traverse deeper. Root tracks show base frames. Specific branches and leaf units add the correct main icon or modifier.\n\n### Sizing and labels\n\nUnit size affects the displayed echelon indicator and the default label. Keep size and name aligned:\n\n| Size | Common use |\n|---|---|\n| Team | Small element, relay team, sensor team |\n| Squad / Section | Small tactical element |\n| Platoon | Maneuver or support platoon |\n| Company | Company, battery, troop, detachment |\n| Battalion / Squadron | Larger command or aviation-style formation |\n\nUse short labels that work visually in the T/O tree, such as `V34`, `I CO`, `K2`, `S6`, `Fires`, or `Relay A`.\n\n### Linking emitters\n\nLink emitters to T/O units when the radio belongs to an organizational element. Linked emitters can appear grouped under **Unit Cards** in EMITTERS and can be interpreted by ANALYSIS as part of the force structure.\n\nWays to link:\n\n- from an emitter card context menu in EMITTERS\n- from the add/edit emitter modal\n- from workflows that expose **Link to T/O Unit**\n\n### Auto Layout and Fit View\n\nUse **Auto Layout** after adding or changing hierarchy links. Use **Fit View** after layout, reload, login, or whenever the tree is off-screen.\n\nBest practice:\n\n```text\nEdit hierarchy -\u003e Auto Layout -\u003e Fit View -\u003e review labels and symbols\n```\n\n## EMITTERS\n\n### Purpose\n\nEMITTERS is the emitter and network workspace. It is not a sub-view inside ANALYSIS. It is where RF assets are created, organized, linked, filtered, and inspected before or after map placement.\n\nUse EMITTERS for:\n\n- emitter cards\n- network topology controls\n- filters by band or workspace state\n- Unit Cards vs Emitters display modes\n- right-click emitter workflows\n- linking radios to T/O units\n- preparing radios before they are placed on the map\n\n### Emitter workspace and topology controls\n\nThe workspace can show the RF network in two useful ways:\n\n| Mode | Meaning | Use when |\n|---|---|---|\n| Unit Cards | Groups emitters by linked T/O unit | Briefing command relationships or unit-level network health |\n| Emitters | Shows each radio as its own node | Debugging exact radio-to-radio links |\n\nUse filters when the workspace gets busy. Band filters such as HF, VHF, UHF, and SATCOM control which links are visible.\n\n### Add-emitter modal\n\nUse the add-emitter modal to configure a radio before it enters the workspace.\n\nImportant areas:\n\n- emitter library and saved profiles\n- identity: emitter name, unit/callsign, affiliation, icon, marker color\n- RF tab: frequency, bandwidth, modulation, waveform\n- transmitter and receiver parameters\n- antenna settings\n- link budget settings\n- network and location tabs\n\nClick **Add to Workspace** when the emitter should become a workspace card. Place it on the map later when geography matters.\n\n### Nets and frequencies\n\nA link requires compatible RF settings. In practical terms, check:\n\n- same waveform\n- same frequency or compatible channel\n- band visibility filter is enabled\n- both nodes are present in the current workspace mode\n- placement exists when terrain analysis is expected\n\n### Unit Cards vs Emitters\n\nUse **Unit Cards** when the question is organizational: which units can communicate and where the weak command paths are.\n\nUse **Emitters** when the question is technical: which radio, waveform, antenna, or placement is causing the problem.\n\n### Workspace-only vs placed emitters\n\nAn emitter can exist in EMITTERS without being placed on the map. This is useful for planning, but distance, terrain, and elevation findings depend on placement.\n\nTypical statuses:\n\n| Status | Meaning |\n|---|---|\n| In workspace | Emitter card exists |\n| Linked to T/O | Emitter belongs to a unit |\n| Placed on map | Emitter has coordinates |\n| Not placed | Emitter is not ready for terrain analysis |\n\n## MAP\n\n### Purpose\n\nMAP is the geographic workspace. It is where you place RF assets, manage overlays, draw tactical items, inspect terrain, and switch between 2D and 3D context.\n\nUse MAP for:\n\n- placing emitters\n- drawing tactical graphics\n- importing KML, KMZ, GeoJSON, and supported packages\n- organizing **Map Contents**\n- terrain heatmap and contour overlays\n- 2D/3D controls\n- weather and GPS context\n- TAK identity and stream readiness\n\n### Map Contents\n\nThe **Map Contents** panel is the operator inventory for geographic objects. It is intentionally separate from EMITTERS: a radio card can exist in EMITTERS before it is placed into Map Contents.\n\nUse Map Contents to:\n\n- search placed objects and overlays\n- create folders\n- add emitters or tactical items\n- import files\n- toggle terrain heatmap and contour overlays\n- manage shape visibility and selection\n\n### Tactical items\n\nUse tactical items for non-radio map graphics and tracks. The current workflow uses **Choose Unit Symbology** so track frames, affiliations, branches, and modifiers stay consistent with the T/O picker.\n\nCommon uses:\n\n- friendly, hostile, neutral, or unknown tracks\n- routes and control measures\n- tactical overlays\n- markers for command posts, relays, or points of interest\n\n### Placing emitters\n\nUse **Place on Map** or the map add workflow when a workspace emitter needs coordinates.\n\nPlacement matters because it drives:\n\n- distance\n- terrain obstruction\n- elevation and antenna height context\n- link quality\n- coverage interpretation\n- relay recommendations\n\n### 2D and 3D controls\n\nUse 2D for fast editing, searches, overlays, and flat planning.\n\nUse 3D for:\n\n- terrain awareness\n- line-of-sight intuition\n- elevation context\n- siting emitters on ridges, valleys, slopes, or urban terrain\n\nThe 3D overlay includes subtle orientation tools and an inclinometer for terrain-aware review.\n\n### Terrain and weather\n\nTerrain heatmap and contour overlays help reveal elevation patterns. Weather settings provide planning context for environmental effects.\n\nBefore running analysis, confirm:\n\n- terrain source is loaded or configured\n- overlays are aligned\n- emitter locations are realistic\n- weather assumptions are appropriate for the scenario\n\n### TAK identity\n\nTAK identity and streaming controls live in Settings and top-bar status areas. On the map, TAK-related context matters when RF SIM objects need to correspond to operational TAK tracks or be streamed outward.\n\n## ANALYSIS\n\n### Purpose\n\nANALYSIS is the insight workspace. It summarizes what the current scenario implies across emitters, units, terrain, location, and relationships.\n\nStart with **Operational Conclusions**, then use the detailed panels to understand the evidence behind the conclusion.\n\n### Operational conclusions\n\nOperational conclusions are the first read. They should answer:\n\n- what is ready\n- what is missing\n- where the network is fragile\n- which links or units need attention\n- whether the scenario has enough placement and RF data to support analysis\n\n### Metrics and visuals\n\nMetrics are designed to show readiness and risk without requiring the operator to inspect every item manually.\n\nLook for:\n\n- emitter readiness\n- link health\n- terrain coverage quality\n- T/O correlation\n- placement completeness\n- configuration gaps\n\n### Relationship and link panels\n\nRelationship/link panels explain which emitters or units can communicate, which links are weak, and which relationships are missing enough information.\n\nUse these panels to answer:\n\n- which units are isolated\n- which emitters are acting as hubs\n- where alternate paths exist\n- whether link failures are caused by RF mismatch, terrain, distance, or missing placement\n\n### Terrain and elevation panels\n\nTerrain/elevation panels focus on physical placement quality.\n\nThey help identify:\n\n- low-ground placements\n- likely masked links\n- ridge or relay opportunities\n- elevation-driven risks\n- terrain data gaps\n\n### T/O correlation panels\n\nT/O correlation explains whether the RF layer matches the organizational layer.\n\nCommon findings:\n\n- emitter exists but is not linked to a unit\n- unit exists but has no emitter\n- map item exists but does not correlate to T/O\n- critical command node has weak or missing RF support\n\n## AI Chat and Documents\n\n### AI Chat\n\nAI Chat can reason over the current scenario, selected context, map contents, T/O units, emitters, and analysis findings.\n\nGood prompts are specific:\n\n```text\nExplain why K CO cannot reach S6 through the current relay plan.\nList emitters that are placed on low terrain and recommend better relay positions.\nGenerate a PACE plan from the current emitter frequencies and unit hierarchy.\n```\n\n### Context selection\n\nAttach relevant map contents or scenario objects when asking focused questions. The AI performs best when the scenario has clean names, linked units, configured emitters, and realistic placement.\n\n### Document generation\n\nUse document generation for:\n\n- RF plans\n- PACE plans\n- SOI/CEOI drafts\n- AARs\n- spectrum management plans\n- terrain and relay recommendations\n\nAlways verify generated documents against the current scenario before operational use.\n\n## Settings\n\n### General, imagery, terrain, and weather\n\nSettings controls configure the environment around the workflow.\n\nCommon tasks:\n\n- choose imagery providers\n- configure terrain sources\n- set weather context\n- adjust marker and tactical display settings\n- manage workspace behavior\n\n### AI Integration\n\nUse **Settings \u003e AI Integration** to configure provider, model, relay, and connection testing.\n\nRecommended sequence:\n\n1. Choose provider.\n2. Enter credentials or relay configuration.\n3. Select model.\n4. Test connection.\n5. Run a small scenario-specific prompt before relying on long reports.\n\n### Documentation tab\n\nThe **Documentation** tab is this operator guide. It is meant to be used in-app while building and checking a scenario.\n\n## TAK\n\n### TAK settings\n\nUse **Settings \u003e TAK** to configure TAK servers, certificates, TLS server name, and streaming behavior.\n\nTypical flow:\n\n1. Create or select a TAK server profile.\n2. Set host, port, and protocol.\n3. Load required CA/client certificates.\n4. Set TLS server name when the certificate hostname differs from the IP you connect to.\n5. Test connection.\n6. Enable streaming only when the scenario is ready.\n\n### Certificates\n\nTAK certificate setup depends on your server requirements. Keep CA trust, client certificate, and password handling consistent with the TAK environment you are connecting to.\n\n### Streaming discipline\n\nBefore streaming, confirm:\n\n- object names are clean\n- affiliations are correct\n- coordinates are intentional\n- tactical symbols are appropriate\n- test objects have been removed or isolated\n\n## Site Analytics\n\n### Purpose\n\nSite Analytics is an admin-only view for usage monitoring. It helps workspace admins understand activity, provider usage, AI requests, token spend, logins, projects, and active users.\n\n### What to look for\n\nUse Site Analytics to answer:\n\n- which users are active\n- which AI providers are being used\n- how token spend is trending\n- which projects or use cases are generating load\n- whether admin-visible activity looks expected\n\n### Operational note\n\nSite Analytics is not part of RF planning. It is a workspace administration tool.\n\n## Troubleshooting\n\n### T/O problems\n\n| Symptom | Check |\n|---|---|\n| Tree is off-screen | Run **Fit View** |\n| Tree is messy | Run **Auto Layout**, then **Fit View** |\n| Unit symbol is wrong | Reopen **Select Unit Type** and choose from **Choose Unit Symbology** |\n| Unit label is confusing | Shorten name or use designator field |\n| Emitter grouping looks wrong | Confirm emitters are linked to the intended units |\n\n### EMITTERS problems\n\n| Symptom | Check |\n|---|---|\n| Expected link missing | Same waveform and same frequency |\n| Link is hidden | Band filter or workspace filter may be off |\n| Unit Card missing radio | Emitter may not be linked to the T/O unit |\n| Radio cannot be terrain-analyzed | It may not be placed on the map |\n| Workspace is cluttered | Switch between **Unit Cards** and **Emitters**, then use filters |\n\n### MAP problems\n\n| Symptom | Check |\n|---|---|\n| Imported overlay is misplaced | Confirm source projection and coordinates |\n| Terrain result looks wrong | Confirm terrain source coverage |\n| Emitter does not appear in Map Contents | It may only exist in EMITTERS |\n| 3D view looks unexpected | Check terrain provider and camera position |\n| TAK object is wrong | Check affiliation, name, symbol, and stream setting |\n\n### ANALYSIS problems\n\n| Symptom | Check |\n|---|---|\n| Conclusions say not ready | Missing emitters, placement, terrain, links, or T/O correlation |\n| Link findings look unrealistic | Check frequency, waveform, power, antenna, height, and location |\n| Terrain panels are sparse | Load or configure terrain source |\n| T/O correlation is weak | Link emitters to units and clean names/designators |\n\n### Pre-brief checklist\n\n```text\nT/O clean? Symbols and sizes correct?\nEmitters configured? Nets and waveforms checked?\nMap placements realistic? Terrain loaded?\nAnalysis ready? Weak links explained?\nAI/document output verified against scenario data?\n```";
 
 let _settingsDocumentationRendered = false;
+const SETTINGS_DOCUMENTATION_SCROLL_OFFSET = 24;
 
 function slugifySettingsDocHeading(text) {
   return String(text || "")
@@ -14890,6 +15095,17 @@ function slugifySettingsDocHeading(text) {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 80) || "section";
+}
+
+function scrollSettingsDocumentationToHeading(content, heading, behavior = "smooth") {
+  if (!content || !heading) return;
+  const contentRect = content.getBoundingClientRect();
+  const headingRect = heading.getBoundingClientRect();
+  const relativeTop = headingRect.top - contentRect.top;
+  content.scrollTo({
+    top: Math.max(0, content.scrollTop + relativeTop - SETTINGS_DOCUMENTATION_SCROLL_OFFSET),
+    behavior,
+  });
 }
 
 function renderSettingsDocumentation() {
@@ -14942,10 +15158,7 @@ function renderSettingsDocumentation() {
     link.className = `settings-docs-toc-link settings-docs-toc-link--${heading.tagName.toLowerCase()}`;
     link.addEventListener("click", (event) => {
       event.preventDefault();
-      content.scrollTo({
-        top: Math.max(0, heading.offsetTop - 10),
-        behavior: "smooth",
-      });
+      scrollSettingsDocumentationToHeading(content, heading);
       setActiveLink(link);
     });
     allLinks.push(link);
@@ -17939,21 +18152,7 @@ function buildCompactAiScenarioSummary(contextIds = [], options = {}) {
       terrains: state.terrains.length,
       planUnits: _toState.units.length,
     },
-    assets: includeAssets ? state.assets.slice(0, limits.assets).map((asset) => {
-      const toUnit = asset.toUnitId ? _toState.units.find(u => u.id === asset.toUnitId) : null;
-      return {
-        id: asset.id,
-        contentId: `asset:${asset.id}`,
-        name: asset.name,
-        unit: asset.unit ?? "",
-        force: asset.force ?? "",
-        lat: roundAiNumber(asset.lat),
-        lon: roundAiNumber(asset.lon),
-        frequencyMHz: roundAiNumber(asset.frequencyMHz, 3),
-        powerW: roundAiNumber(asset.powerW, 3),
-        toUnit: toUnit ? { label: toUnit.label, size: toUnit.size, affiliation: toUnit.affiliation, type: toUnit.type } : null,
-      };
-    }) : [],
+    assets: includeAssets ? state.assets.slice(0, limits.assets).map((asset) => serializeAssetForAi(asset)) : [],
     // importedItems: two tiers to keep token count bounded.
     // Tier 1: explicitly linked context items â€” full geometry + properties.
     // Tier 2: everything else â€” lean name/type/folder index (no geometry/properties), capped at 400.
@@ -18661,12 +18860,17 @@ function serializeAssetForAi(asset) {
   if (!asset) {
     return null;
   }
+  const linkedUnit = Number.isFinite(Number(asset.toUnitId)) ? getPlanUnitById(asset.toUnitId) : null;
+  const linkedTactical = linkedUnit ? getTacticalObjectByPlanUnitId(linkedUnit.id) : null;
   return {
     id: asset.id,
     contentId: `asset:${asset.id}`,
     kind: "asset",
     name: asset.name,
+    emitterLabel: asset.emitterLabel ?? "",
     type: asset.type ?? "",
+    emitterType: asset.ext?.emitterType ?? asset.emitterType ?? asset.type ?? "",
+    programKey: asset.ext?.programKey ?? asset.programKey ?? "",
     force: asset.force ?? "",
     unit: asset.unit ?? "",
     icon: asset.icon ?? "",
@@ -18674,12 +18878,49 @@ function serializeAssetForAi(asset) {
     notes: asset.notes ?? "",
     lat: roundAiNumber(asset.lat),
     lon: roundAiNumber(asset.lon),
+    placedOnMap: Number.isFinite(Number(asset.lat)) && Number.isFinite(Number(asset.lon)),
     frequencyMHz: roundAiNumber(asset.frequencyMHz, 3),
+    bandwidthKHz: roundAiNumber(asset.bandwidthKHz ?? asset.ext?.bandwidthKHz, 3),
+    waveform: asset.waveform ?? asset.ext?.waveform ?? "",
+    modulation: asset.modulation ?? asset.ext?.modulation ?? "",
+    duplex: asset.duplex ?? asset.ext?.duplex ?? "",
+    channelSpacingKHz: roundAiNumber(asset.channelSpacingKHz ?? asset.ext?.channelSpacingKHz, 3),
     powerW: roundAiNumber(asset.powerW, 3),
     antennaHeightM: roundAiNumber(asset.antennaHeightM, 3),
     gainDBi: roundAiNumber(asset.gainDBi ?? 2.1, 3),
+    antennaGainDbi: roundAiNumber(asset.antennaGainDbi ?? asset.gainDBi, 3),
+    antennaType: asset.antennaType ?? asset.ext?.antennaType ?? "",
+    radPattern: asset.radPattern ?? asset.ext?.radPattern ?? "",
+    polarization: asset.polarization ?? asset.ext?.polarization ?? "",
     receiverSensitivityDbm: roundAiNumber(asset.receiverSensitivityDbm ?? asset.receiverSensitivity, 3),
     systemLossDb: roundAiNumber(asset.systemLossDb ?? asset.systemLoss, 3),
+    propModel: asset.propModel ?? asset.ext?.propModel ?? "",
+    clutterType: asset.clutterType ?? asset.ext?.clutterType ?? "",
+    network: {
+      isManet: Boolean(asset.isManet ?? asset.ext?.isManet),
+      relayCapable: Boolean(asset.relayCapable ?? asset.ext?.relayCapable),
+      maxHops: roundAiNumber(asset.maxHops ?? asset.ext?.maxHops, 0),
+      satcomEnabled: Boolean(asset.satcomEnabled ?? asset.ext?.satcomEnabled),
+    },
+    nets: getEmitterNets(asset).map((net) => ({
+      id: net.id,
+      name: net.name,
+      frequencyMHz: roundAiNumber(net.frequencyMHz, 3),
+      bandwidthKHz: roundAiNumber(net.bandwidthKHz, 3),
+      waveform: net.waveform,
+    })),
+    toUnitId: linkedUnit?.id ?? null,
+    linkedUnit: linkedUnit ? {
+      contentId: buildPlanUnitContentId(linkedUnit.id),
+      id: linkedUnit.id,
+      label: linkedUnit.label,
+      designator: linkedUnit.designator,
+      affiliation: linkedUnit.affiliation,
+      type: linkedUnit.type,
+      size: linkedUnit.size,
+      mapContentId: linkedTactical ? buildTacticalContentId(linkedTactical.id) : null,
+      placedOnMap: Boolean(linkedTactical),
+    } : null,
     groundElevationM: roundAiNumber(asset.groundElevationM, 2),
     workspaceVisible: asset.workspaceVisible === true,
     hidden: state.hiddenContentIds.has(`asset:${asset.id}`),
@@ -19853,9 +20094,14 @@ function buildAiSystemPrompt(spec, { activeViewProfile, activeAgentProfile, loca
     lines.push(
       "If map or simulation changes are needed, return JSON only with {\"assistantMessage\":\"string\",\"actions\":[...]}.",
       "If no changes are needed, you may answer in plain text.",
-      "Supported actions: set-map-view, focus-map-content, set-settings, set-weather, set-imagery, set-emitter-form, add-asset, update-asset, remove-asset, place-plan-unit, place-marker, draw-shape, update-shape, remove-shape, update-unit, remove-unit, set-planning-parameters, set-planning-region, run-simulation, run-planning, set-site-study, run-site-study, inspect-site-candidate, promote-site-candidate, toggle-3d, check-los, sample-terrain, generate-document.",
+      "Supported actions: set-map-view, focus-map-content, set-settings, set-weather, set-imagery, set-emitter-form, add-emitter, add-asset, update-asset, link-emitter-to-unit, remove-asset, create-unit, create-unit-tree, link-units, unlink-units, place-plan-unit, place-marker, draw-shape, draw-overlay, update-shape, remove-shape, update-unit, remove-unit, set-planning-parameters, set-planning-region, run-simulation, run-planning, set-site-study, run-site-study, inspect-site-candidate, promote-site-candidate, toggle-3d, check-los, sample-terrain, generate-document.",
       "Use exact ids from the scenario summary. For newly added assets in the same reply, use placedIndex for run-simulation instead of assetId.",
-      "Use place-marker for points, pins, and markers; use draw-shape for circles, polygons, and lines.",
+      "Use create-unit for one T/O unit; create-unit-tree for a parent/child T/O hierarchy; link-units to change command relationships; place-plan-unit to put an existing T/O unit on the map.",
+      "Use add-emitter for emitter workspace creation. Include toUnitId/unitRef/linkToUnit when linking to T/O, and placeOnMap/lat/lon/contentRef when it should also be on the map. Use update-asset to adjust frequencyMHz, waveform, modulation, bandwidthKHz, propModel, or placement.",
+      "Use place-marker for points, pins, and markers; use draw-shape for circles, polygons, and lines; use draw-overlay with features for complex multi-shape overlays. Geometry may be normal lat/lon objects or GeoJSON-style coordinates.",
+      "Propagation model aliases are accepted: free-space -> itu-p525, terrain -> itu-p526, terrain and weather -> itu-hybrid, buildings/building -> itu-buildings-weather. Set gridMeters and radiusMeters/radiusKm from the user's wording.",
+      "Map placement references can target any mapContents item by contentId/name, including drawn shapes, imported overlays, placed units, and emitters. Use placementMode like inside, center, near, adjacent, north-of, south-of, east-of, or west-of.",
+      "Common unit type ids include infantry, light_infantry, mechanized_infantry, engineer, logistics, military_intelligence, signal, ew, artillery, air_defense, armor, recon, headquarters, medical, maintenance, cyber, special_forces, aviation_fixed, aviation_rotary, naval_surface, submarine, and space.",
       "Use sample-terrain for elevation or terrain-height questions."
     );
   }
@@ -19999,12 +20245,19 @@ async function callAiPlanningAssistant(prompt, images = [], files = [], contextI
     "  set-weather           â†’ temperatureC?, humidity?, pressure?, windSpeed?",
     "  set-imagery           â†’ basemap?",
     "  set-emitter-form      â†’ (emitter fields â€” pre-fills the UI form only, does NOT place an asset. Do NOT use this when placing assets â€” use add-asset instead.)",
-    "  add-asset             â†’ lat, lon OR contentId/contentRef/inside/nameRef + placementMode + distanceMeters, emitterType, name, force?, unit?, frequencyMHz, powerW, antennaHeightM, antennaGainDbi, receiverSensitivityDbm, systemLossDb, notes?",
-    "  update-asset          â†’ assetId (exact id), lat?, lon?, emitterType?, name?, force?, unit?, frequencyMHz?, powerW?, antennaHeightM?, antennaGainDbi?, receiverSensitivityDbm?, systemLossDb?",
+    "  add-emitter           â†’ creates an emitter workspace card; include toUnitId/unitRef/linkToUnit to link T/O, and placeOnMap/lat/lon/contentRef when it should also be placed.",
+    "  add-asset             â†’ lat, lon OR contentId/contentRef/inside/nameRef + placementMode + distanceMeters, emitterType, name, force?, unit?, frequencyMHz, waveform?, bandwidthKHz?, powerW, antennaHeightM, antennaGainDbi, receiverSensitivityDbm, systemLossDb, notes?",
+    "  update-asset          â†’ assetId (exact id), lat?, lon?, emitterType?, name?, force?, unit?, frequencyMHz?, waveform?, bandwidthKHz?, modulation?, propModel?, powerW?, antennaHeightM?, antennaGainDbi?, receiverSensitivityDbm?, systemLossDb?",
+    "  link-emitter-to-unit  â†’ assetId/emitterId + unitId/planUnitId/unitName/designator",
     "  remove-asset          â†’ assetId (exact id)",
+    "  create-unit           â†’ label/name?, designator?, affiliation?, unitType?, size?, parentUnitId/parentName?, optional map placement",
+    "  create-unit-tree      â†’ units/tree array with nested children; creates T/O units and parent-child links",
+    "  link-units            â†’ parentUnitId/parentName + childUnitId/childName",
+    "  unlink-units          â†’ childUnitId/childName",
     "  place-plan-unit       â†’ planUnitId or unitId/name/designator + lat, lon OR contentId/contentRef/inside/nameRef + placementMode + distanceMeters, optional name/designator/remarks. Use this when plotting units that already exist in the T/O view so the tactical marker inherits the correct icon, affiliation, type, and size.",
     "  place-marker          â†’ lat, lon, name?, color? (#hex), size? (pt, default 24, range 8â€“64), outlineColor? (#hex), outlineWidth? (px) â€” drops a styled point marker on the map. USE THIS (not draw-shape) whenever the user asks to mark a city, location, landmark, or place a point/pin/marker.",
-    "  draw-shape            â†’ shapeType (circle|rectangle|polyline|polygon), name?, color?, coordinates [{lat,lon}], radiusM? (circle only), fillOpacity?, weight?",
+    "  draw-shape            â†’ shapeType (circle|rectangle|polyline|polygon), name?, color?, coordinates [{lat,lon}] or GeoJSON geometry, radiusM? (circle only), fillOpacity?, weight?",
+    "  draw-overlay          â†’ name?, features[] where each feature is a draw-shape payload for complex overlays",
     "  update-shape          â†’ shapeId or name (use exact item name or id), newName?, color?, fillOpacity?, weight?, lineStyle?, radiusM? (resize circle by regenerating from its center), coordinates?, lat?, lon?, size?, icon?, outlineColor?, outlineWidth? â€” also updates point markers",
     "  remove-shape          â†’ shapeId or name",
     "  update-unit           â†’ unitId or name, newName?/label?, designator?, affiliation?, unitType?, size?, x?, y?",
@@ -20279,7 +20532,7 @@ async function callAiPlanningAssistant(prompt, images = [], files = [], contextI
     '  {"type":"place-marker","lat":34.6937,"lon":135.5023,"name":"Osaka","color":"#ff3333","size":30}',
     "",
     "GENERAL RULES:",
-    "- ONLY use action type strings from the list above. 'radio', 'jammer', 'PRC-163' etc. are NOT action types â€” they are emitterType values inside add-asset.",
+    "- ONLY use action type strings from the list above. 'radio', 'jammer', 'PRC-163' etc. are NOT action types; they are emitterType values inside add-emitter/add-asset.",
     "- ALWAYS use the exact `id` field from the assets array for assetId â€” never use name as ID.",
     "- For existing assets (in the assets[] list), use their id in run-simulation directly.",
     "- For assets placed THIS batch, use placedIndex.",
@@ -20374,7 +20627,10 @@ async function callAiPlanningAssistant(prompt, images = [], files = [], contextI
       "Answer briefly and precisely.",
       "If no map or simulation changes are needed, reply in plain text.",
       "If changes are needed, return JSON only with {\"assistantMessage\":\"string\",\"actions\":[...]}",
-      "Supported action types: set-map-view, focus-map-content, set-settings, set-weather, set-imagery, set-emitter-form, add-asset, update-asset, remove-asset, place-marker, draw-shape, update-shape, remove-shape, update-unit, remove-unit, set-planning-parameters, set-planning-region, set-site-study, run-simulation, run-planning, run-site-study, inspect-site-candidate, promote-site-candidate, toggle-3d, check-los, sample-terrain, generate-document.",
+      "Supported action types: set-map-view, focus-map-content, set-settings, set-weather, set-imagery, set-emitter-form, add-emitter, add-asset, update-asset, link-emitter-to-unit, remove-asset, create-unit, create-unit-tree, link-units, unlink-units, place-plan-unit, place-marker, draw-shape, draw-overlay, update-shape, remove-shape, update-unit, remove-unit, set-planning-parameters, set-planning-region, set-site-study, run-simulation, run-planning, run-site-study, inspect-site-candidate, promote-site-candidate, toggle-3d, check-los, sample-terrain, generate-document.",
+      "add-emitter creates an emitter workspace card; include waveform, bandwidthKHz, frequencyMHz, propModel, unitRef/toUnitId/linkToUnit, and optional placeOnMap/contentRef/lat/lon.",
+      "create-unit creates one T/O unit; create-unit-tree accepts nested children and builds parent-child links. Common unitType values: infantry, engineer, logistics, military_intelligence, signal, ew, artillery, air_defense, armor, recon, headquarters, aviation_rotary.",
+      "run-simulation accepts propagationModel aliases: free-space, terrain, terrain and weather, building/buildings; always set gridMeters and radiusMeters/radiusKm when the user specifies them.",
       "place-marker: {\"type\":\"place-marker\",\"lat\":N,\"lon\":N,\"name\":\"string\",\"color\":\"#hex\",\"size\":pt,\"outlineColor\":\"#hex\",\"outlineWidth\":px}. Use this â€” NOT draw-shape â€” whenever the user asks to mark a city, location, landmark, or place a point/pin/marker. color sets dot color, size sets dot size in pt (8â€“64, default 24). One action per location. NEVER use draw-shape circle for this.",
       "draw-shape: {\"type\":\"draw-shape\",\"shapeType\":\"circle|rectangle|polyline|polygon\",\"name\":\"string\",\"color\":\"#hex\",\"fillOpacity\":0.0-1.0,\"weight\":pixels,\"radiusM\":meters(circle only),\"coordinates\":[{\"lat\":N,\"lon\":N}]}. For circles: shapeType=circle, coordinates[0] is center, radiusM is radius. ALWAYS use this when user asks to draw/highlight a circle area, polygon, or line.",
       "sample-terrain: {\"type\":\"sample-terrain\",\"points\":[{\"lat\":N,\"lon\":N,\"name\":\"string\"}],\"bounds\":{\"north\":N,\"south\":N,\"east\":N,\"west\":N},\"gridN\":5}. Use when user asks about elevation, highest/lowest point, or terrain height.",
@@ -21451,7 +21707,7 @@ async function executeAiActions(actions) {
   const placedAssetIds = [];
   const touchedObjects = [];
   const terrainSampleResults = [];
-  const hasAddAsset = actions.some((a) => a.type === "add-asset");
+  const hasAddAsset = actions.some((a) => ["add-asset", "add-emitter", "create-emitter", "create-asset", "place-emitter"].includes(a.type));
   for (const action of actions) {
     // Suppress set-emitter-form noise when add-asset is also in the batch
     if (action.type === "set-emitter-form" && hasAddAsset) continue;
@@ -21508,8 +21764,9 @@ async function executeAiActions(actions) {
 }
 
 function resolveAiPlacementCoordinates(action) {
-  let lat = Number(action.lat ?? action.coordinates?.lat);
-  let lon = Number(action.lon ?? action.lng ?? action.coordinates?.lon);
+  const coordinatePoint = normalizeAiLatLngCoordinate(action.coordinates ?? action.center);
+  let lat = Number(action.lat ?? coordinatePoint?.lat);
+  let lon = Number(action.lon ?? action.lng ?? coordinatePoint?.lng);
   let placementSource = "";
   let placementRelation = "";
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
@@ -21602,9 +21859,410 @@ function tryPlaceAiPlanUnitAsTactical(action, coordinates, touchedObjects) {
   };
 }
 
+function normalizeAiEmitterForce(value = "friendly") {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (["enemy", "hostile", "opfor", "red"].includes(normalized)) return "enemy";
+  if (["neutral", "host-nation", "host nation", "hn", "green"].includes(normalized)) return "host-nation";
+  if (["civilian", "civ", "unknown", "yellow"].includes(normalized)) return "civilian";
+  if (["other", "white"].includes(normalized)) return "other";
+  return "friendly";
+}
+
+function normalizeAiPropagationModel(value = "") {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw) return "";
+  if (["itu-p525", "p525", "free-space", "free space", "fspl", "free space path loss"].includes(raw)) {
+    return "itu-p525";
+  }
+  if (["itu-p526", "p526", "terrain", "terrain-only", "diffraction", "terrain diffraction"].includes(raw)) {
+    return "itu-p526";
+  }
+  if (["itu-hybrid", "hybrid", "terrain+weather", "terrain/weather", "terrain and weather", "terrain weather", "weather", "weather-aware"].includes(raw)) {
+    return "itu-hybrid";
+  }
+  if (["itu-buildings-weather", "building", "buildings", "urban", "building and weather", "buildings and weather", "terrain+buildings", "terrain/buildings", "terrain weather buildings"].includes(raw)) {
+    return "itu-buildings-weather";
+  }
+  return raw;
+}
+
+function normalizeAiEmitterNetRecord(net, index = 0) {
+  if (!net || typeof net !== "object") {
+    return null;
+  }
+  const record = buildEmitterNetRecord({
+    id: net.id,
+    name: net.name ?? net.waveform ?? `Net ${index + 1}`,
+    frequencyMHz: net.frequencyMHz ?? net.frequency ?? net.freqMHz,
+    bandwidthKHz: net.bandwidthKHz ?? net.bandwidth,
+    waveform: net.waveform ?? net.mode ?? net.modulation ?? "",
+  }, index);
+  return Number.isFinite(Number(record.frequencyMHz))
+    || Number.isFinite(Number(record.bandwidthKHz))
+    || Boolean(record.waveform || record.name)
+    ? record
+    : null;
+}
+
+function buildAiEmitterProfilePayload(source = {}) {
+  const src = source && typeof source === "object" ? source : {};
+  const profile = src.profile && typeof src.profile === "object" ? src.profile : {};
+  const profileRf = profile.rf && typeof profile.rf === "object" ? profile.rf : {};
+  const profileTx = profile.tx && typeof profile.tx === "object" ? profile.tx : {};
+  const profileRx = profile.rx && typeof profile.rx === "object" ? profile.rx : {};
+  const profileAntenna = profile.antenna && typeof profile.antenna === "object" ? profile.antenna : {};
+  const profileProp = profile.prop && typeof profile.prop === "object" ? profile.prop : {};
+  const profileNetwork = profile.network && typeof profile.network === "object" ? profile.network : {};
+  const profileLocation = profile.locationDefaults && typeof profile.locationDefaults === "object" ? profile.locationDefaults : {};
+  const profileRadar = profile.radar && typeof profile.radar === "object" ? profile.radar : {};
+  const rawEmitterType = String(
+    src.emitterLibraryType
+      ?? src.profileType
+      ?? src.radioType
+      ?? src.model
+      ?? src.emitterModel
+      ?? src.emitterType
+      ?? profile.emitterType
+      ?? "",
+  ).trim();
+  const rawType = String(src.assetType ?? src.equipmentType ?? src.icon ?? src.emitterIcon ?? src.type ?? profile.type ?? "").trim().toLowerCase();
+  const iconType = EMITTER_ICONS[rawType] ? rawType : (EMITTER_ICONS[rawEmitterType.toLowerCase()] ? rawEmitterType.toLowerCase() : "radio");
+  const propagationModel = normalizeAiPropagationModel(src.propagationModel ?? src.propModel ?? profileProp.model);
+  return normalizeEmitterProfilePayload({
+    ...profile,
+    emitterType: rawEmitterType || profile.emitterType || "",
+    programKey: src.programKey ?? src.program ?? profile.programKey ?? "",
+    type: iconType,
+    emitterLabel: src.emitterLabel ?? src.label ?? rawEmitterType ?? profile.emitterLabel ?? iconType,
+    force: normalizeAiEmitterForce(src.force ?? src.affiliation ?? profile.force),
+    name: src.name ?? src.assetName ?? src.callsign ?? profile.name ?? "",
+    unit: src.unit ?? src.unitName ?? src.callsign ?? profile.unit ?? "",
+    icon: iconType,
+    color: src.color ?? profile.color ?? FORCE_COLORS[normalizeAiEmitterForce(src.force ?? src.affiliation ?? profile.force)] ?? FORCE_COLORS.friendly,
+    notes: src.notes ?? src.remarks ?? profile.notes ?? "",
+    rf: {
+      ...profileRf,
+      frequencyMHz: src.frequencyMHz ?? src.freqMHz ?? src.frequency ?? profileRf.frequencyMHz,
+      bandwidthKHz: src.bandwidthKHz ?? src.bandwidth ?? profileRf.bandwidthKHz,
+      modulation: src.modulation ?? profileRf.modulation,
+      waveform: src.waveform ?? src.mode ?? profileRf.waveform,
+      duplex: src.duplex ?? src.duplexMode ?? profileRf.duplex,
+      channelSpacingKHz: src.channelSpacingKHz ?? src.channelSpacing ?? profileRf.channelSpacingKHz,
+    },
+    tx: {
+      ...profileTx,
+      powerW: src.powerW ?? src.txPowerW ?? profileTx.powerW,
+      dutyCycle: src.dutyCycle ?? profileTx.dutyCycle,
+      papr: src.papr ?? profileTx.papr,
+      spectralEfficiency: src.spectralEfficiency ?? profileTx.spectralEfficiency,
+    },
+    rx: {
+      ...profileRx,
+      sensitivityDbm: src.receiverSensitivityDbm ?? src.rxSensitivityDbm ?? src.sensitivityDbm ?? profileRx.sensitivityDbm,
+      noiseFigDb: src.noiseFigDb ?? profileRx.noiseFigDb,
+      requiredSnrDb: src.requiredSnrDb ?? profileRx.requiredSnrDb,
+      acrDb: src.acrDb ?? profileRx.acrDb,
+      bdrDb: src.bdrDb ?? profileRx.bdrDb,
+    },
+    antenna: {
+      ...profileAntenna,
+      type: src.antennaType ?? profileAntenna.type,
+      gainDbi: src.antennaGainDbi ?? src.gainDbi ?? src.gainDBi ?? profileAntenna.gainDbi,
+      pattern: src.radPattern ?? src.antennaPattern ?? profileAntenna.pattern,
+      polarization: src.polarization ?? profileAntenna.polarization,
+      heightM: src.antennaHeightM ?? src.heightM ?? profileAntenna.heightM,
+      cableLossDb: src.cableLossDb ?? profileAntenna.cableLossDb,
+      systemLossDb: src.systemLossDb ?? src.systemLoss ?? profileAntenna.systemLossDb,
+    },
+    prop: {
+      ...profileProp,
+      model: propagationModel || profileProp.model,
+      clutter: src.clutterType ?? src.clutter ?? profileProp.clutter,
+      terrainEnabled: src.terrainEnabled ?? profileProp.terrainEnabled,
+      diffractionEnabled: src.diffractionEnabled ?? profileProp.diffractionEnabled,
+      nvisEnabled: src.nvisEnabled ?? profileProp.nvisEnabled,
+      ionoModel: src.ionoModel ?? profileProp.ionoModel,
+      timeDayEffects: src.timeDayEffects ?? profileProp.timeDayEffects,
+      solarIndex: src.solarIndex ?? profileProp.solarIndex,
+    },
+    network: {
+      ...profileNetwork,
+      isManet: src.isManet ?? src.manet ?? profileNetwork.isManet,
+      relayCapable: src.relayCapable ?? profileNetwork.relayCapable,
+      maxHops: src.maxHops ?? profileNetwork.maxHops,
+      latencyMs: src.latencyMs ?? profileNetwork.latencyMs,
+      adaptiveDataRate: src.adaptiveDataRate ?? profileNetwork.adaptiveDataRate,
+      satcomEnabled: src.satcomEnabled ?? src.satcom ?? profileNetwork.satcomEnabled,
+      satType: src.satType ?? profileNetwork.satType,
+      satUplinkMHz: src.satUplinkMHz ?? profileNetwork.satUplinkMHz,
+      satDownlinkMHz: src.satDownlinkMHz ?? profileNetwork.satDownlinkMHz,
+      satGainDbi: src.satGainDbi ?? profileNetwork.satGainDbi,
+    },
+    locationDefaults: {
+      ...profileLocation,
+      gridLocation: src.gridLocation ?? profileLocation.gridLocation,
+      colocateAssetId: src.colocateAssetId ?? profileLocation.colocateAssetId,
+    },
+    radar: {
+      ...profileRadar,
+      mode: src.radarMode ?? profileRadar.mode,
+      pulseWidthUs: src.pulseWidthUs ?? profileRadar.pulseWidthUs,
+      prfHz: src.prfHz ?? profileRadar.prfHz,
+      scanType: src.scanType ?? profileRadar.scanType,
+    },
+  });
+}
+
+function buildAiEmitterAssetData(source = {}) {
+  const profilePayload = buildAiEmitterProfilePayload(source);
+  const assetData = buildEmitterAssetFromProfilePayload(profilePayload);
+  const src = source && typeof source === "object" ? source : {};
+  const linkedUnit = resolveToUnitReference(
+    src.toUnitId
+      ?? src.unitId
+      ?? src.planUnitId
+      ?? src.linkedUnitId
+      ?? src.linkedUnit
+      ?? src.unitRef
+      ?? src.linkToUnit,
+  );
+  if (linkedUnit) {
+    assetData.toUnitId = linkedUnit.id;
+    assetData.unit = assetData.unit || linkedUnit.designator || linkedUnit.label || "";
+  }
+  if (Array.isArray(src.nets)) {
+    const nets = src.nets.map((net, index) => normalizeAiEmitterNetRecord(net, index)).filter(Boolean);
+    if (nets.length) {
+      assetData.ext.nets = nets;
+      syncPrimaryEmitterNetToAsset(assetData);
+    }
+  }
+  return assetData;
+}
+
+function createPlacedEmitterAssetFromData(assetData, coordinates, { placedAssetIds = [], touchedObjects = [] } = {}) {
+  if (!coordinates || !Number.isFinite(Number(coordinates.lat)) || !Number.isFinite(Number(coordinates.lon))) {
+    return null;
+  }
+  const assetLat = Number(coordinates.lat);
+  const assetLon = Number(coordinates.lon);
+  const asset = stampContentRecord({
+    id: generateId(),
+    ...assetData,
+    lat: assetLat,
+    lon: assetLon,
+    groundElevationM: sampleTerrainElevation(assetLat, assetLon),
+    workspaceVisible: true,
+  });
+  syncPrimaryEmitterNetToAsset(asset);
+  const marker = L.marker({ lat: assetLat, lng: assetLon }, {
+    icon: createEmitterIcon(asset),
+    pane: getMapContentPaneName(`asset:${asset.id}`),
+  }).addTo(state.map);
+  marker.bindPopup(renderAssetPopup(asset));
+  marker.on("contextmenu", (e) => openMapContentMenuForLeafletEvent(e, `asset:${asset.id}`));
+  applyAssetLabel(asset);
+  state.assetMarkers.set(asset.id, marker);
+  ensureTakMetadataForAsset(asset);
+  state.assets.push(asset);
+  syncEmitterAssetStoredToLink(asset);
+  renderAssets();
+  refreshEmitterWorkspaceViews({ assetId: asset.id, topology: true });
+  renderToView();
+  renderMapContents();
+  syncCesiumEntities();
+  saveMapState();
+  if (isTakStreamingEnabledForContent(`asset:${asset.id}`)) {
+    void publishTakContentById(`asset:${asset.id}`);
+  }
+  if (!Number.isFinite(asset.groundElevationM) && usesConfiguredCesiumTerrain()) {
+    refreshAssetGroundElevation(asset).catch(() => {});
+  }
+  scheduleTopoRefresh();
+  placedAssetIds.push(asset.id);
+  rememberAiActionObject(touchedObjects, buildAiRecentActionObject("asset", asset));
+  return asset;
+}
+
+function applyAiEmitterChangesToAsset(asset, source = {}) {
+  const changes = normalizeAiEmitterData(source);
+  if (changes.ext && typeof changes.ext === "object") {
+    asset.ext = { ...(asset.ext && typeof asset.ext === "object" ? asset.ext : {}), ...changes.ext };
+    delete changes.ext;
+  }
+  Object.assign(asset, changes);
+  if (Array.isArray(source?.nets)) {
+    const nets = source.nets.map((net, index) => normalizeAiEmitterNetRecord(net, index)).filter(Boolean);
+    if (nets.length) {
+      asset.ext = asset.ext && typeof asset.ext === "object" ? asset.ext : {};
+      asset.ext.nets = nets;
+    }
+  } else if (["frequencyMHz", "freqMHz", "bandwidthKHz", "waveform", "mode"].some((key) => typeof source?.[key] !== "undefined")) {
+    asset.ext = asset.ext && typeof asset.ext === "object" ? asset.ext : {};
+    const nets = getEmitterNets(asset);
+    const primary = {
+      ...(nets[0] || buildPrimaryEmitterNetFromAsset(asset)),
+      frequencyMHz: asset.frequencyMHz,
+      bandwidthKHz: asset.bandwidthKHz ?? asset.ext.bandwidthKHz,
+      waveform: asset.waveform || asset.ext.waveform || "",
+    };
+    asset.ext.nets = [buildEmitterNetRecord(primary, 0), ...nets.slice(1)];
+  }
+  syncPrimaryEmitterNetToAsset(asset);
+  const unit = resolveToUnitReference(source?.toUnitId ?? source?.unitId ?? source?.planUnitId ?? source?.linkedUnit ?? source?.unitRef ?? source?.linkToUnit);
+  if (unit) {
+    syncEmitterAssetToPlanUnit(asset, unit.id);
+  } else if (source?.toUnitId === null || source?.unitId === null || source?.linkedUnit === null || source?.unitRef === null) {
+    syncEmitterAssetToPlanUnit(asset, null);
+  } else {
+    syncEmitterAssetStoredToLink(asset);
+  }
+}
+
+function buildAiPlanUnitProps(source = {}, index = 0) {
+  const spawn = getDefaultPlanSpawnPosition();
+  const type = normalizeToUnitType(
+    source.catalogId
+      ?? source.unitType
+      ?? source.unitTypeId
+      ?? source.symbolType
+      ?? source.branch
+      ?? source.role
+      ?? source.type
+      ?? DEFAULT_MILSTD_UNIT_ID,
+  );
+  const size = normalizeAiPlanUnitSize(type, source.size ?? source.echelon ?? source.unitSize ?? DEFAULT_TO_UNIT_SIZE);
+  const designator = String(source.designator ?? source.callsign ?? source.shortName ?? "").trim();
+  const label = String(source.label ?? source.name ?? "").trim() || designator || buildDefaultToUnitLabel(size, type);
+  return {
+    label,
+    designator,
+    affiliation: normalizeTacticalAffiliation(source.affiliation ?? source.force ?? "friendly"),
+    type,
+    catalogId: type,
+    size,
+    x: Number.isFinite(Number(source.x)) ? Number(source.x) : spawn.x + (index * 42),
+    y: Number.isFinite(Number(source.y)) ? Number(source.y) : spawn.y + (index * 34),
+  };
+}
+
+function createAiPlanUnit(source = {}, { touchedObjects = [], index = 0 } = {}) {
+  const unit = addToUnit(buildAiPlanUnitProps(source, index));
+  rememberAiActionObject(touchedObjects, buildAiRecentActionObject("unit", unit));
+  return unit;
+}
+
+function setAiPlanUnitParent(childReference, parentReference) {
+  const child = typeof childReference === "object" && childReference?.id
+    ? getPlanUnitById(childReference.id)
+    : resolveToUnitReference(childReference);
+  const parent = typeof parentReference === "object" && parentReference?.id
+    ? getPlanUnitById(parentReference.id)
+    : resolveToUnitReference(parentReference);
+  if (!child || !parent) {
+    return { linked: false, reason: "not-found", child, parent };
+  }
+  if (!canCreateToLink(parent.id, child.id)) {
+    return { linked: false, reason: "cycle", child, parent };
+  }
+  _toState.links = _toState.links.filter((link) => Number(link.childId) !== Number(child.id));
+  _toState.links.push({ parentId: parent.id, childId: child.id });
+  renderToView();
+  syncTacticalObjectFromPlanUnit(child.id);
+  saveMapState();
+  requestToAutoLayoutAndFit();
+  return { linked: true, child, parent };
+}
+
+function unlinkAiPlanUnitParent(childReference) {
+  const child = typeof childReference === "object" && childReference?.id
+    ? getPlanUnitById(childReference.id)
+    : resolveToUnitReference(childReference);
+  if (!child) {
+    return { unlinked: false, reason: "not-found", child: null };
+  }
+  const before = _toState.links.length;
+  _toState.links = _toState.links.filter((link) => Number(link.childId) !== Number(child.id));
+  const unlinked = _toState.links.length !== before;
+  if (unlinked) {
+    renderToView();
+    saveMapState();
+    requestToAutoLayoutAndFit();
+  }
+  return { unlinked, child };
+}
+
+function normalizeAiLatLngCoordinate(value) {
+  if (!value) return null;
+  if (typeof value === "object" && !Array.isArray(value)) {
+    const lat = Number(value.lat ?? value.latitude ?? value.y);
+    const lon = Number(value.lon ?? value.lng ?? value.longitude ?? value.x);
+    return Number.isFinite(lat) && Number.isFinite(lon) ? { lat, lng: lon } : null;
+  }
+  if (Array.isArray(value) && value.length >= 2) {
+    const a = Number(value[0]);
+    const b = Number(value[1]);
+    if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+    return Math.abs(a) > 90 && Math.abs(b) <= 90
+      ? { lat: b, lng: a }
+      : { lat: a, lng: b };
+  }
+  return null;
+}
+
+function getAiShapeCoordinates(action = {}) {
+  const geometry = action.geometry && typeof action.geometry === "object" ? action.geometry : null;
+  if (geometry?.type === "Point") {
+    return [geometry.coordinates].map(normalizeAiLatLngCoordinate).filter(Boolean);
+  }
+  if (geometry?.type === "LineString") {
+    return (Array.isArray(geometry.coordinates) ? geometry.coordinates : []).map(normalizeAiLatLngCoordinate).filter(Boolean);
+  }
+  if (geometry?.type === "Polygon") {
+    const ring = Array.isArray(geometry.coordinates?.[0]) ? geometry.coordinates[0] : [];
+    return ring.map(normalizeAiLatLngCoordinate).filter(Boolean);
+  }
+  if (geometry?.type === "MultiLineString") {
+    const line = Array.isArray(geometry.coordinates?.[0]) ? geometry.coordinates[0] : [];
+    return line.map(normalizeAiLatLngCoordinate).filter(Boolean);
+  }
+  if (geometry?.type === "MultiPolygon") {
+    const ring = Array.isArray(geometry.coordinates?.[0]?.[0]) ? geometry.coordinates[0][0] : [];
+    return ring.map(normalizeAiLatLngCoordinate).filter(Boolean);
+  }
+  if (Array.isArray(action.coordinates)) {
+    return action.coordinates.map(normalizeAiLatLngCoordinate).filter(Boolean);
+  }
+  if (action.center) {
+    const center = normalizeAiLatLngCoordinate(action.center);
+    return center ? [center] : [];
+  }
+  if (Number.isFinite(Number(action.lat)) && Number.isFinite(Number(action.lon ?? action.lng))) {
+    return [{ lat: Number(action.lat), lng: Number(action.lon ?? action.lng) }];
+  }
+  const placement = resolveAiPlacementCoordinates(action);
+  return placement ? [{ lat: placement.lat, lng: placement.lon }] : [];
+}
+
 async function executeAiAction(action, { placedAssetIds = [], touchedObjects = [] } = {}) {
   if (!action || typeof action.type !== "string") {
     return "I couldn't apply one action because it was malformed.";
+  }
+  const normalizedActionType = {
+    "create-emitter": "add-emitter",
+    "create-asset": "add-emitter",
+    "place-emitter": "add-emitter",
+    "update-emitter": "update-asset",
+    "create-unit": "create-unit",
+    "create-to-unit": "create-unit",
+    "add-unit": "create-unit",
+    "create-unit-tree": "create-unit-tree",
+    "create-to-tree": "create-unit-tree",
+    "add-unit-tree": "create-unit-tree",
+    "draw-overlay": "draw-overlay",
+  }[action.type] || action.type;
+  if (normalizedActionType !== action.type) {
+    action = { ...action, type: normalizedActionType };
   }
 
   if (action.type === "set-map-view") {
@@ -21698,9 +22356,39 @@ async function executeAiAction(action, { placedAssetIds = [], touchedObjects = [
     return "Updated the emitter form draft.";
   }
 
+  if (action.type === "add-emitter") {
+    await ensureEmitterLibraryLoaded().catch(() => EMPTY_EMITTER_LIBRARY);
+    const emitterSource = action.asset && typeof action.asset === "object" ? { ...action.asset, ...action } : action;
+    const assetData = buildAiEmitterAssetData(emitterSource);
+    const hasPlacementIntent = action.placeOnMap === true
+      || Number.isFinite(Number(emitterSource.lat))
+      || Number.isFinite(Number(emitterSource.lon))
+      || Boolean(emitterSource.coordinates)
+      || Boolean(emitterSource.contentId ?? emitterSource.contentRef ?? emitterSource.relativeTo ?? emitterSource.reference ?? emitterSource.anchorRef ?? emitterSource.inside ?? emitterSource.within ?? emitterSource.nameRef ?? emitterSource.targetArea);
+    if (hasPlacementIntent) {
+      const placement = resolveAiPlacementCoordinates(emitterSource);
+      if (!placement) {
+        return `I couldn't place the emitter because I couldn't resolve ${emitterSource.contentRef || emitterSource.relativeTo || emitterSource.reference || "a valid map location"}.`;
+      }
+      const asset = createPlacedEmitterAssetFromData(assetData, placement, { placedAssetIds, touchedObjects });
+      if (!asset) {
+        return "I couldn't create the emitter because the map coordinates were invalid.";
+      }
+      const placementLabel = placement.placementSource
+        ? ` ${String(placement.placementRelation || "near").replace(/-/g, " ")} ${placement.placementSource}`
+        : "";
+      return `[**${asset.name}**](asset:${asset.id}) added to the emitter workspace and placed${placementLabel} at ${placement.lat.toFixed(5)}, ${placement.lon.toFixed(5)}.`;
+    }
+    const asset = addAssetToWorkspace(assetData);
+    renderToView();
+    rememberAiActionObject(touchedObjects, buildAiRecentActionObject("asset", asset));
+    return `[**${asset.name}**](asset:${asset.id}) added to the emitter workspace.`;
+  }
+
   if (action.type === "add-asset") {
-    let assetLat = Number(action.lat);
-    let assetLon = Number(action.lon);
+    const explicitCoordinate = normalizeAiLatLngCoordinate(action.coordinates);
+    let assetLat = Number(action.lat ?? explicitCoordinate?.lat);
+    let assetLon = Number(action.lon ?? action.lng ?? explicitCoordinate?.lng);
     let placementSource = "";
     let placementRelation = "";
     if (!Number.isFinite(assetLat) || !Number.isFinite(assetLon)) {
@@ -21726,53 +22414,12 @@ async function executeAiAction(action, { placedAssetIds = [], touchedObjects = [
       placementSource = placement.source;
       placementRelation = placement.relation;
     }
-    const emitterData = normalizeAiEmitterData(action.asset ?? action);
-    // Build asset directly â€” do NOT route through the shared emitter form so we
-    // don't accidentally inherit stale form state or overwrite it for subsequent placements.
-    const newAsset = stampContentRecord({
-      id: generateId(),
-      type: emitterData.type ?? "radio",
-      force: emitterData.force ?? "friendly",
-      name: emitterData.name ?? "Asset",
-      unit: emitterData.unit ?? "",
-      frequencyMHz: Number.isFinite(emitterData.frequencyMHz) ? emitterData.frequencyMHz : 150,
-      powerW: Number.isFinite(emitterData.powerW) ? emitterData.powerW : 5,
-      antennaHeightM: Number.isFinite(emitterData.antennaHeightM) ? emitterData.antennaHeightM : 2,
-      antennaGainDbi: Number.isFinite(emitterData.antennaGainDbi) ? emitterData.antennaGainDbi : 2.15,
-      receiverSensitivityDbm: Number.isFinite(emitterData.receiverSensitivityDbm) ? emitterData.receiverSensitivityDbm : -107,
-      systemLossDb: Number.isFinite(emitterData.systemLossDb) ? emitterData.systemLossDb : 3,
-      icon: emitterData.icon ?? "",
-      color: emitterData.color ?? FORCE_COLORS["friendly"],
-      notes: emitterData.notes ?? "",
-      lat: assetLat,
-      lon: assetLon,
-      groundElevationM: sampleTerrainElevation(assetLat, assetLon),
-    });
-    const latlng = { lat: assetLat, lng: assetLon };
-    const marker = L.marker(latlng, {
-      icon: createEmitterIcon(newAsset),
-      pane: getMapContentPaneName(`asset:${newAsset.id}`),
-    }).addTo(state.map);
-    marker.bindPopup(renderAssetPopup(newAsset));
-    marker.on("contextmenu", (e) => openMapContentMenuForLeafletEvent(e, `asset:${newAsset.id}`));
-    applyAssetLabel(newAsset);
-    state.assetMarkers.set(newAsset.id, marker);
-    ensureTakMetadataForAsset(newAsset);
-    state.assets.push(newAsset);
-    renderAssets();
-    syncCesiumEntities();
-    renderMapContents();
-    saveMapState();
-    if (isTakStreamingEnabledForContent(`asset:${newAsset.id}`)) {
-      void publishTakContentById(`asset:${newAsset.id}`);
+    await ensureEmitterLibraryLoaded().catch(() => EMPTY_EMITTER_LIBRARY);
+    const emitterData = buildAiEmitterAssetData(action.asset && typeof action.asset === "object" ? { ...action.asset, ...action } : action);
+    const newAsset = createPlacedEmitterAssetFromData(emitterData, { lat: assetLat, lon: assetLon }, { placedAssetIds, touchedObjects });
+    if (!newAsset) {
+      return "I couldn't place the asset because the requested coordinates were invalid.";
     }
-    if (!Number.isFinite(newAsset.groundElevationM) && usesConfiguredCesiumTerrain()) {
-      refreshAssetGroundElevation(newAsset).catch(() => {});
-    }
-    scheduleTopoRefresh();
-    // Track so subsequent run-simulation actions in this batch can target it
-    placedAssetIds.push(newAsset.id);
-    rememberAiActionObject(touchedObjects, buildAiRecentActionObject("asset", newAsset));
     const relationLabel = placementRelation
       ? placementRelation.replace(/-/g, " ")
       : "near";
@@ -21786,25 +22433,46 @@ async function executeAiAction(action, { placedAssetIds = [], touchedObjects = [
     if (!asset) {
       return `I couldn't update the asset${assetReference ? ` "${assetReference}"` : ""} because it was not found.`;
     }
-    Object.assign(asset, normalizeAiEmitterData(action.changes ?? action));
-    if (Number.isFinite(Number(action.lat))) {
-      asset.lat = Number(action.lat);
+    const updateSource = action.changes && typeof action.changes === "object" ? { ...action.changes, ...action } : action;
+    applyAiEmitterChangesToAsset(asset, updateSource);
+    const explicitPlacement = resolveAiPlacementCoordinates(updateSource);
+    if (explicitPlacement) {
+      asset.lat = explicitPlacement.lat;
+      asset.lon = explicitPlacement.lon;
+    } else {
+      if (Number.isFinite(Number(updateSource.lat))) {
+        asset.lat = Number(updateSource.lat);
+      }
+      if (Number.isFinite(Number(updateSource.lon ?? updateSource.lng))) {
+        asset.lon = Number(updateSource.lon ?? updateSource.lng);
+      }
     }
-    if (Number.isFinite(Number(action.lon))) {
-      asset.lon = Number(action.lon);
+    if (Number.isFinite(Number(asset.lat)) && Number.isFinite(Number(asset.lon))) {
+      asset.groundElevationM = sampleTerrainElevation(asset.lat, asset.lon);
+      asset.workspaceVisible = true;
     }
-    asset.groundElevationM = sampleTerrainElevation(asset.lat, asset.lon);
     asset.version = (asset.version ?? 1) + 1;
     asset.lastModified = nowIso();
     ensureTakMetadataForAsset(asset);
-    const marker = state.assetMarkers.get(asset.id);
-    if (marker) {
+    let marker = state.assetMarkers.get(asset.id);
+    if (marker && Number.isFinite(Number(asset.lat)) && Number.isFinite(Number(asset.lon))) {
       marker.setLatLng([asset.lat, asset.lon]);
+    } else if (!marker && Number.isFinite(Number(asset.lat)) && Number.isFinite(Number(asset.lon))) {
+      marker = L.marker([asset.lat, asset.lon], {
+        icon: createEmitterIcon(asset),
+        pane: getMapContentPaneName(`asset:${asset.id}`),
+      }).addTo(state.map);
+      marker.bindPopup(renderAssetPopup(asset));
+      marker.on("contextmenu", (e) => openMapContentMenuForLeafletEvent(e, `asset:${asset.id}`));
+      state.assetMarkers.set(asset.id, marker);
     }
     updateAssetMarker(asset);
     renderAssets();
+    refreshEmitterWorkspaceViews({ assetId: asset.id, topology: true });
+    renderToView();
     renderMapContents();
     syncCesiumEntities();
+    saveMapState();
     if (!Number.isFinite(asset.groundElevationM) && usesConfiguredCesiumTerrain()) {
       refreshAssetGroundElevation(asset).catch(() => {});
     }
@@ -21816,6 +22484,29 @@ async function executeAiAction(action, { placedAssetIds = [], touchedObjects = [
     return `Updated ${asset.name}.`;
   }
 
+  if (action.type === "link-emitter-to-unit") {
+    const assetReference = action.assetId ?? action.emitterId ?? action.assetName ?? action.emitterName ?? action.name;
+    const unitReference = action.unitId ?? action.planUnitId ?? action.unitName ?? action.designator ?? action.toUnitId ?? action.toUnit;
+    const asset = resolveAssetReference(assetReference);
+    const unit = resolveToUnitReference(unitReference);
+    if (!asset || !unit) {
+      return `I couldn't link the emitter because ${!asset ? "the emitter was not found" : "the T/O unit was not found"}.`;
+    }
+    syncEmitterAssetToPlanUnit(asset, unit.id);
+    asset.unit = asset.unit || unit.designator || unit.label || "";
+    asset.version = (asset.version ?? 1) + 1;
+    asset.lastModified = nowIso();
+    renderAssets();
+    refreshEmitterWorkspaceViews({ assetId: asset.id, topology: true });
+    renderToView();
+    renderMapContents();
+    syncCesiumEntities();
+    saveMapState();
+    rememberAiActionObject(touchedObjects, buildAiRecentActionObject("asset", asset));
+    rememberAiActionObject(touchedObjects, buildAiRecentActionObject("unit", unit));
+    return `Linked emitter "${asset.name}" to T/O unit "${unit.label || unit.designator || unit.id}".`;
+  }
+
   if (action.type === "remove-asset") {
     const assetReference = action.assetId ?? action.name;
     const asset = resolveAssetReference(assetReference);
@@ -21825,6 +22516,110 @@ async function executeAiAction(action, { placedAssetIds = [], touchedObjects = [
     forgetAiRecentActionObject("asset", asset.id);
     removeAsset(asset.id);
     return `Removed ${asset.name}.`;
+  }
+
+  if (action.type === "create-unit") {
+    const unit = createAiPlanUnit(action, { touchedObjects });
+    const parentReference = action.parentUnitId ?? action.parentId ?? action.parent ?? action.parentName ?? action.parentRef;
+    if (parentReference !== undefined && parentReference !== null && String(parentReference).trim()) {
+      const linked = setAiPlanUnitParent(unit, parentReference);
+      if (!linked.linked) {
+        return `Created T/O unit "${unit.label}", but couldn't link it to the requested parent.`;
+      }
+    } else {
+      renderToView();
+      saveMapState();
+    }
+    const placement = (action.placeOnMap === true
+      || Number.isFinite(Number(action.lat))
+      || Number.isFinite(Number(action.lon ?? action.lng))
+      || Boolean(action.coordinates)
+      || action.contentRef
+      || action.relativeTo
+      || action.reference)
+      ? resolveAiPlacementCoordinates(action)
+      : null;
+    if (placement) {
+      upsertTacticalObjectFromPlanUnit(unit, action, placement);
+    }
+    renderToView();
+    renderMapContents();
+    requestToAutoLayoutAndFit();
+    return `Created T/O unit "${unit.label}"${placement ? " and placed it on the map" : ""}.`;
+  }
+
+  if (action.type === "create-unit-tree") {
+    const sourceRoots = Array.isArray(action.units)
+      ? action.units
+      : Array.isArray(action.tree)
+        ? action.tree
+        : (action.root && typeof action.root === "object")
+          ? [action.root]
+          : [];
+    if (!sourceRoots.length) {
+      return "I couldn't create the T/O tree because no units were provided.";
+    }
+    const createdByRef = new Map();
+    const pendingLinks = [];
+    let createdCount = 0;
+    const getNodeRef = (node, fallback) => String(
+      node.ref
+        ?? node.key
+        ?? node.tempId
+        ?? node.localId
+        ?? node.id
+        ?? node.designator
+        ?? node.label
+        ?? node.name
+        ?? fallback,
+    ).trim();
+    const visit = (node, parentRef = "") => {
+      if (!node || typeof node !== "object") return;
+      const nodeRef = getNodeRef(node, `node-${createdCount + 1}`);
+      const unit = createAiPlanUnit(node, { touchedObjects, index: createdCount });
+      createdCount += 1;
+      createdByRef.set(nodeRef, unit);
+      createdByRef.set(String(unit.id), unit);
+      const explicitParent = node.parentUnitId ?? node.parentId ?? node.parent ?? node.parentRef ?? parentRef;
+      if (explicitParent) {
+        pendingLinks.push({ child: unit, parentRef: String(explicitParent).trim() });
+      }
+      (Array.isArray(node.children) ? node.children : []).forEach((child) => visit(child, nodeRef));
+    };
+    sourceRoots.forEach((node) => visit(node, action.parentUnitId ?? action.parentId ?? action.parent ?? action.parentRef ?? ""));
+    let linkCount = 0;
+    pendingLinks.forEach(({ child, parentRef }) => {
+      const parent = createdByRef.get(parentRef) || resolveToUnitReference(parentRef);
+      const linked = setAiPlanUnitParent(child, parent || parentRef);
+      if (linked.linked) linkCount += 1;
+    });
+    renderToView();
+    saveMapState();
+    requestToAutoLayoutAndFit();
+    return `Created ${createdCount} T/O unit${createdCount === 1 ? "" : "s"} and ${linkCount} parent-child link${linkCount === 1 ? "" : "s"}.`;
+  }
+
+  if (action.type === "link-units") {
+    const linked = setAiPlanUnitParent(
+      action.childUnitId ?? action.childId ?? action.child ?? action.childName,
+      action.parentUnitId ?? action.parentId ?? action.parent ?? action.parentName,
+    );
+    if (!linked.linked) {
+      return linked.reason === "cycle"
+        ? "I couldn't link those units because that would create a hierarchy cycle."
+        : "I couldn't link those units because one of them was not found.";
+    }
+    rememberAiActionObject(touchedObjects, buildAiRecentActionObject("unit", linked.child));
+    rememberAiActionObject(touchedObjects, buildAiRecentActionObject("unit", linked.parent));
+    return `Linked "${linked.child.label || linked.child.designator}" under "${linked.parent.label || linked.parent.designator}".`;
+  }
+
+  if (action.type === "unlink-units") {
+    const result = unlinkAiPlanUnitParent(action.childUnitId ?? action.childId ?? action.child ?? action.childName ?? action.unitId ?? action.name);
+    if (!result.child) {
+      return "I couldn't unlink the unit because it was not found.";
+    }
+    return result.unlinked ? `Removed the parent link from "${result.child.label || result.child.designator}".` : `"${result.child.label || result.child.designator}" did not have a parent link.`;
   }
 
   if (action.type === "set-planning-parameters") {
@@ -21904,14 +22699,15 @@ async function executeAiAction(action, { placedAssetIds = [], touchedObjects = [
       return `I couldn't run the simulation because no valid asset was selected${action.assetId || action.assetName ? ` for ${action.assetId ?? action.assetName}` : ""}.`;
     }
     dom.assetSelect.value = targetAsset.id;
-    if (typeof action.propagationModel === "string") {
-      dom.propagationModel.value = action.propagationModel;
+    const normalizedPropagationModel = normalizeAiPropagationModel(action.propagationModel ?? action.model ?? action.propagation);
+    if (normalizedPropagationModel) {
+      dom.propagationModel.value = normalizedPropagationModel;
     }
     if (Number.isFinite(Number(action.receiverHeight))) {
       dom.receiverHeight.value = String(Number(action.receiverHeight));
     }
-    if (Number.isFinite(Number(action.gridMeters))) {
-      dom.gridMeters.value = String(Number(action.gridMeters));
+    if (Number.isFinite(Number(action.gridMeters ?? action.gridStepMeters ?? action.gridStepM))) {
+      dom.gridMeters.value = String(Number(action.gridMeters ?? action.gridStepMeters ?? action.gridStepM));
     }
     if (typeof action.radiusUnit === "string" && ["m", "km", "mi"].includes(action.radiusUnit)) {
       syncCoverageRadiusInput(action.radiusUnit, Number.isFinite(Number(action.radiusMeters)) ? Number(action.radiusMeters) : null);
@@ -21922,6 +22718,9 @@ async function executeAiAction(action, { placedAssetIds = [], touchedObjects = [
       dom.radiusUnit.dataset.previousUnit = dom.radiusUnit.value;
     } else if (Number.isFinite(Number(action.radiusKm))) {
       setSimulationRadiusFromMeters(Number(action.radiusKm) * 1000, typeof action.radiusUnit === "string" ? action.radiusUnit : "km");
+      dom.radiusUnit.dataset.previousUnit = dom.radiusUnit.value;
+    } else if (Number.isFinite(Number(action.radiusMi ?? action.radiusMiles))) {
+      setSimulationRadiusFromMeters(Number(action.radiusMi ?? action.radiusMiles) * 1609.344, typeof action.radiusUnit === "string" ? action.radiusUnit : "mi");
       dom.radiusUnit.dataset.previousUnit = dom.radiusUnit.value;
     }
     if (Number.isFinite(Number(action.opacity))) {
@@ -22099,10 +22898,34 @@ async function executeAiAction(action, { placedAssetIds = [], touchedObjects = [
     return `Placed [**${tactical.name}**](${buildTacticalContentId(tactical.id)}) from Plan unit "${unit.label || unit.designator || unit.id}"${placementLabel} at ${placement.lat.toFixed(5)}, ${placement.lon.toFixed(5)}.`;
   }
 
+  if (action.type === "draw-overlay") {
+    const features = Array.isArray(action.features)
+      ? action.features
+      : Array.isArray(action.shapes)
+        ? action.shapes
+        : [];
+    if (!features.length) {
+      return "I couldn't draw the overlay because no features were provided.";
+    }
+    const results = [];
+    for (const feature of features) {
+      const result = await executeAiAction({
+        ...feature,
+        type: "draw-shape",
+        color: feature.color ?? action.color,
+        lineStyle: feature.lineStyle ?? action.lineStyle,
+        fillOpacity: feature.fillOpacity ?? action.fillOpacity,
+        weight: feature.weight ?? action.weight,
+      }, { placedAssetIds, touchedObjects });
+      if (result) results.push(result);
+    }
+    return `Drew overlay "${action.name || "Overlay"}" with ${results.length} feature${results.length === 1 ? "" : "s"}.`;
+  }
+
   if (action.type === "draw-shape") {
-    const rawCoords = Array.isArray(action.coordinates) ? action.coordinates : [];
+    const rawCoords = getAiShapeCoordinates(action);
     if (rawCoords.length === 0) return "I couldn't draw the shape because no coordinates were provided.";
-    const toLatLng = (c) => ({ lat: Number(c.lat ?? c[0]), lng: Number(c.lon ?? c.lng ?? c[1]) });
+    const toLatLng = (c) => normalizeAiLatLngCoordinate(c) ?? { lat: Number.NaN, lng: Number.NaN };
     const shapeStyle = {
       color: typeof action.color === "string" ? action.color : DRAW_DEFAULTS.color,
       fillColor: typeof action.color === "string" ? action.color : DRAW_DEFAULTS.color,
@@ -22110,7 +22933,12 @@ async function executeAiAction(action, { placedAssetIds = [], touchedObjects = [
       fillOpacity: Number.isFinite(Number(action.fillOpacity)) ? Number(action.fillOpacity) : DRAW_DEFAULTS.fillOpacity,
       weight: Number.isFinite(Number(action.weight)) ? Number(action.weight) : DRAW_DEFAULTS.weight,
     };
-    const shapeType = (action.shapeType ?? "polygon").toLowerCase();
+    const inferredShapeType = action.geometry?.type === "Point"
+      ? "point"
+      : action.geometry?.type === "LineString" || action.geometry?.type === "MultiLineString"
+        ? "polyline"
+        : "polygon";
+    const shapeType = (action.shapeType ?? inferredShapeType).toLowerCase();
     let geometryType, coords, labelPrefix;
 
     if (shapeType === "point" || shapeType === "marker") {
@@ -22269,13 +23097,13 @@ async function executeAiAction(action, { placedAssetIds = [], touchedObjects = [
       unit.designator = action.designator.trim();
     }
     if (typeof action.affiliation === "string" && action.affiliation.trim()) {
-      unit.affiliation = action.affiliation.trim();
+      unit.affiliation = normalizeTacticalAffiliation(action.affiliation.trim());
     }
     if (typeof action.unitType === "string" && action.unitType.trim()) {
       unit.type = normalizeToUnitType(action.unitType.trim());
     }
     if (typeof action.size === "string" && action.size.trim()) {
-      unit.size = action.size.trim();
+      unit.size = normalizeAiPlanUnitSize(unit.type, action.size.trim());
     }
     if (Number.isFinite(Number(action.x))) {
       unit.x = Number(action.x);
@@ -22284,7 +23112,12 @@ async function executeAiAction(action, { placedAssetIds = [], touchedObjects = [
       unit.y = Number(action.y);
     }
     unit.type = normalizeToUnitType(unit.type);
+    unit.size = normalizeAiPlanUnitSize(unit.type, unit.size);
     unit.label = (unit.label || "").trim() || (unit.designator || "").trim() || buildDefaultToUnitLabel(unit.size, unit.type);
+    const parentReference = action.parentUnitId ?? action.parentId ?? action.parent ?? action.parentName ?? action.parentRef;
+    if (parentReference !== undefined && parentReference !== null && String(parentReference).trim()) {
+      setAiPlanUnitParent(unit, parentReference);
+    }
     renderToView();
     syncTacticalObjectFromPlanUnit(unit.id);
     saveMapState();
@@ -22450,15 +23283,26 @@ function normalizeAiEmitterData(source) {
   // doesn't look like an action discriminator (action types are hyphenated).
   const rawType = source.emitterType ?? source.type;
   if (typeof rawType === "string" && !rawType.includes("-")) {
-    normalized.type = rawType;
+    normalized.type = EMITTER_ICONS[rawType] ? rawType : "radio";
+    normalized.emitterLabel = source.emitterLabel ?? rawType;
   }
-  ["force", "name", "unit", "icon", "color", "notes"].forEach((key) => {
+  ["name", "unit", "icon", "color", "notes", "emitterLabel", "waveform", "modulation", "duplex", "antennaType", "radPattern", "polarization", "propModel", "clutterType", "radarMode", "scanType"].forEach((key) => {
     if (typeof source[key] !== "undefined") {
       normalized[key] = source[key];
     }
   });
+  if (typeof source.force !== "undefined" || typeof source.affiliation !== "undefined") {
+    normalized.force = normalizeAiEmitterForce(source.force ?? source.affiliation);
+  }
+  const normalizedPropagationModel = normalizeAiPropagationModel(source.propagationModel ?? source.propModel);
+  if (normalizedPropagationModel) {
+    normalized.propModel = normalizedPropagationModel;
+  }
   if (Number.isFinite(Number(source.frequencyMHz))) {
     normalized.frequencyMHz = Number(source.frequencyMHz);
+  }
+  if (Number.isFinite(Number(source.freqMHz))) {
+    normalized.frequencyMHz = Number(source.freqMHz);
   }
   if (Number.isFinite(Number(source.powerW))) {
     normalized.powerW = Number(source.powerW);
@@ -22474,6 +23318,72 @@ function normalizeAiEmitterData(source) {
   }
   if (Number.isFinite(Number(source.systemLossDb))) {
     normalized.systemLossDb = Number(source.systemLossDb);
+  }
+  [
+    "bandwidthKHz",
+    "channelSpacingKHz",
+    "dutyCycle",
+    "papr",
+    "spectralEfficiency",
+    "noiseFigDb",
+    "requiredSnrDb",
+    "acrDb",
+    "bdrDb",
+    "cableLossDb",
+    "pulseWidthUs",
+    "prfHz",
+    "maxHops",
+    "latencyMs",
+    "satUplinkMHz",
+    "satDownlinkMHz",
+    "satGainDbi",
+  ].forEach((key) => {
+    if (Number.isFinite(Number(source[key]))) {
+      normalized[key] = Number(source[key]);
+    }
+  });
+  ["terrainEnabled", "diffractionEnabled", "nvisEnabled", "timeDayEffects", "isManet", "relayCapable", "adaptiveDataRate", "satcomEnabled"].forEach((key) => {
+    if (typeof source[key] === "boolean") {
+      normalized[key] = source[key];
+    }
+  });
+  const extKeys = [
+    "bandwidthKHz",
+    "waveform",
+    "modulation",
+    "duplex",
+    "channelSpacingKHz",
+    "antennaType",
+    "radPattern",
+    "polarization",
+    "propModel",
+    "clutterType",
+    "terrainEnabled",
+    "diffractionEnabled",
+    "nvisEnabled",
+    "timeDayEffects",
+    "isManet",
+    "relayCapable",
+    "adaptiveDataRate",
+    "satcomEnabled",
+    "maxHops",
+    "latencyMs",
+    "satUplinkMHz",
+    "satDownlinkMHz",
+    "satGainDbi",
+    "radarMode",
+    "pulseWidthUs",
+    "prfHz",
+    "scanType",
+  ];
+  const ext = {};
+  extKeys.forEach((key) => {
+    if (typeof normalized[key] !== "undefined") {
+      ext[key] = normalized[key];
+    }
+  });
+  if (Object.keys(ext).length) {
+    normalized.ext = ext;
   }
   return normalized;
 }
@@ -22966,7 +23876,7 @@ function getPlacementDistanceMeters(options = {}) {
 function buildPlacementReferenceGeometry(entry, importedItem = null) {
   if (entry.id.startsWith("asset:")) {
     const asset = state.assets.find((item) => `asset:${item.id}` === entry.id);
-    if (!asset) {
+    if (!asset || !Number.isFinite(Number(asset.lat)) || !Number.isFinite(Number(asset.lon))) {
       return null;
     }
     const point = { lat: asset.lat, lng: asset.lon };
@@ -22976,6 +23886,62 @@ function buildPlacementReferenceGeometry(entry, importedItem = null) {
       center: point,
       bounds: null,
       source: entry.name,
+      contentId: entry.id,
+    };
+  }
+
+  if (entry.id.startsWith("plan-unit:")) {
+    const planUnit = getPlanUnitById(entry.id.slice("plan-unit:".length));
+    const tactical = planUnit ? getTacticalObjectByPlanUnitId(planUnit.id) : null;
+    if (tactical) {
+      return buildPlacementReferenceGeometry({
+        ...entry,
+        id: buildTacticalContentId(tactical.id),
+        name: entry.name || tactical.name,
+      }, importedItem);
+    }
+    return null;
+  }
+
+  if (entry.id.startsWith("tactical:")) {
+    const tactical = getTacticalObjectById(entry.id.slice("tactical:".length));
+    if (!tactical) {
+      return null;
+    }
+    if (tactical.geometryType === "Point") {
+      const point = normalizeLeafletPoint({
+        lat: tactical.coordinates?.[0],
+        lng: tactical.coordinates?.[1],
+      });
+      if (!point) {
+        return null;
+      }
+      return {
+        kind: "point",
+        point,
+        center: point,
+        bounds: L.latLngBounds([point]),
+        source: entry.name || tactical.name,
+        contentId: entry.id,
+      };
+    }
+    const points = flattenLeafletLatLngs((tactical.coordinates || []).map((coord) => ({
+      lat: coord?.[0],
+      lng: coord?.[1],
+    })));
+    if (!points.length) {
+      return null;
+    }
+    const bounds = L.latLngBounds(points);
+    const center = normalizeLeafletPoint(bounds.getCenter()) ?? points[0];
+    const centroid = tactical.geometryType === "Polygon" ? computePolygonCentroid(points) : null;
+    return {
+      kind: tactical.geometryType === "Polygon" ? "polygon" : "line",
+      polygon: tactical.geometryType === "Polygon" ? points : null,
+      point: centroid ?? center,
+      center,
+      bounds,
+      source: entry.name || tactical.name,
       contentId: entry.id,
     };
   }
@@ -23265,6 +24231,9 @@ function updateImageryMenuValue(labelOverride = null) {
 }
 
 function onMapClick(event) {
+  if (Date.now() < (state.mapLasso?.ignoreClickUntil || 0)) {
+    return;
+  }
   if (state.draw.mode) {
     onDrawClick(event.latlng);
     return;
@@ -23456,6 +24425,10 @@ function finishTacticalRelocation(latlng) {
   object.coordinates = [Number(latlng.lat), Number(latlng.lng)];
   object.lastModified = nowIso();
   renderTacticalObjectLayer(object);
+  if (Number.isFinite(Number(object.linkedPlanUnitId))) {
+    renderAssets();
+    refreshEmitterWorkspaceViews({ topology: true });
+  }
   const after = snapshotTacticalForRelocation(object);
   pushEditUndoEntry(`Relocated ${object.name || "unit"}`, [before], () => [after]);
   saveMapState();
@@ -23631,13 +24604,16 @@ function addAssetToWorkspace(formData) {
   });
   clearPendingToLink();
 
+  syncPrimaryEmitterNetToAsset(asset);
   ensureTakMetadataForAsset(asset);
   state.assets.push(asset);
+  syncEmitterAssetStoredToLink(asset);
   _emittersWorkspaceState.selectedAssetId = asset.id;
   renderAssets();
-  renderTopologyView();
-  centerEmittersWorkspaceOnAssets({ assetId: asset.id });
+  refreshEmitterWorkspaceViews({ assetId: asset.id, center: true, topology: true });
+  syncCesiumEntities();
   saveMapState();
+  return asset;
 }
 
 function addAsset(latlng) {
@@ -23666,7 +24642,9 @@ function addAsset(latlng) {
   state.assetMarkers.set(asset.id, marker);
   ensureTakMetadataForAsset(asset);
   state.assets.push(asset);
+  syncEmitterAssetStoredToLink(asset);
   renderAssets();
+  refreshEmitterWorkspaceViews({ assetId: asset.id, topology: true });
   syncCesiumEntities();
 
   saveMapState();
@@ -23942,6 +24920,23 @@ function renderEmittersView() {
   });
 }
 
+function refreshEmitterWorkspaceViews({ assetId = "", center = false, topology = false } = {}) {
+  if (state.ui?.currentView === "emitters") {
+    renderEmittersWorkspace();
+    if (center || assetId) {
+      requestAnimationFrame(() => {
+        centerEmittersWorkspaceOnAssets({ assetId });
+      });
+    }
+  }
+  if (topology && state.ui?.currentView === "topology") {
+    renderTopologyView();
+  }
+  if (state.ui?.currentView === "analyze") {
+    renderAnalyzeView();
+  }
+}
+
 function buildEmitterWorkspaceDefaultLayout(index = 0) {
   const columnCount = 4;
   const column = index % columnCount;
@@ -24186,9 +25181,11 @@ function duplicateEmitterAssetById(assetId) {
   });
   ensureTakMetadataForAsset(dupe);
   state.assets.push(dupe);
+  syncEmitterAssetStoredToLink(dupe);
   _emittersWorkspaceState.selectedAssetId = dupe.id;
   renderAssets();
   renderTopologyView();
+  syncCesiumEntities();
   saveMapState();
   setStatus(`Duplicated ${original.name || "Emitter"}.`);
   return dupe;
@@ -24199,6 +25196,7 @@ function deleteEmitterAssetById(assetId) {
   const asset = state.assets.find((entry) => entry.id === assetId) || null;
   if (!asset) return false;
   const name = asset.name || "Emitter";
+  removeAssetIdFromMappedTacticalObjects(assetId);
   state.assets = state.assets.filter((entry) => entry.id !== assetId);
   const marker = state.assetMarkers.get(assetId);
   if (marker) {
@@ -24210,6 +25208,7 @@ function deleteEmitterAssetById(assetId) {
   }
   renderAssets();
   renderTopologyView();
+  syncCesiumEntities();
   saveMapState();
   setStatus(`Deleted ${name}.`);
   return true;
@@ -24220,13 +25219,15 @@ function unlinkEmitterAssetById(assetId) {
   const asset = state.assets.find((entry) => entry.id === assetId) || null;
   if (!asset || !Number.isFinite(Number(asset.toUnitId))) return false;
   const assetName = asset.name || asset.emitterLabel || "Emitter";
-  delete asset.toUnitId;
+  syncEmitterAssetToPlanUnit(asset, null);
   if (_currentEmitterEditId === assetId) {
     updateEmitterToLinkBadge(null);
   }
   refreshLinkedViews();
   renderAssets();
   renderTopologyView();
+  renderMapContents();
+  syncCesiumEntities();
   saveMapState();
   setStatus(`Unlinked ${assetName} from its T/O unit.`);
   return true;
@@ -26345,7 +27346,7 @@ function setStatus(message, isError = false) {
   if (!dom.statusBadge) {
     return;
   }
-  dom.statusBadge.textContent = message;
+  dom.statusBadge.textContent = formatApiErrorValue(message) || "";
   dom.statusBadge.style.color = isError ? "#ff9f9f" : "";
 }
 
@@ -27532,7 +28533,42 @@ function updateCesiumOsmBuildingsVisibility(viewer = state.cesiumViewer) {
   state.cesiumOsmBuildingsTileset.show = shouldDisplayCesiumOsmBuildings(viewer);
 }
 
-function updateCesiumCompass() {
+function normalizeSignedDegrees(degrees = 0) {
+  return ((Number(degrees) + 540) % 360) - 180;
+}
+
+function setCesiumCameraTiltAndRotation({ tiltDegrees = null, rotationDegrees = null } = {}) {
+  if (!state.cesiumViewer || !window.Cesium) {
+    return;
+  }
+  const camera = state.cesiumViewer.camera;
+  const position = camera.positionCartographic;
+  if (!position) {
+    return;
+  }
+  const currentTilt = clamp(90 + window.Cesium.Math.toDegrees(camera.pitch), 0, 90);
+  const currentRotation = normalizeSignedDegrees(window.Cesium.Math.toDegrees(camera.heading));
+  const nextTilt = Number.isFinite(Number(tiltDegrees)) ? clamp(Number(tiltDegrees), 0, 90) : currentTilt;
+  const nextRotation = Number.isFinite(Number(rotationDegrees)) ? normalizeSignedDegrees(Number(rotationDegrees)) : currentRotation;
+  camera.setView({
+    destination: window.Cesium.Cartesian3.fromRadians(position.longitude, position.latitude, position.height),
+    orientation: {
+      heading: window.Cesium.Math.toRadians(nextRotation),
+      pitch: window.Cesium.Math.toRadians(nextTilt - 90),
+      roll: 0,
+    },
+  });
+  updateCesiumCompass();
+}
+
+function onCesiumCameraSliderInput() {
+  setCesiumCameraTiltAndRotation({
+    tiltDegrees: dom.cesiumTiltSlider?.value,
+    rotationDegrees: dom.cesiumRotationSlider?.value,
+  });
+}
+
+function updateCesiumCompassLegacy() {
   if (!state.cesiumViewer) {
     return;
   }
@@ -27550,6 +28586,26 @@ function updateCesiumCompass() {
   }
   if (dom.cesiumPitchValue) dom.cesiumPitchValue.textContent = `${Math.round(tiltDegrees)}°`;
   if (dom.cesiumRollValue) dom.cesiumRollValue.textContent = `${Math.round(normalizedRoll)}°`;
+}
+
+function updateCesiumCompass() {
+  if (!state.cesiumViewer) {
+    return;
+  }
+
+  const camera = state.cesiumViewer.camera;
+  const headingDegrees = window.Cesium.Math.toDegrees(camera.heading);
+  const pitchDegrees = window.Cesium.Math.toDegrees(camera.pitch);
+  const tiltDegrees = clamp(90 + pitchDegrees, 0, 90);
+  const normalizedHeading = normalizeSignedDegrees(headingDegrees);
+  dom.cesiumCompassRose.style.transform = `rotate(${-headingDegrees}deg)`;
+  if (dom.cesiumPitchValue) dom.cesiumPitchValue.textContent = `${Math.round(tiltDegrees)}Â°`;
+  if (dom.cesiumRollValue) dom.cesiumRollValue.textContent = `${Math.round(normalizedHeading)}Â°`;
+  const degreeSymbol = String.fromCharCode(176);
+  if (dom.cesiumPitchValue) dom.cesiumPitchValue.textContent = `${Math.round(tiltDegrees)}${degreeSymbol}`;
+  if (dom.cesiumRollValue) dom.cesiumRollValue.textContent = `${Math.round(normalizedHeading)}${degreeSymbol}`;
+  if (dom.cesiumTiltSlider) dom.cesiumTiltSlider.value = String(Math.round(tiltDegrees));
+  if (dom.cesiumRotationSlider) dom.cesiumRotationSlider.value = String(Math.round(normalizedHeading));
 }
 
 function resetCesiumNorthUp() {
@@ -29866,14 +30922,491 @@ function toggleFolderCollapsed(folderId) {
 
 // â”€â”€ Multi-select â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-function toggleMcSelectMode() {
-  state.mcSelectMode = !state.mcSelectMode;
-  if (!state.mcSelectMode) {
+function openMcSelectToolMenu(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  if (!dom.mcSelectDropdown || !dom.mcSelectBtn) {
+    return;
+  }
+  closeDrawDropdown();
+  closeMapContentsMenu();
+  const rect = dom.mcSelectBtn.getBoundingClientRect();
+  const width = Math.max(148, dom.mcSelectDropdown.offsetWidth || 148);
+  const left = Math.min(
+    Math.max(8, rect.left + (rect.width / 2) - (width / 2)),
+    Math.max(8, window.innerWidth - width - 8),
+  );
+  dom.mcSelectDropdown.style.left = `${left}px`;
+  dom.mcSelectDropdown.style.top = `${Math.round(rect.bottom + 6)}px`;
+  dom.mcSelectDropdown.style.minWidth = `${width}px`;
+  dom.mcSelectDropdown.classList.remove("hidden");
+}
+
+function closeMcSelectToolMenu() {
+  dom.mcSelectDropdown?.classList.add("hidden");
+}
+
+function onMcSelectToolMenuClick(event) {
+  event.stopPropagation();
+  const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+  const button = target?.closest("#mcSelectLassoBtn");
+  if (!button) {
+    return;
+  }
+  startMapLassoSelection();
+}
+
+function getMapLassoContainerPoint(event) {
+  if (!state.map) {
+    return null;
+  }
+  const rect = state.map.getContainer().getBoundingClientRect();
+  const x = clamp(event.clientX - rect.left, 0, rect.width);
+  const y = clamp(event.clientY - rect.top, 0, rect.height);
+  return L.point(x, y);
+}
+
+function getMapLassoLatLng(event) {
+  const point = getMapLassoContainerPoint(event);
+  return point ? state.map.containerPointToLatLng(point) : null;
+}
+
+function rememberAndDisableMapLassoHandlers() {
+  const map = state.map;
+  if (!map) {
+    return;
+  }
+  const handlerNames = ["dragging", "doubleClickZoom", "boxZoom", "keyboard"];
+  const handlerStates = {};
+  handlerNames.forEach((name) => {
+    const handler = map[name];
+    const enabled = Boolean(handler?.enabled?.());
+    handlerStates[name] = enabled;
+    if (enabled) {
+      handler.disable();
+    }
+  });
+  state.mapLasso.handlerStates = handlerStates;
+}
+
+function restoreMapLassoHandlers() {
+  const map = state.map;
+  const handlerStates = state.mapLasso.handlerStates || {};
+  if (!map) {
+    return;
+  }
+  Object.entries(handlerStates).forEach(([name, wasEnabled]) => {
+    if (wasEnabled) {
+      map[name]?.enable?.();
+    }
+  });
+  state.mapLasso.handlerStates = null;
+}
+
+function updateMapLassoPreview() {
+  const lasso = state.mapLasso;
+  if (!state.map || !lasso.drawing || lasso.points.length < 2) {
+    return;
+  }
+  const previewOptions = {
+    color: "#8fb7ff",
+    weight: 2,
+    opacity: 0.95,
+    fillColor: "#8fb7ff",
+    fillOpacity: 0.12,
+    dashArray: "5 4",
+    interactive: false,
+    pane: "overlayPane",
+  };
+  if (lasso.previewLayer) {
+    lasso.previewLayer.remove();
+    lasso.previewLayer = null;
+  }
+  lasso.previewLayer = lasso.points.length >= 3
+    ? L.polygon(lasso.points, previewOptions).addTo(state.map)
+    : L.polyline(lasso.points, previewOptions).addTo(state.map);
+}
+
+function cleanupMapLassoPreview() {
+  if (state.mapLasso.previewLayer) {
+    state.mapLasso.previewLayer.remove();
+    state.mapLasso.previewLayer = null;
+  }
+}
+
+function startMapLassoSelection() {
+  closeMcSelectToolMenu();
+  if (!state.map) {
+    return;
+  }
+  if (state.view3dEnabled) {
+    setStatus("Lasso selection is available in the 2D map view.", true);
+    return;
+  }
+  cancelDrawing();
+  setAssetPlacementMode(false);
+  cancelPendingTacticalPlacement();
+  finishAssetRelocation(null);
+  finishTacticalRelocation(null);
+  finishImportedPointRelocation(null);
+  finishCircleRelocation(null);
+  setMcSelectMode(true, { clearSelected: true, render: true });
+  cancelMapLassoSelection({ statusMessage: "" });
+
+  state.mapLasso.active = true;
+  state.mapLasso.drawing = false;
+  state.mapLasso.pointerId = null;
+  state.mapLasso.points = [];
+  state.mapLasso.screenPoints = [];
+  rememberAndDisableMapLassoHandlers();
+
+  const container = state.map.getContainer();
+  container.classList.add("map-lasso-active");
+  dom.map?.classList.add("map-lasso-active");
+  dom.mapStage?.classList.add("map-lasso-active");
+  container.addEventListener("pointerdown", onMapLassoPointerDown, true);
+  setStatus("Drag on the map to lasso map contents. Press Escape to cancel.");
+}
+
+function cancelMapLassoSelection({ statusMessage = null } = {}) {
+  if (!state.mapLasso.active && !state.mapLasso.drawing) {
+    return;
+  }
+  const container = state.map?.getContainer?.();
+  container?.removeEventListener("pointerdown", onMapLassoPointerDown, true);
+  document.removeEventListener("pointermove", onMapLassoPointerMove, true);
+  document.removeEventListener("pointerup", onMapLassoPointerUp, true);
+  document.removeEventListener("pointercancel", onMapLassoPointerCancel, true);
+  cleanupMapLassoPreview();
+  restoreMapLassoHandlers();
+  container?.classList.remove("map-lasso-active");
+  dom.map?.classList.remove("map-lasso-active");
+  dom.mapStage?.classList.remove("map-lasso-active");
+  Object.assign(state.mapLasso, {
+    active: false,
+    drawing: false,
+    pointerId: null,
+    points: [],
+    screenPoints: [],
+  });
+  if (statusMessage) {
+    setStatus(statusMessage);
+  }
+}
+
+function onMapLassoPointerDown(event) {
+  if (!state.mapLasso.active || state.mapLasso.drawing || event.button !== 0) {
+    return;
+  }
+  if (event.target.closest(".leaflet-control, .leaflet-popup, .map-overlay, .map-view-toggle")) {
+    return;
+  }
+  const latlng = getMapLassoLatLng(event);
+  const point = getMapLassoContainerPoint(event);
+  if (!latlng || !point) {
+    return;
+  }
+  event.preventDefault();
+  event.stopPropagation();
+  event.stopImmediatePropagation?.();
+  state.mapLasso.drawing = true;
+  state.mapLasso.pointerId = event.pointerId;
+  state.mapLasso.points = [latlng];
+  state.mapLasso.screenPoints = [{ x: point.x, y: point.y }];
+  state.map.getContainer().setPointerCapture?.(event.pointerId);
+  document.addEventListener("pointermove", onMapLassoPointerMove, true);
+  document.addEventListener("pointerup", onMapLassoPointerUp, true);
+  document.addEventListener("pointercancel", onMapLassoPointerCancel, true);
+}
+
+function onMapLassoPointerMove(event) {
+  if (!state.mapLasso.drawing || event.pointerId !== state.mapLasso.pointerId) {
+    return;
+  }
+  const latlng = getMapLassoLatLng(event);
+  const point = getMapLassoContainerPoint(event);
+  if (!latlng || !point) {
+    return;
+  }
+  const lastPoint = state.mapLasso.screenPoints[state.mapLasso.screenPoints.length - 1];
+  const distance = lastPoint
+    ? Math.hypot(point.x - lastPoint.x, point.y - lastPoint.y)
+    : Infinity;
+  if (distance < 3) {
+    return;
+  }
+  event.preventDefault();
+  event.stopPropagation();
+  state.mapLasso.points.push(latlng);
+  state.mapLasso.screenPoints.push({ x: point.x, y: point.y });
+  updateMapLassoPreview();
+}
+
+function onMapLassoPointerUp(event) {
+  if (!state.mapLasso.drawing || event.pointerId !== state.mapLasso.pointerId) {
+    return;
+  }
+  event.preventDefault();
+  event.stopPropagation();
+  state.mapLasso.ignoreClickUntil = Date.now() + 350;
+  state.map?.getContainer?.().releasePointerCapture?.(event.pointerId);
+  finishMapLassoSelection(event);
+}
+
+function onMapLassoPointerCancel(event) {
+  if (state.mapLasso.pointerId !== null && event.pointerId !== state.mapLasso.pointerId) {
+    return;
+  }
+  state.mapLasso.ignoreClickUntil = Date.now() + 350;
+  cancelMapLassoSelection({ statusMessage: "Lasso selection canceled." });
+}
+
+function finishMapLassoSelection(event) {
+  const points = state.mapLasso.screenPoints;
+  const lassoArea = polygonScreenArea(points);
+  if (points.length < 3 || lassoArea < 80) {
+    cancelMapLassoSelection({ statusMessage: "Lasso selection canceled." });
+    return;
+  }
+  const additive = Boolean(event.shiftKey);
+  const selectedIds = getMapContentIdsInsideScreenLasso(points);
+  if (!additive) {
+    state.mcSelectedIds.clear();
+  }
+  selectedIds.forEach((id) => state.mcSelectedIds.add(id));
+  state.mcLastClickedId = selectedIds[selectedIds.length - 1] || null;
+  cancelMapLassoSelection({ statusMessage: "" });
+  setMcSelectMode(true, { clearSelected: false, render: true });
+  const count = selectedIds.length;
+  setStatus(count === 0
+    ? "No map contents were inside the lasso."
+    : `Lasso selected ${count} map item${count === 1 ? "" : "s"}.`);
+}
+
+function polygonScreenArea(points) {
+  if (!Array.isArray(points) || points.length < 3) {
+    return 0;
+  }
+  let area = 0;
+  for (let index = 0; index < points.length; index += 1) {
+    const current = points[index];
+    const next = points[(index + 1) % points.length];
+    area += (current.x * next.y) - (next.x * current.y);
+  }
+  return Math.abs(area) / 2;
+}
+
+function isScreenPointInPolygon(point, polygon) {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i, i += 1) {
+    const pi = polygon[i];
+    const pj = polygon[j];
+    const intersects = ((pi.y > point.y) !== (pj.y > point.y))
+      && (point.x < ((pj.x - pi.x) * (point.y - pi.y)) / ((pj.y - pi.y) || 1e-9) + pi.x);
+    if (intersects) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+function screenSegmentOrientation(a, b, c) {
+  const value = ((b.y - a.y) * (c.x - b.x)) - ((b.x - a.x) * (c.y - b.y));
+  if (Math.abs(value) < 1e-7) return 0;
+  return value > 0 ? 1 : 2;
+}
+
+function isPointOnScreenSegment(a, b, c) {
+  return b.x <= Math.max(a.x, c.x) + 1e-7
+    && b.x + 1e-7 >= Math.min(a.x, c.x)
+    && b.y <= Math.max(a.y, c.y) + 1e-7
+    && b.y + 1e-7 >= Math.min(a.y, c.y);
+}
+
+function screenSegmentsIntersect(a, b, c, d) {
+  const o1 = screenSegmentOrientation(a, b, c);
+  const o2 = screenSegmentOrientation(a, b, d);
+  const o3 = screenSegmentOrientation(c, d, a);
+  const o4 = screenSegmentOrientation(c, d, b);
+  if (o1 !== o2 && o3 !== o4) return true;
+  if (o1 === 0 && isPointOnScreenSegment(a, c, b)) return true;
+  if (o2 === 0 && isPointOnScreenSegment(a, d, b)) return true;
+  if (o3 === 0 && isPointOnScreenSegment(c, a, d)) return true;
+  if (o4 === 0 && isPointOnScreenSegment(c, b, d)) return true;
+  return false;
+}
+
+function hasScreenSegmentIntersection(aRing, bRing, closeA = true, closeB = true) {
+  const aLimit = closeA ? aRing.length : aRing.length - 1;
+  const bLimit = closeB ? bRing.length : bRing.length - 1;
+  for (let aIndex = 0; aIndex < aLimit; aIndex += 1) {
+    const a1 = aRing[aIndex];
+    const a2 = aRing[(aIndex + 1) % aRing.length];
+    for (let bIndex = 0; bIndex < bLimit; bIndex += 1) {
+      const b1 = bRing[bIndex];
+      const b2 = bRing[(bIndex + 1) % bRing.length];
+      if (screenSegmentsIntersect(a1, a2, b1, b2)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function isLatLngLike(value) {
+  return Number.isFinite(Number(value?.lat)) && Number.isFinite(Number(value?.lng));
+}
+
+function extractLatLngRings(value, rings = []) {
+  if (!Array.isArray(value)) {
+    return rings;
+  }
+  if (value.length && value.every(isLatLngLike)) {
+    rings.push(value);
+    return rings;
+  }
+  value.forEach((entry) => extractLatLngRings(entry, rings));
+  return rings;
+}
+
+function screenPointFromLatLng(latlng) {
+  const point = state.map.latLngToContainerPoint(latlng);
+  return { x: point.x, y: point.y };
+}
+
+function screenRingFromBounds(bounds) {
+  if (!bounds?.isValid?.()) {
+    return [];
+  }
+  const nw = bounds.getNorthWest();
+  const ne = bounds.getNorthEast();
+  const se = bounds.getSouthEast();
+  const sw = bounds.getSouthWest();
+  return [nw, ne, se, sw].map(screenPointFromLatLng);
+}
+
+function getLayerScreenGeometry(layer, geometryType = "") {
+  if (!layer || !state.map) {
+    return null;
+  }
+  if (typeof layer.getLatLng === "function") {
+    return {
+      kind: "point",
+      points: [screenPointFromLatLng(layer.getLatLng())],
+      rings: [],
+      boundsRing: [],
+    };
+  }
+  const rings = typeof layer.getLatLngs === "function"
+    ? extractLatLngRings(layer.getLatLngs()).map((ring) => ring.map(screenPointFromLatLng)).filter((ring) => ring.length)
+    : [];
+  const boundsRing = typeof layer.getBounds === "function"
+    ? screenRingFromBounds(layer.getBounds())
+    : [];
+  return {
+    kind: geometryType === "Polygon" ? "polygon" : geometryType === "LineString" ? "line" : "shape",
+    points: rings.flat(),
+    rings,
+    boundsRing,
+  };
+}
+
+function getMapContentScreenGeometry(contentId) {
+  if (!state.map || !contentId || contentId.startsWith("folder:") || isContentEffectivelyHidden(contentId)) {
+    return null;
+  }
+  if (contentId.startsWith("asset:")) {
+    const asset = state.assets.find((entry) => `asset:${entry.id}` === contentId);
+    const effectivePosition = getAssetEffectiveMapPosition(asset);
+    if (!effectivePosition) {
+      return null;
+    }
+    return {
+      kind: "point",
+      points: [screenPointFromLatLng(L.latLng(effectivePosition.lat, effectivePosition.lon))],
+      rings: [],
+      boundsRing: [],
+    };
+  }
+  if (contentId.startsWith("imported:")) {
+    const item = state.importedItems.find((entry) => `imported:${entry.id}` === contentId);
+    return getLayerScreenGeometry(item?.layer, item?.geometryType);
+  }
+  if (contentId.startsWith("tactical:")) {
+    const object = getTacticalObjectById(contentId.slice("tactical:".length));
+    return getLayerScreenGeometry(object ? state.tacticalLayers.get(object.id) : null, object?.geometryType);
+  }
+  if (contentId.startsWith("taklive:")) {
+    const uid = contentId.slice("taklive:".length);
+    const object = state.takRuntime.objectsByUid.get(uid);
+    return getLayerScreenGeometry(state.takRuntime.layersByUid.get(uid), object?.geometryType);
+  }
+  if (contentId.startsWith("viewshed:")) {
+    const viewshed = state.viewsheds.find((entry) => `viewshed:${entry.id}` === contentId);
+    const boundsRing = viewshed?.bounds ? screenRingFromBounds(viewshed.bounds) : [];
+    return boundsRing.length ? { kind: "polygon", points: boundsRing, rings: [boundsRing], boundsRing } : null;
+  }
+  if (contentId === "planning-region") {
+    return getLayerScreenGeometry(state.planning.regionLayer, "Polygon");
+  }
+  if (contentId === "planning-results" && state.planning.recommendations.length) {
+    return {
+      kind: "point-set",
+      points: state.planning.recommendations.flatMap((recommendation) => [
+        screenPointFromLatLng(L.latLng(recommendation.tx.lat, recommendation.tx.lon)),
+        screenPointFromLatLng(L.latLng(recommendation.rx.lat, recommendation.rx.lon)),
+      ]),
+      rings: [],
+      boundsRing: [],
+    };
+  }
+  return null;
+}
+
+function isScreenGeometryInsideLasso(geometry, lassoRing) {
+  if (!geometry || !lassoRing?.length) {
+    return false;
+  }
+  if (geometry.points?.some((point) => isScreenPointInPolygon(point, lassoRing))) {
+    return true;
+  }
+  const candidateRings = [...(geometry.rings || [])];
+  if (geometry.boundsRing?.length) {
+    candidateRings.push(geometry.boundsRing);
+  }
+  for (const ring of candidateRings) {
+    if (ring.length >= 3 && lassoRing.some((point) => isScreenPointInPolygon(point, ring))) {
+      return true;
+    }
+    if (ring.length >= 2 && hasScreenSegmentIntersection(lassoRing, ring, true, ring.length >= 3)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function getMapContentIdsInsideScreenLasso(lassoRing) {
+  return getMapContentEntries()
+    .map((entry) => entry.id)
+    .filter((contentId) => isScreenGeometryInsideLasso(getMapContentScreenGeometry(contentId), lassoRing));
+}
+
+function setMcSelectMode(enabled, { clearSelected = !enabled, render = true } = {}) {
+  state.mcSelectMode = Boolean(enabled);
+  if (clearSelected) {
     state.mcSelectedIds.clear();
     state.mcLastClickedId = null;
   }
-  dom.mcSelectBtn.setAttribute("aria-pressed", String(state.mcSelectMode));
-  renderMapContents();
+  dom.mcSelectBtn?.setAttribute("aria-pressed", String(state.mcSelectMode));
+  if (render) {
+    renderMapContents();
+  } else {
+    updateMcSelectToolbar();
+  }
+}
+
+function toggleMcSelectMode() {
+  setMcSelectMode(!state.mcSelectMode);
 }
 
 function getOrCreateMcSelectToolbar() {
@@ -30350,11 +31883,7 @@ function removeAsset(assetId, options = {}) {
   const marker = state.assetMarkers.get(assetId);
   marker?.remove();
   state.assetMarkers.delete(assetId);
-  state.tacticalObjects.forEach((object) => {
-    if (Array.isArray(object.linkedAssetIds) && object.linkedAssetIds.includes(String(assetId))) {
-      object.linkedAssetIds = object.linkedAssetIds.filter((id) => String(id) !== String(assetId));
-    }
-  });
+  removeAssetIdFromMappedTacticalObjects(assetId);
   state.assets = state.assets.filter((entry) => entry.id !== assetId);
   state.viewsheds
     .filter((entry) => entry.asset.id === assetId)
@@ -37460,10 +38989,12 @@ function unlinkEmitterFromTo() {
   window._pendingToUnitId = null;
   if (_currentEmitterEditId) {
     const asset = (state.assets || []).find(a => a.id === _currentEmitterEditId);
-    if (asset) delete asset.toUnitId;
+    if (asset) syncEmitterAssetToPlanUnit(asset, null);
   }
   // Refresh topology/analyze if visible
   refreshLinkedViews();
+  renderMapContents();
+  syncCesiumEntities();
 }
 
 function getCurrentEmitterToId() {
@@ -37496,9 +39027,11 @@ function commitEmitterToLink(emitterId) {
   if (window._pendingToUnitId === undefined || window._pendingToUnitId === null) return;
   const asset = (state.assets || []).find(a => a.id === emitterId);
   if (asset) {
-    asset.toUnitId = window._pendingToUnitId;
+    syncEmitterAssetToPlanUnit(asset, window._pendingToUnitId);
     // Refresh TO canvas to show linked badge on the unit
     refreshLinkedViews();
+    renderMapContents();
+    syncCesiumEntities();
   }
   window._pendingToUnitId = undefined;
 }
@@ -37511,8 +39044,9 @@ function refreshLinkedViews() {
   // If topology or analyze view is active, re-render
   if (state.ui?.currentView === "topology") renderTopologyView();
   if (state.ui?.currentView === "analyze")  renderAnalyzeView();
-  // Refresh TO canvas if PLAN is open to update emitter-link indicators
-  if (state.ui?.currentView === "plan" && _toState._initialized) renderToView();
+  if (state.ui?.currentView === "emitters") renderEmittersWorkspace();
+  // Keep the T/O canvas current even when hidden so view switches do not show stale badges.
+  if (_toState._initialized) renderToView();
 }
 
 /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -37603,7 +39137,96 @@ const UNIT_TYPE_SYMBOLS = {
 
 const TO_UNIT_TYPE_ALIASES = {
   ranger: "special_forces",
+  rangers: "special_forces",
+  sf: "special_forces",
+  sof: "special_forces",
+  "special forces": "special_forces",
+  special_operations: "special_forces",
+  "special operations": "special_forces",
+  infantry: "infantry",
   marine_infantry: "infantry",
+  "marine infantry": "infantry",
+  mechanized: "mechanized_infantry",
+  "mechanized infantry": "mechanized_infantry",
+  mech: "mechanized_infantry",
+  motorized: "infantry",
+  "motorized infantry": "infantry",
+  light: "light_infantry",
+  "light infantry": "light_infantry",
+  airborne: "airborne_infantry",
+  "airborne infantry": "airborne_infantry",
+  engineer: "engineer",
+  engineers: "engineer",
+  "combat engineer": "engineer",
+  "combat engineers": "engineer",
+  logistics: "logistics",
+  logistic: "logistics",
+  sustainment: "logistics",
+  css: "logistics",
+  "combat service support": "logistics",
+  supply: "logistics",
+  transportation: "logistics",
+  intel: "military_intelligence",
+  intelligence: "military_intelligence",
+  mi: "military_intelligence",
+  "military intelligence": "military_intelligence",
+  sigint: "military_intelligence",
+  signal: "signal",
+  communications: "signal",
+  comms: "signal",
+  c2: "headquarters",
+  command: "headquarters",
+  headquarters: "headquarters",
+  hq: "headquarters",
+  "command post": "headquarters",
+  ew: "ew",
+  "electronic warfare": "ew",
+  fires: "artillery",
+  artillery: "artillery",
+  "field artillery": "artillery",
+  field_artillery: "artillery",
+  fa: "artillery",
+  "air defense": "air_defense",
+  air_defense_artillery: "air_defense",
+  "air defense artillery": "air_defense",
+  ada: "air_defense",
+  armor: "armor",
+  armored: "armor",
+  armour: "armor",
+  cav: "recon",
+  cavalry: "recon",
+  recon: "recon",
+  reconnaissance: "recon",
+  medical: "medical",
+  medic: "medical",
+  maintenance: "maintenance",
+  maint: "maintenance",
+  cbrn: "chemical",
+  chemical: "chemical",
+  mp: "military_police",
+  "military police": "military_police",
+  cyber: "cyber",
+  finance: "finance",
+  aviation: "aviation_rotary",
+  rotary: "aviation_rotary",
+  helicopter: "aviation_rotary",
+  helo: "aviation_rotary",
+  "rotary wing": "aviation_rotary",
+  fixed: "aviation_fixed",
+  "fixed wing": "aviation_fixed",
+  airlift: "transport_fixed",
+  transport: "transport_fixed",
+  uav: "uav_fixed",
+  uas: "uav_fixed",
+  drone: "uav_fixed",
+  "sea surface": "naval_surface",
+  naval: "naval_surface",
+  navy: "naval_surface",
+  ship: "naval_surface",
+  surface: "naval_surface",
+  submarine: "submarine",
+  subsurface: "submarine",
+  space: "space",
 };
 
 const MILSTD_FRAME_PATHS = {
@@ -37811,7 +39434,14 @@ function getMilstdFallbackText(unit) {
 }
 
 function normalizeToUnitType(type) {
-  const normalized = TO_UNIT_TYPE_ALIASES[type] || type || DEFAULT_MILSTD_UNIT_ID;
+  const raw = String(type || "").trim();
+  const aliasKeys = [
+    raw,
+    raw.toLowerCase(),
+    raw.toLowerCase().replace(/[_-]+/g, " "),
+    raw.toLowerCase().replace(/[\s-]+/g, "_"),
+  ].filter(Boolean);
+  const normalized = aliasKeys.map((key) => TO_UNIT_TYPE_ALIASES[key]).find(Boolean) || raw || DEFAULT_MILSTD_UNIT_ID;
   return getDoctrinalCatalogEntryById(normalized)?.id || normalizeMilstdUniqueId(normalized) || DEFAULT_MILSTD_UNIT_ID;
 }
 
@@ -37835,6 +39465,44 @@ function normalizePlanUnitSize(type = DEFAULT_MILSTD_UNIT_ID, size = "") {
   }
   const normalizedSize = String(size || "").trim();
   return TO_UNIT_SIZE_LABELS[normalizedSize] ? normalizedSize : DEFAULT_TO_UNIT_SIZE;
+}
+
+function normalizeAiPlanUnitSize(type = DEFAULT_MILSTD_UNIT_ID, size = "") {
+  const normalizedType = normalizeToUnitType(type);
+  const raw = String(size || "").trim().toLowerCase();
+  const key = raw.replace(/[./\s-]+/g, "_");
+  const alias = {
+    tm: "team",
+    team: "team",
+    crew: "team",
+    fire_team: "fireteam",
+    fireteam: "fireteam",
+    sqd: "squad",
+    squad: "squad",
+    section: "section",
+    sec: "section",
+    plt: "platoon",
+    platoon: "platoon",
+    troop: "company",
+    battery: "company",
+    btry: "company",
+    co: "company",
+    company: "company",
+    squadron: "battalion",
+    bn: "battalion",
+    battalion: "battalion",
+    regiment: "regiment",
+    regt: "regiment",
+    bde: "brigade",
+    brigade: "brigade",
+    division: "division",
+    div: "division",
+    corps: "corps",
+    army: "army",
+    army_group: "army_group",
+    theater: "theater",
+  }[key] || key;
+  return normalizePlanUnitSize(normalizedType, alias || DEFAULT_TO_UNIT_SIZE);
 }
 
 function inferPlanUnitSizeFromLabel(label = "", type = DEFAULT_MILSTD_UNIT_ID) {
@@ -38697,26 +40365,48 @@ function renderToEdges() {
   const world = document.getElementById("toWorld");
   if (!svg || !world) return;
   svg.innerHTML = "";
+  const linksByParent = new Map();
   for (const link of _toState.links) {
-    const parent = _toState.units.find(u => u.id === link.parentId);
-    const child  = _toState.units.find(u => u.id === link.childId);
-    if (!parent || !child) continue;
+    if (!linksByParent.has(link.parentId)) linksByParent.set(link.parentId, []);
+    linksByParent.get(link.parentId).push(link);
+  }
+  const snap = (value) => Math.round(Number(value) * 2) / 2;
+  for (const [parentId, links] of linksByParent) {
+    const parent = _toState.units.find((unit) => unit.id === parentId);
     const parentAnchor = getToUnitConnectorAnchors(parent, world, svg);
-    const childAnchor = getToUnitConnectorAnchors(child, world, svg);
-    if (!parentAnchor || !childAnchor) continue;
-    const x1 = parentAnchor.centerX;
-    const y1 = parentAnchor.bottomY;
-    const x2 = childAnchor.centerX;
-    const y2 = childAnchor.topY;
-    const midY = (y1 + y2) / 2;
-    // Orthogonal elbow: down â†’ horizontal â†’ down
-    const d = `M${x1},${y1} L${x1},${midY} L${x2},${midY} L${x2},${y2}`;
+    if (!parent || !parentAnchor) continue;
+    const childAnchors = links
+      .map((link) => {
+        const child = _toState.units.find((unit) => unit.id === link.childId);
+        const anchor = getToUnitConnectorAnchors(child, world, svg);
+        return child && anchor ? { child, anchor } : null;
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.anchor.centerX - b.anchor.centerX);
+    if (!childAnchors.length) continue;
+    const parentX = snap(parentAnchor.centerX);
+    const parentBottomY = snap(parentAnchor.bottomY);
+    const topmostChildY = Math.min(...childAnchors.map((entry) => entry.anchor.topY));
+    const busY = snap(parentAnchor.bottomY + ((topmostChildY - parentAnchor.bottomY) / 2));
+    const busXs = [parentAnchor.centerX, ...childAnchors.map((entry) => entry.anchor.centerX)];
+    const busLeft = snap(Math.min(...busXs));
+    const busRight = snap(Math.max(...busXs));
+    const segments = [
+      `M${parentX},${parentBottomY} L${parentX},${busY}`,
+      `M${busLeft},${busY} L${busRight},${busY}`,
+      ...childAnchors.map(({ anchor }) => {
+        const childX = snap(anchor.centerX);
+        const childTopY = snap(anchor.topY);
+        return `M${childX},${busY} L${childX},${childTopY}`;
+      }),
+    ];
     const line = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    line.setAttribute("d", d);
+    line.setAttribute("d", segments.join(" "));
     line.setAttribute("stroke", "var(--border-strong)");
     line.setAttribute("stroke-width", "1.5");
     line.setAttribute("fill", "none");
-    line.setAttribute("stroke-linejoin", "round");
+    line.setAttribute("stroke-linecap", "square");
+    line.setAttribute("stroke-linejoin", "miter");
     svg.appendChild(line);
   }
 }
@@ -39272,7 +40962,7 @@ async function renderTopologyView(options = {}) {
   // Assess link quality for all pairs in parallel
   const qualityResults = await Promise.all(
     candidatePairs.map((p) => {
-      if (!hasAssetMapLocation(p.emA) || !hasAssetMapLocation(p.emB)) {
+      if (!hasAssetAssessableMapPosition(p.emA) || !hasAssetAssessableMapPosition(p.emB)) {
         return Promise.resolve(buildUnplacedLinkQuality(p.emA, p.emB));
       }
       return assessLinkQuality(p.emA, p.emB).catch(() => ({ score: 50, label: "Unknown", reasons: [], terrain: null }));
@@ -39966,15 +41656,15 @@ function resolvedLinkQualityColor(quality) {
 function buildUnplacedLinkQuality(a, b) {
   const reasons = [];
   const missing = [];
-  if (!hasAssetMapLocation(a)) missing.push(a?.emitterLabel || a?.name || "Emitter A");
-  if (!hasAssetMapLocation(b)) missing.push(b?.emitterLabel || b?.name || "Emitter B");
-  reasons.push("RF settings align closely enough that these emitters would link once they are placed on the map.");
+  if (!hasAssetAssessableMapPosition(a)) missing.push(a?.emitterLabel || a?.name || "Emitter A");
+  if (!hasAssetAssessableMapPosition(b)) missing.push(b?.emitterLabel || b?.name || "Emitter B");
+  reasons.push("RF settings align closely enough that these emitters would link once they have a map marker or linked mapped-unit anchor.");
   if (missing.length === 1) {
-    reasons.push(`${missing[0]} is not placed on the map yet, so terrain, distance, and line-of-sight cannot be assessed.`);
+    reasons.push(`${missing[0]} has no map marker or linked mapped-unit anchor, so terrain, distance, and line-of-sight cannot be assessed.`);
   } else {
-    reasons.push("Neither emitter is placed on the map yet, so terrain, distance, and line-of-sight cannot be assessed.");
+    reasons.push("Neither emitter has a map marker or linked mapped-unit anchor, so terrain, distance, and line-of-sight cannot be assessed.");
   }
-  reasons.push("Place the emitter on the map to turn this into an assessed RF link.");
+  reasons.push("Place the emitter on the map or link it to a mapped T/O unit to turn this into an assessed RF link.");
   return {
     score: 50,
     label: "Not Placed",
@@ -40006,6 +41696,13 @@ function topologyAtmosphericAttenuation(freqMHz, weather, distanceKm) {
 async function assessLinkQuality(a, b) {
   let score = 100;
   const reasons = [];
+  const positionA = getAssetAssessableMapPosition(a);
+  const positionB = getAssetAssessableMapPosition(b);
+  const latA = Number(positionA?.lat);
+  const lonA = Number(positionA?.lon);
+  const latB = Number(positionB?.lat);
+  const lonB = Number(positionB?.lon);
+  const hasPositions = Number.isFinite(latA) && Number.isFinite(lonA) && Number.isFinite(latB) && Number.isFinite(lonB);
   const freqMHzA = Number(a.frequencyMHz) || 0;
   const freqMHzB = Number(b.frequencyMHz) || 0;
   const fMhz = (freqMHzA > 0 && freqMHzB > 0) ? (freqMHzA + freqMHzB) / 2 : Math.max(freqMHzA, freqMHzB, 100);
@@ -40070,7 +41767,7 @@ async function assessLinkQuality(a, b) {
     reasons.push("SATCOM/BLOS path detected â€” surface distance and horizontal terrain mask are not the primary limiters.");
   }
 
-  if (!(a.lat && a.lon && b.lat && b.lon)) {
+  if (!hasPositions) {
     score = Math.max(0, Math.min(100, score));
     return {
       score,
@@ -40085,7 +41782,7 @@ async function assessLinkQuality(a, b) {
     };
   }
 
-  const distKm = haversineKm(a.lat, a.lon, b.lat, b.lon);
+  const distKm = haversineKm(latA, lonA, latB, lonB);
   const distM = Math.max(distKm * 1000, 1);
   const fspl = fsplDb(fMhz, distM);
   const radioHorizonKm = 3.57 * (Math.sqrt(Math.max(h1, 0)) + Math.sqrt(Math.max(h2, 0)));
@@ -40097,7 +41794,7 @@ async function assessLinkQuality(a, b) {
   const weatherLossDb = topologyAtmosphericAttenuation(fMhz, state.weather, weatherDistanceKm);
 
   if (!isSatcom) {
-    los = await computeTerrainLosAsync(a.lat, a.lon, h1, b.lat, b.lon, h2);
+    los = await computeTerrainLosAsync(latA, lonA, h1, latB, lonB, h2);
     if (los.hasTerrain) {
       if (los.blocked && los.minClearanceM < 0) {
         const obstructionM = Math.abs(los.minClearanceM);

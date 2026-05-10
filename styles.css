@@ -3830,107 +3830,87 @@ body.theme-light .ai-agent-mode-indicator {
 }
 
 .cesium-inclinometer {
-  --tilt-offset: 0px;
-  --roll-angle: 0deg;
   position: absolute;
   top: calc(var(--map-overlay-top) + var(--map-overlay-control-h) + 8px);
   left: calc(var(--map-overlay-left) + 44px);
   z-index: 650;
-  width: 126px;
-  min-height: 36px;
+  width: 158px;
+  min-height: 48px;
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr);
-  align-items: center;
-  gap: 6px;
-  padding: 4px 7px;
+  gap: 5px;
+  padding: 7px 9px;
   border: 1px solid rgba(148, 163, 184, 0.28);
   border-radius: 6px;
   background: color-mix(in srgb, var(--bg-overlay) 78%, transparent);
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
   backdrop-filter: blur(8px);
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 .cesium-inclinometer.hidden {
   display: none;
 }
 
-.cesium-inclinometer-dial {
-  position: relative;
-  width: 28px;
-  height: 22px;
-  border: 1px solid rgba(148, 163, 184, 0.28);
-  border-radius: 4px;
-  overflow: hidden;
-  background: color-mix(in srgb, var(--bg-base) 70%, transparent);
-}
-
-.cesium-inclinometer-dial::before,
-.cesium-inclinometer-dial::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  background: rgba(226, 232, 240, 0.42);
-  transform: translate(-50%, -50%);
-}
-
-.cesium-inclinometer-dial::before {
-  width: 17px;
-  height: 1px;
-}
-
-.cesium-inclinometer-dial::after {
-  width: 1px;
-  height: 12px;
-}
-
-.cesium-inclinometer-horizon {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 46px;
-  height: 2px;
-  border-radius: 999px;
-  background: var(--accent-arrow);
-  box-shadow: 0 0 8px rgba(var(--accent-rgb), 0.22);
-  transform: translate(-50%, calc(-50% + var(--tilt-offset))) rotate(var(--roll-angle));
-  transform-origin: center;
-  transition: transform 0.12s ease-out;
-}
-
-.cesium-inclinometer-center {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 3px;
-  height: 3px;
-  border-radius: 999px;
-  background: var(--text);
-  transform: translate(-50%, -50%);
-}
-
-.cesium-inclinometer-readout {
+.cesium-camera-slider-row {
   display: grid;
-  gap: 1px;
+  grid-template-columns: 32px minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 7px;
   min-width: 0;
   color: var(--text-muted);
   font-size: 0.56rem;
   letter-spacing: 0.08em;
-  line-height: 1.2;
+  line-height: 1;
   text-transform: uppercase;
+  user-select: none;
 }
 
-.cesium-inclinometer-readout span {
-  display: flex;
-  justify-content: space-between;
-  gap: 6px;
-}
-
-.cesium-inclinometer-readout strong {
+.cesium-camera-slider-row strong {
   color: var(--text);
   font-size: 0.62rem;
+  line-height: 1;
   font-variant-numeric: tabular-nums;
+}
+
+.cesium-camera-slider {
+  width: 100%;
+  height: 12px;
+  margin: 0;
+  appearance: none;
+  background: transparent;
+  cursor: ew-resize;
+}
+
+.cesium-camera-slider::-webkit-slider-runnable-track {
+  height: 1px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-muted) 48%, transparent);
+}
+
+.cesium-camera-slider::-moz-range-track {
+  height: 1px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-muted) 48%, transparent);
+}
+
+.cesium-camera-slider::-webkit-slider-thumb {
+  width: 7px;
+  height: 7px;
+  margin-top: -3px;
+  appearance: none;
+  border: 1px solid color-mix(in srgb, var(--accent-arrow) 80%, white);
+  border-radius: 999px;
+  background: var(--accent-arrow);
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.14);
+}
+
+.cesium-camera-slider::-moz-range-thumb {
+  width: 7px;
+  height: 7px;
+  border: 1px solid color-mix(in srgb, var(--accent-arrow) 80%, white);
+  border-radius: 999px;
+  background: var(--accent-arrow);
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.14);
 }
 
 .icon-button,
@@ -4394,6 +4374,14 @@ input[type="range"]:hover::-moz-range-thumb {
 
 /* Drawing cursor feedback */
 .leaflet-drawing-active,
+.map-lasso-active,
+.map-lasso-active .leaflet-container,
+.map-lasso-active .leaflet-pane,
+.map-lasso-active .leaflet-tile-pane,
+.map-lasso-active .leaflet-overlay-pane,
+.map-lasso-active .leaflet-marker-pane,
+.map-lasso-active .leaflet-interactive,
+.map-lasso-active *,
 .leaflet-drawing-active .leaflet-container,
 .leaflet-drawing-active .leaflet-pane,
 .leaflet-drawing-active .leaflet-tile-pane,
@@ -4751,6 +4739,38 @@ button:focus {
 .map-contents-menu .ghost-button {
   width: 100%;
   text-align: left;
+}
+
+.mc-select-dropdown {
+  position: fixed;
+  z-index: 1400;
+  display: grid;
+  gap: 4px;
+  min-width: 148px;
+  padding: 7px;
+  background: var(--bg-menu);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+}
+
+.mc-select-dropdown-item {
+  width: 100%;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text);
+  padding: 7px 10px;
+  text-align: left;
+  font: inherit;
+  font-size: 0.78rem;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+}
+
+.mc-select-dropdown-item:hover,
+.mc-select-dropdown-item:focus-visible {
+  background: var(--bg-hover);
+  border-color: var(--border);
+  outline: none;
 }
 
 .asset-item header {
@@ -5444,7 +5464,7 @@ button:focus {
   .cesium-inclinometer {
     top: calc(var(--map-overlay-top) + var(--map-overlay-control-h) + 8px);
     left: calc(var(--map-overlay-left) + 42px);
-    width: 118px;
+    width: 140px;
   }
 }
 

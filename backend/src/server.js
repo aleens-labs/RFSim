@@ -119,6 +119,32 @@ function sendInternalError(response, context, error, publicMessage = "Internal s
   response.status(500).json({ error: publicMessage });
 }
 
+function formatValidationFieldName(field = "") {
+  return String(field || "")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^./, (char) => char.toUpperCase());
+}
+
+function formatValidationError(error) {
+  const flattened = error?.flatten?.() ?? {};
+  const messages = [];
+  (flattened.formErrors || []).forEach((message) => {
+    if (message) messages.push(String(message));
+  });
+  Object.entries(flattened.fieldErrors || {}).forEach(([field, fieldMessages]) => {
+    const message = Array.isArray(fieldMessages)
+      ? fieldMessages.filter(Boolean).join(" ")
+      : "";
+    if (message) {
+      messages.push(`${formatValidationFieldName(field) || "Field"}: ${message}`);
+    }
+  });
+  return messages.join(" ") || "The request was not valid. Check the fields and try again.";
+}
+
 function signToken(user) {
   return jwt.sign(
     { sub: user.id, email: user.email },
@@ -1158,7 +1184,10 @@ app.get("/api/ai/genai-mil/ping", authRequired, rateLimit("aiRelay"), async (_re
 app.post("/api/auth/register", rateLimit("auth"), async (request, response) => {
   const parsed = registerSchema.safeParse(request.body);
   if (!parsed.success) {
-    response.status(400).json({ error: parsed.error.flatten() });
+    response.status(400).json({
+      error: formatValidationError(parsed.error),
+      details: parsed.error.flatten(),
+    });
     return;
   }
 
@@ -1206,7 +1235,10 @@ app.post("/api/auth/register", rateLimit("auth"), async (request, response) => {
 app.post("/api/auth/login", rateLimit("auth"), async (request, response) => {
   const parsed = loginSchema.safeParse(request.body);
   if (!parsed.success) {
-    response.status(400).json({ error: parsed.error.flatten() });
+    response.status(400).json({
+      error: formatValidationError(parsed.error),
+      details: parsed.error.flatten(),
+    });
     return;
   }
 

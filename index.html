@@ -343,9 +343,12 @@
                   </div>
                 </div>
                 <!-- Select mode -->
-                <button id="mcSelectBtn" class="ghost-button small icon-button mc-icon-btn" type="button" aria-label="Select items" aria-pressed="false" data-label="Select">
+                <button id="mcSelectBtn" class="ghost-button small icon-button mc-icon-btn" type="button" aria-label="Select items" aria-pressed="false" aria-haspopup="menu" data-label="Select">
                   <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 3l16 9-9 2-4 8z"/></svg>
                 </button>
+                <div id="mcSelectDropdown" class="mc-select-dropdown hidden" role="menu" aria-label="Select tools">
+                  <button id="mcSelectLassoBtn" class="mc-select-dropdown-item" type="button" role="menuitem">Lasso On Map</button>
+                </div>
                 <!-- Folder -->
                 <button id="addMapFolderBtn" class="ghost-button small map-folder-icon-button mc-icon-btn" type="button" aria-label="Add Folder" data-label="Folder">
                   <svg class="map-folder-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -686,15 +689,17 @@
             <span class="cesium-compass-north">N</span>
           </span>
         </button>
-        <div id="cesiumInclinometer" class="cesium-inclinometer hidden" aria-label="3D camera inclinometer">
-          <div class="cesium-inclinometer-dial" aria-hidden="true">
-            <span class="cesium-inclinometer-horizon"></span>
-            <span class="cesium-inclinometer-center"></span>
-          </div>
-          <div class="cesium-inclinometer-readout">
-            <span><strong id="cesiumPitchValue">--</strong> Tilt</span>
-            <span><strong id="cesiumRollValue">--</strong> Roll</span>
-          </div>
+        <div id="cesiumInclinometer" class="cesium-inclinometer hidden" aria-label="3D camera tilt and rotation controls">
+          <label class="cesium-camera-slider-row" for="cesiumTiltSlider">
+            <strong id="cesiumPitchValue">--</strong>
+            <input id="cesiumTiltSlider" class="cesium-camera-slider" type="range" min="0" max="90" step="1" value="0" aria-label="Map tilt">
+            <span>Tilt</span>
+          </label>
+          <label class="cesium-camera-slider-row" for="cesiumRotationSlider">
+            <strong id="cesiumRollValue">--</strong>
+            <input id="cesiumRotationSlider" class="cesium-camera-slider" type="range" min="-180" max="180" step="1" value="0" aria-label="Map rotation">
+            <span>Rot</span>
+          </label>
         </div>
         <div class="map-overlay bottom-center">
           <div id="undoBanner" class="undo-banner hidden" role="status" aria-live="polite">
