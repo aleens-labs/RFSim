@@ -1533,6 +1533,28 @@
       </div>
     </div>
 
+    <div id="sensorEmitterDetailModal" class="emitter-modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="sensorEmitterDetailTitle">
+      <div class="emitter-modal sensor-emitter-detail-modal">
+        <div class="emitter-modal-header">
+          <div class="emitter-modal-title-group">
+            <h2 id="sensorEmitterDetailTitle">Emitter Visibility Detail</h2>
+            <p id="sensorEmitterDetailSubtitle">Sensor and emitter relationship</p>
+          </div>
+          <button id="sensorEmitterDetailCloseBtn" class="ghost-button small icon-button" type="button" aria-label="Close">&#10005;</button>
+        </div>
+        <div class="sensor-emitter-detail-body">
+          <aside class="sensor-emitter-detail-panel">
+            <div id="sensorEmitterDetailStatus" class="sensor-emitter-detail-status">Select an emitter visibility row.</div>
+            <div id="sensorEmitterDetailBody" class="sensor-emitter-detail-content"></div>
+          </aside>
+          <section class="sensor-emitter-detail-map-shell" aria-label="Sensor emitter relationship map">
+            <div id="sensorEmitterDetailMap" class="sensor-emitter-detail-map"></div>
+            <div id="sensorEmitterDetailLegend" class="sensor-emitter-detail-legend"></div>
+          </section>
+        </div>
+      </div>
+    </div>
+
     <div id="emittersNetModal" class="emitter-modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="emittersNetModalTitle">
       <div class="emitter-modal emitters-net-modal">
         <div class="emitter-modal-header">

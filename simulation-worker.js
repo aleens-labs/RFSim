@@ -245,6 +245,7 @@ function runSimulation(payload, reportProgress = () => {}) {
     receiverHeight,
     opacity,
     propagationModel,
+    rxTargetTemplate,
   } = payload;
   canceledSimulationRequestIds.delete(requestId);
   const terrain = resolveTerrain(terrainId);
@@ -262,6 +263,7 @@ function runSimulation(payload, reportProgress = () => {}) {
   const rssi = new Float32Array(totalCells);
   const lineOfSight = new Uint8Array(totalCells);
   const validMask = new Uint8Array(totalCells);
+  const receiverTemplate = rxTargetTemplate && typeof rxTargetTemplate === "object" ? rxTargetTemplate : {};
   rssi.fill(Number.NaN);
 
   let count = 0;
@@ -291,11 +293,12 @@ function runSimulation(payload, reportProgress = () => {}) {
       const result = simulateLink(
         asset,
         {
+          ...receiverTemplate,
           lat,
           lon,
-          antennaHeightM: receiverHeight,
-          receiverGainDbi: 0,
-          systemLossDb: 0,
+          antennaHeightM: Number.isFinite(Number(receiverTemplate.antennaHeightM)) ? Number(receiverTemplate.antennaHeightM) : receiverHeight,
+          receiverGainDbi: Number.isFinite(Number(receiverTemplate.receiverGainDbi)) ? Number(receiverTemplate.receiverGainDbi) : 0,
+          systemLossDb: Number.isFinite(Number(receiverTemplate.systemLossDb)) ? Number(receiverTemplate.systemLossDb) : 0,
         },
         terrain,
         weather,

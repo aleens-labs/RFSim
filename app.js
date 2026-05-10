@@ -103,6 +103,7 @@ const workspacePolicy = globalThis.RfSimWorkspacePolicy ?? {
 };
 
 const sensorEvaluation = globalThis.RfSimSensorEvaluation;
+const SENSOR_DETAIL_COVERAGE_REQUEST_PREFIX = "sensor-detail-coverage-";
 
 const BASEMAPS = {
   esri: {
@@ -2203,6 +2204,14 @@ const dom = {
   sensorModesInput: document.querySelector("#sensorModesInput"),
   sensorCompatibleNodesInput: document.querySelector("#sensorCompatibleNodesInput"),
   sensorNotesInput: document.querySelector("#sensorNotesInput"),
+  sensorEmitterDetailModal: document.querySelector("#sensorEmitterDetailModal"),
+  sensorEmitterDetailTitle: document.querySelector("#sensorEmitterDetailTitle"),
+  sensorEmitterDetailSubtitle: document.querySelector("#sensorEmitterDetailSubtitle"),
+  sensorEmitterDetailCloseBtn: document.querySelector("#sensorEmitterDetailCloseBtn"),
+  sensorEmitterDetailStatus: document.querySelector("#sensorEmitterDetailStatus"),
+  sensorEmitterDetailBody: document.querySelector("#sensorEmitterDetailBody"),
+  sensorEmitterDetailMap: document.querySelector("#sensorEmitterDetailMap"),
+  sensorEmitterDetailLegend: document.querySelector("#sensorEmitterDetailLegend"),
   emittersNetModal: document.querySelector("#emittersNetModal"),
   emittersNetModalTitle: document.querySelector("#emittersNetModalTitle"),
   emittersNetModalSubtitle: document.querySelector("#emittersNetModalSubtitle"),
@@ -2884,6 +2893,9 @@ const state = {
   sensorEvaluationActiveCount: 0,
   sensorEvaluationRequestSeq: 0,
   sensorEvaluationRenderTimerId: null,
+  sensorDetailCoverageCache: new Map(),
+  sensorDetailCoverageRequests: new Map(),
+  sensorDetailCoverageRequestSeq: 0,
   renamingMapContentId: null,
   workspaceMenuOpen: false,
   mapContentsSearch: "",
@@ -3144,6 +3156,8 @@ function updateModalBodyState() {
     || (dom.tacticalPaletteModal && !dom.tacticalPaletteModal.classList.contains("hidden"))
     || (dom.tacticalEditorModal && !dom.tacticalEditorModal.classList.contains("hidden"))
     || (dom.takIdentityModal && !dom.takIdentityModal.classList.contains("hidden"))
+    || (dom.sensorEditorModal && !dom.sensorEditorModal.classList.contains("hidden"))
+    || (dom.sensorEmitterDetailModal && !dom.sensorEmitterDetailModal.classList.contains("hidden"))
     || (emitterBackdrop && !emitterBackdrop.classList.contains("hidden"))
   );
   document.body.classList.toggle("emitter-modal-open", hasOpenModal);
@@ -13609,11 +13623,19 @@ function onWorkerMessage(event) {
   }
 
   if (type === "simulation:complete") {
+    if (isSensorEmitterDetailCoverageRequestId(payload?.requestId)) {
+      consumeSensorEmitterDetailCoverageResult(payload);
+      return;
+    }
     consumeSimulationResult(payload);
     return;
   }
 
   if (type === "simulation:progress") {
+    if (isSensorEmitterDetailCoverageRequestId(payload?.requestId)) {
+      updateSensorEmitterDetailCoverageProgress(payload);
+      return;
+    }
     if (payload.requestId === state.simulationProgress.requestId) {
       const scaledPercent = 32 + clamp(payload.fraction ?? 0, 0, 1) * 60;
       updateSimulationProgress(
@@ -25981,6 +26003,487 @@ function getSensorReceptionSummary(sensor) {
   };
 }
 
+function isSensorEmitterDetailCoverageRequestId(requestId) {
+  return String(requestId || "").startsWith(SENSOR_DETAIL_COVERAGE_REQUEST_PREFIX);
+}
+
+function getSensorEmitterDetailEmissionId(entry) {
+  return String(entry?.sourceEmission?.id ?? entry?.emission?.id ?? "primary");
+}
+
+function getSensorEmitterDetailSelection(sensorId, assetId, emissionId = "") {
+  const sensor = state.sensors.find((entry) => String(entry.id) === String(sensorId));
+  const asset = getSensorEvaluableEmitterAssets().find((entry) => String(entry.id) === String(assetId))
+    || state.assets.find((entry) => String(entry.id) === String(assetId));
+  if (!sensor || !asset) return null;
+  const evaluation = getSensorEmitterEvaluation(sensor, asset);
+  const emissionRows = evaluation.emissions?.length ? evaluation.emissions : [evaluation];
+  const selectedRow = emissionRows.find((entry) => getSensorEmitterDetailEmissionId(entry) === String(emissionId))
+    || evaluation
+    || emissionRows[0];
+  if (!selectedRow) return null;
+  return {
+    sensor,
+    asset,
+    evaluation,
+    entry: selectedRow,
+    emissionId: getSensorEmitterDetailEmissionId(selectedRow),
+    sensorPosition: getSensorEffectiveMapPosition(sensor),
+    emitterPosition: getAssetEffectiveMapPosition(asset),
+  };
+}
+
+function formatSensorDetailDb(value, decimals = 1) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? `${numeric.toFixed(decimals)} dB` : "--";
+}
+
+function formatSensorDetailDbm(value, decimals = 1) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? `${numeric.toFixed(decimals)} dBm` : "--";
+}
+
+function formatSensorDetailDbi(value, decimals = 1) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? `${numeric.toFixed(decimals)} dBi` : "--";
+}
+
+function formatSensorDetailMHz(value, decimals = 3) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return "--";
+  const fixed = numeric >= 100 ? numeric.toFixed(1) : numeric.toFixed(decimals);
+  return `${fixed.replace(/\.?0+$/, "")} MHz`;
+}
+
+function formatSensorDetailCoordinate(position) {
+  if (!position) return "Not placed";
+  const coordinateSystem = state.settings?.coordinateSystem || "mgrs";
+  const raw = formatCoordinate(Number(position.lat), Number(position.lon), coordinateSystem);
+  return coordinateSystem === "mgrs" ? formatMgrsDisplay(raw) : raw;
+}
+
+function renderSensorEmitterDetailRows(rows = []) {
+  return rows
+    .filter((row) => row && row.label)
+    .map((row) => `
+      <div class="sensor-emitter-detail-row">
+        <dt>${escapeHtml(row.label)}</dt>
+        <dd>${escapeHtml(row.value ?? "--")}</dd>
+      </div>
+    `)
+    .join("");
+}
+
+function renderSensorEmitterDetailEmissionList(selection) {
+  const rows = selection.evaluation?.emissions || [];
+  if (rows.length <= 1) return "";
+  return `
+    <section class="sensor-emitter-detail-section">
+      <h3>Emitter Emissions</h3>
+      <div class="sensor-emitter-emission-list">
+        ${rows.map((entry) => {
+          const active = getSensorEmitterDetailEmissionId(entry) === selection.emissionId;
+          const frequencyLabel = Number.isFinite(Number(entry.emission?.frequencyMHz))
+            ? formatEmitterWorkspaceFrequency(entry.emission.frequencyMHz)
+            : "No frequency";
+          const rxLabel = Number.isFinite(Number(entry.rxDbm)) ? `${Number(entry.rxDbm).toFixed(1)} dBm` : "RX --";
+          const marginLabel = Number.isFinite(Number(entry.marginDb)) ? `${Number(entry.marginDb).toFixed(1)} dB margin` : "Margin --";
+          return `
+            <div class="sensor-emitter-emission-row${active ? " is-active" : ""}">
+              <strong>${escapeHtml(entry.emission?.name || entry.sourceEmission?.name || "Emission")} | ${escapeHtml(entry.label || entry.status || "Status")}</strong>
+              <span>${escapeHtml(frequencyLabel)} | ${escapeHtml(rxLabel)} | ${escapeHtml(marginLabel)}</span>
+            </div>
+          `;
+        }).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function renderSensorEmitterDetailContent(selection) {
+  const { sensor, asset, entry, sensorPosition, emitterPosition } = selection;
+  const capability = sensorEvaluation.normalizeSensorCapability(sensor || {});
+  const emission = entry.emission || sensorEvaluation.normalizeEmitterEmission(asset || {}, entry.sourceEmission || {});
+  const compatibility = sensorEvaluation.assessReceiveCompatibility(capability, emission);
+  const propagation = entry.propagation || {};
+  const statusClass = entry.className || "not-detected";
+  const rxLabel = formatSensorDetailDbm(entry.rxDbm);
+  const marginLabel = formatSensorDetailDb(entry.marginDb);
+  const demodMarginLabel = formatSensorDetailDb(entry.demodMarginDb);
+  const distanceLabel = Number.isFinite(Number(entry.distanceM)) ? formatDistance(entry.distanceM) : (entry.positionLabel || "--");
+  const terrainLabel = propagation.terrainSourceLabel || entry.terrainSourceLabel || "No terrain";
+  const modelLabel = propagation.propagationModel ? propagationModelLabel(propagation.propagationModel) : "--";
+  const bandwidthLabel = formatSensorDetailMHz(emission.occupiedBandwidthMHz);
+  const sensorBandwidthLabel = formatSensorDetailMHz(capability.instantaneousBandwidthMHz);
+  const modeLabel = [
+    compatibility.spectrumCanIdentify ? "Spectrum/IQ identify" : "",
+    compatibility.demodCompatible ? "Demod compatible" : "Demod mismatch",
+  ].filter(Boolean).join(" | ");
+  const pathRows = [
+    { label: "Path loss", value: formatSensorDetailDb(propagation.pathLossDb) },
+    { label: "Terrain source", value: terrainLabel },
+    { label: "Completeness", value: propagation.terrainCompleteness || entry.terrainCompleteness || "--" },
+    { label: "LOS / Fresnel", value: propagation.geometricLosClear === false ? "Blocked" : propagation.fresnelPolicyClear === false ? "Fresnel limited" : propagation.geometricLosClear === true ? "Clear" : "--" },
+    { label: "Building loss", value: formatSensorDetailDb(propagation.buildingLossDb) },
+    { label: "Weather loss", value: formatSensorDetailDb(propagation.weatherLossDb) },
+  ];
+  const sensorRows = [
+    { label: "Sensor location", value: formatSensorDetailCoordinate(sensorPosition) },
+    { label: "Frequency range", value: formatSensorFrequencyRange(capability) },
+    { label: "Instant BW", value: sensorBandwidthLabel },
+    { label: "Sensitivity", value: formatDbm(capability.sensitivityDbm) },
+    { label: "Receivers / demods", value: `${capability.channels} RX / ${capability.demodulators} demod` },
+    { label: "Antenna", value: `${capability.antennaType || "Omni"} | ${formatSensorDetailDbi(capability.antennaGainDbi)} | ${Number(capability.antennaHeightM).toFixed(1)} m` },
+  ];
+  const emitterRows = [
+    { label: "Emitter location", value: formatSensorDetailCoordinate(emitterPosition) },
+    { label: "Center frequency", value: formatSensorDetailMHz(emission.frequencyMHz) },
+    { label: "Occupied BW", value: bandwidthLabel },
+    { label: "Waveform", value: emission.waveform || "--" },
+    { label: "Modulation", value: emission.modulation || "--" },
+    { label: "Power / antenna", value: `${Number(emission.powerW).toFixed(3).replace(/\.?0+$/, "")} W | ${formatSensorDetailDbi(emission.antennaGainDbi)} | ${Number(emission.antennaHeightM).toFixed(1)} m` },
+  ];
+  return `
+    <div class="sensor-emitter-detail-summary ${statusClass}">
+      <strong>${escapeHtml(entry.label || entry.status || "Evaluation")}</strong>
+      <span>${escapeHtml(entry.limitingReason || entry.positionLabel || "No limiting reason reported.")}</span>
+    </div>
+    <div class="sensor-emitter-detail-pill-row">
+      <span class="${entry.energyDetected ? "is-on" : ""}">Energy</span>
+      <span class="${entry.identified ? "is-on" : ""}">Identified</span>
+      <span class="${entry.demodCapable ? "is-on" : ""}">Demod</span>
+    </div>
+    <div class="sensor-emitter-detail-metrics">
+      <div><span>RX Power</span><strong>${escapeHtml(rxLabel)}</strong></div>
+      <div><span>Margin</span><strong>${escapeHtml(marginLabel)}</strong></div>
+      <div><span>Demod Margin</span><strong>${escapeHtml(demodMarginLabel)}</strong></div>
+      <div><span>Range</span><strong>${escapeHtml(distanceLabel)}</strong></div>
+    </div>
+    <section class="sensor-emitter-detail-section">
+      <h3>Compatibility</h3>
+      <dl>${renderSensorEmitterDetailRows([
+        { label: "Mode result", value: modeLabel || "--" },
+        { label: "Bandwidth", value: `${bandwidthLabel} emission vs ${sensorBandwidthLabel} sensor` },
+        { label: "Propagation model", value: modelLabel },
+        { label: "Receive tags", value: capability.receiveModeTags?.join(", ") || "--" },
+      ])}</dl>
+    </section>
+    <section class="sensor-emitter-detail-section">
+      <h3>Path Model</h3>
+      <dl>${renderSensorEmitterDetailRows(pathRows)}</dl>
+    </section>
+    <section class="sensor-emitter-detail-section">
+      <h3>Sensor</h3>
+      <dl>${renderSensorEmitterDetailRows(sensorRows)}</dl>
+    </section>
+    <section class="sensor-emitter-detail-section">
+      <h3>Emitter</h3>
+      <dl>${renderSensorEmitterDetailRows(emitterRows)}</dl>
+    </section>
+    ${renderSensorEmitterDetailEmissionList(selection)}
+  `;
+}
+
+function getSensorEmitterDetailBasemapConfig() {
+  if (dom.basemapSelect?.value === "custom") {
+    const customUrl = dom.customTileUrl?.value?.trim();
+    if (customUrl) {
+      return { label: "Custom XYZ", url: customUrl, attribution: "Custom imagery source", maxZoom: 20 };
+    }
+  }
+  return BASEMAPS[dom.basemapSelect?.value] || BASEMAPS.esri;
+}
+
+function ensureSensorEmitterDetailMap() {
+  if (!dom.sensorEmitterDetailMap) return null;
+  if (!_sensorEmitterDetailState.map) {
+    _sensorEmitterDetailState.map = L.map(dom.sensorEmitterDetailMap, {
+      attributionControl: false,
+      zoomControl: true,
+      preferCanvas: true,
+      worldCopyJump: false,
+    });
+    _sensorEmitterDetailState.layerGroup = L.layerGroup().addTo(_sensorEmitterDetailState.map);
+  }
+  const config = getSensorEmitterDetailBasemapConfig();
+  if (_sensorEmitterDetailState.baseLayer?._rfSimUrl !== config.url) {
+    if (_sensorEmitterDetailState.baseLayer) {
+      _sensorEmitterDetailState.map.removeLayer(_sensorEmitterDetailState.baseLayer);
+    }
+    _sensorEmitterDetailState.baseLayer = L.tileLayer(config.url, {
+      attribution: config.attribution,
+      maxZoom: config.maxZoom,
+      crossOrigin: true,
+    });
+    _sensorEmitterDetailState.baseLayer._rfSimUrl = config.url;
+    _sensorEmitterDetailState.baseLayer.addTo(_sensorEmitterDetailState.map);
+  }
+  return _sensorEmitterDetailState.map;
+}
+
+function clearSensorEmitterDetailMapLayers() {
+  _sensorEmitterDetailState.layerGroup?.clearLayers();
+  if (_sensorEmitterDetailState.coverageLayer && _sensorEmitterDetailState.map) {
+    _sensorEmitterDetailState.map.removeLayer(_sensorEmitterDetailState.coverageLayer);
+  }
+  _sensorEmitterDetailState.coverageLayer = null;
+}
+
+function sensorEmitterDetailPathColor(entry) {
+  if (entry?.demodCapable) return "#34d399";
+  if (entry?.identified || entry?.energyDetected) return "#7dd3fc";
+  if (entry?.className === "marginal") return "#fbbf24";
+  return "#fb7185";
+}
+
+function renderSensorEmitterDetailMap(selection) {
+  const map = ensureSensorEmitterDetailMap();
+  if (!map) return;
+  clearSensorEmitterDetailMapLayers();
+  const { sensor, asset, sensorPosition, emitterPosition, entry } = selection;
+  if (!sensorPosition || !emitterPosition) {
+    if (dom.sensorEmitterDetailLegend) {
+      dom.sensorEmitterDetailLegend.textContent = "Coverage needs sensor and emitter placement.";
+    }
+    map.setView(state.map?.getCenter?.() || [34.25, -115.97], state.map?.getZoom?.() || 10);
+    requestAnimationFrame(() => map.invalidateSize());
+    return;
+  }
+  const sensorLatLng = [sensorPosition.lat, sensorPosition.lon];
+  const emitterLatLng = [emitterPosition.lat, emitterPosition.lon];
+  L.marker(emitterLatLng, { icon: createEmitterIcon(asset), keyboard: false })
+    .bindTooltip(asset.name || asset.emitterLabel || "Emitter", { permanent: false, direction: "top" })
+    .addTo(_sensorEmitterDetailState.layerGroup);
+  L.marker(sensorLatLng, { icon: createSensorIcon(sensor), keyboard: false })
+    .bindTooltip(sensor.name || "RF Sensor", { permanent: false, direction: "top" })
+    .addTo(_sensorEmitterDetailState.layerGroup);
+  L.polyline([emitterLatLng, sensorLatLng], {
+    color: sensorEmitterDetailPathColor(entry),
+    weight: 3,
+    opacity: 0.95,
+    dashArray: entry?.energyDetected ? null : "6 7",
+  }).addTo(_sensorEmitterDetailState.layerGroup);
+  const bounds = L.latLngBounds([emitterLatLng, sensorLatLng]);
+  if (bounds.isValid()) {
+    if (bounds.getSouthWest().equals(bounds.getNorthEast())) {
+      map.setView(emitterLatLng, 16);
+    } else {
+      map.fitBounds(bounds.pad(0.42), { padding: [48, 48], maxZoom: 15 });
+    }
+  }
+  requestAnimationFrame(() => map.invalidateSize());
+}
+
+function setSensorEmitterDetailStatus(message, tone = "") {
+  if (!dom.sensorEmitterDetailStatus) return;
+  dom.sensorEmitterDetailStatus.textContent = message || "";
+  dom.sensorEmitterDetailStatus.className = `sensor-emitter-detail-status${tone ? ` ${tone}` : ""}`;
+}
+
+function buildSensorEmitterDetailCoverageContext(selection) {
+  const { sensor, asset, entry, sensorPosition, emitterPosition } = selection;
+  const emission = entry?.sourceEmission || entry?.emission;
+  const normalizedEmission = sensorEvaluation.normalizeEmitterEmission(asset || {}, emission || {});
+  const frequencyMHz = Number(normalizedEmission.frequencyMHz);
+  if (!state.worker || !sensorPosition || !emitterPosition || !Number.isFinite(frequencyMHz)) return null;
+  const capability = sensorEvaluation.normalizeSensorCapability(sensor || {});
+  const txAsset = buildSensorEmitterWorkerEndpoint(asset, emission, emitterPosition);
+  const rxEndpoint = buildSensorWorkerEndpoint(sensor, sensorPosition, frequencyMHz);
+  const terrain = getTopologyTerrainForPath(sensorPosition.lat, sensorPosition.lon, emitterPosition.lat, emitterPosition.lon);
+  const propagationModel = getTopologyPropagationModel();
+  const clearancePolicy = propagationModel === "itu-buildings-weather" ? "fresnel-60-buildings" : "fresnel-60";
+  const fallbackDistanceM = haversineKm(emitterPosition.lat, emitterPosition.lon, sensorPosition.lat, sensorPosition.lon) * 1000;
+  const distanceM = Number.isFinite(Number(entry?.distanceM)) ? Number(entry.distanceM) : fallbackDistanceM;
+  const radiusMeters = clamp(Math.max(distanceM * 1.15, 1500), 1500, 250000);
+  const gridMeters = clamp(radiusMeters / 70, 50, 4000);
+  const cacheKey = [
+    "sensor-detail-coverage",
+    Math.round(radiusMeters),
+    Math.round(gridMeters),
+    buildTopologyPathProfileCacheKey({
+      terrain,
+      propagationModel,
+      clearancePolicy,
+      endpointA: txAsset,
+      endpointB: rxEndpoint,
+    }),
+  ].join("|");
+  return {
+    cacheKey,
+    terrain,
+    terrainId: terrain?.id || "",
+    radiusMeters,
+    gridMeters,
+    propagationModel,
+    txAsset,
+    rxTargetTemplate: {
+      antennaHeightM: capability.antennaHeightM,
+      receiverGainDbi: capability.antennaGainDbi,
+      receiverSensitivityDbm: capability.sensitivityDbm,
+      systemLossDb: capability.systemLossDb,
+    },
+  };
+}
+
+function pruneSensorDetailCoverageCache(maxEntries = 18) {
+  while (state.sensorDetailCoverageCache.size > maxEntries) {
+    const firstKey = state.sensorDetailCoverageCache.keys().next().value;
+    if (firstKey === undefined) break;
+    state.sensorDetailCoverageCache.delete(firstKey);
+  }
+}
+
+async function requestSensorEmitterDetailCoverage(selection) {
+  const context = buildSensorEmitterDetailCoverageContext(selection);
+  if (!context) {
+    setSensorEmitterDetailStatus("Coverage requires a placed sensor, a placed emitter, and a valid emission frequency.", "warning");
+    return;
+  }
+  _sensorEmitterDetailState.coverageCacheKey = context.cacheKey;
+  const cached = state.sensorDetailCoverageCache.get(context.cacheKey);
+  if (cached) {
+    renderSensorEmitterDetailCoverageOverlay(cached);
+    return;
+  }
+  const requestId = `${SENSOR_DETAIL_COVERAGE_REQUEST_PREFIX}${++state.sensorDetailCoverageRequestSeq}`;
+  _sensorEmitterDetailState.coverageRequestId = requestId;
+  state.sensorDetailCoverageRequests.set(requestId, { cacheKey: context.cacheKey });
+  setSensorEmitterDetailStatus("Preparing terrain-aware coverage overlay...", "pending");
+  if (dom.sensorEmitterDetailLegend) {
+    dom.sensorEmitterDetailLegend.textContent = "Coverage overlay pending...";
+  }
+  try {
+    if (context.terrain && !state.terrainReadyIds.has(context.terrain.id)) {
+      await cacheTerrainInWorker(context.terrain);
+    }
+    if (_sensorEmitterDetailState.coverageRequestId !== requestId) return;
+    state.worker.postMessage({
+      type: "simulation:start",
+      payload: {
+        requestId,
+        asset: context.txAsset,
+        weather: state.weather,
+        terrainId: context.terrainId,
+        radiusMeters: context.radiusMeters,
+        radiusUnit: "auto",
+        gridMeters: context.gridMeters,
+        receiverHeight: context.rxTargetTemplate.antennaHeightM,
+        opacity: 0.72,
+        propagationModel: context.propagationModel,
+        rxTargetTemplate: context.rxTargetTemplate,
+      },
+    });
+  } catch (error) {
+    state.sensorDetailCoverageRequests.delete(requestId);
+    if (_sensorEmitterDetailState.coverageRequestId === requestId) {
+      _sensorEmitterDetailState.coverageRequestId = "";
+      setSensorEmitterDetailStatus(error instanceof Error ? error.message : "Coverage overlay failed.", "warning");
+    }
+  }
+}
+
+function updateSensorEmitterDetailCoverageProgress(payload = {}) {
+  if (payload.requestId !== _sensorEmitterDetailState.coverageRequestId) return;
+  const percent = Math.round(clamp(payload.fraction ?? 0, 0, 1) * 100);
+  setSensorEmitterDetailStatus(`${payload.stage || "Tracing RF paths..."} ${percent}%`, "pending");
+}
+
+function consumeSensorEmitterDetailCoverageResult(payload = {}) {
+  const requestId = payload.requestId;
+  const request = state.sensorDetailCoverageRequests.get(requestId);
+  if (!request) return;
+  state.sensorDetailCoverageRequests.delete(requestId);
+  const coverage = {
+    ...payload,
+    rssi: new Float32Array(payload.rssi),
+    lineOfSight: new Uint8Array(payload.lineOfSight),
+    validMask: new Uint8Array(payload.validMask),
+    receivedAt: Date.now(),
+  };
+  state.sensorDetailCoverageCache.set(request.cacheKey, coverage);
+  pruneSensorDetailCoverageCache();
+  if (_sensorEmitterDetailState.coverageRequestId === requestId) {
+    _sensorEmitterDetailState.coverageRequestId = "";
+    renderSensorEmitterDetailCoverageOverlay(coverage);
+  }
+}
+
+function renderSensorEmitterDetailCoverageOverlay(coverage) {
+  const map = ensureSensorEmitterDetailMap();
+  if (!map || !coverage) return;
+  if (_sensorEmitterDetailState.coverageLayer) {
+    map.removeLayer(_sensorEmitterDetailState.coverageLayer);
+  }
+  _sensorEmitterDetailState.coverageLayer = new CanvasViewshedLayer({
+    rssi: coverage.rssi,
+    lineOfSight: coverage.lineOfSight,
+    validMask: coverage.validMask,
+    rows: coverage.rows,
+    cols: coverage.cols,
+    sampleBounds: coverage.sampleBounds,
+    gridLatStepDeg: coverage.gridLatStepDeg,
+    gridLonStepDeg: coverage.gridLonStepDeg,
+    opacity: 0.72,
+  });
+  _sensorEmitterDetailState.coverageLayer.addTo(map);
+  const cells = coverage.cellCount ?? countCoverageCells(coverage.rssi, coverage.validMask);
+  const model = propagationModelLabel(coverage.propagationModel);
+  setSensorEmitterDetailStatus(`Coverage overlay ready | ${model} | ${cells.toLocaleString()} cells`, "ready");
+  if (dom.sensorEmitterDetailLegend) {
+    dom.sensorEmitterDetailLegend.innerHTML = `
+      <span><i class="sensor-emitter-legend-chip high"></i>High RSSI</span>
+      <span><i class="sensor-emitter-legend-chip mid"></i>Mid</span>
+      <span><i class="sensor-emitter-legend-chip low"></i>Low</span>
+      <span>Radius ${escapeHtml(formatDistance(coverage.radiusMeters))}</span>
+    `;
+  }
+}
+
+function openSensorEmitterDetailModal(sensorId, assetId, emissionId = "") {
+  const selection = getSensorEmitterDetailSelection(sensorId, assetId, emissionId);
+  if (!selection) {
+    setStatus("That sensor/emitter relationship is no longer available.", true);
+    return;
+  }
+  const { sensor, asset, entry } = selection;
+  _sensorEmitterDetailState.sensorId = sensor.id;
+  _sensorEmitterDetailState.assetId = asset.id;
+  _sensorEmitterDetailState.emissionId = selection.emissionId;
+  _sensorEmitterDetailState.coverageRequestId = "";
+  if (dom.sensorEmitterDetailTitle) {
+    dom.sensorEmitterDetailTitle.textContent = `${sensor.name || "RF Sensor"} -> ${asset.name || asset.emitterLabel || "Emitter"}`;
+  }
+  if (dom.sensorEmitterDetailSubtitle) {
+    const emissionLabel = entry.emission?.name || entry.sourceEmission?.name || "Emission";
+    const frequencyLabel = Number.isFinite(Number(entry.emission?.frequencyMHz)) ? formatEmitterWorkspaceFrequency(entry.emission.frequencyMHz) : "No frequency";
+    dom.sensorEmitterDetailSubtitle.textContent = `${emissionLabel} | ${frequencyLabel} | ${entry.label || entry.status || "Evaluation"}`;
+  }
+  if (dom.sensorEmitterDetailBody) {
+    dom.sensorEmitterDetailBody.innerHTML = renderSensorEmitterDetailContent(selection);
+  }
+  dom.sensorEmitterDetailModal?.classList.remove("hidden");
+  updateModalBodyState();
+  setSensorEmitterDetailStatus(entry.limitingReason || entry.label || "Evaluating relationship.", entry.className || "");
+  renderSensorEmitterDetailMap(selection);
+  requestSensorEmitterDetailCoverage(selection);
+}
+
+function closeSensorEmitterDetailModal() {
+  const requestId = _sensorEmitterDetailState.coverageRequestId;
+  if (requestId) {
+    state.worker?.postMessage({ type: "simulation:cancel", payload: { requestId } });
+    state.sensorDetailCoverageRequests.delete(requestId);
+  }
+  _sensorEmitterDetailState.sensorId = "";
+  _sensorEmitterDetailState.assetId = "";
+  _sensorEmitterDetailState.emissionId = "";
+  _sensorEmitterDetailState.coverageRequestId = "";
+  _sensorEmitterDetailState.coverageCacheKey = "";
+  clearSensorEmitterDetailMapLayers();
+  dom.sensorEmitterDetailModal?.classList.add("hidden");
+  updateModalBodyState();
+}
+
 function buildSensorWorkspaceDefaultLayout(index = 0) {
   const { cardWidth, columnGap, startX, startY } = getSensorWorkspaceLayoutMetrics();
   const columnCount = 6;
@@ -26202,12 +26705,13 @@ function renderSensorsWorkspace() {
           const emissionCountLabel = entry.emissionCount > 1 ? ` | ${entry.emissionCount} emissions checked` : "";
           const terrainLabel = entry.terrainSourceLabel ? ` | ${entry.terrainSourceLabel}` : "";
           const reasonLabel = entry.limitingReason || entry.positionLabel || entry.label;
+          const emissionId = getSensorEmitterDetailEmissionId(entry);
           return `
-          <div class="sensor-detection-row ${entry.className}">
+          <button class="sensor-detection-row sensor-detection-action ${entry.className}" type="button" data-sensor-id="${escapeHtml(sensor.id)}" data-asset-id="${escapeHtml(entry.asset?.id || "")}" data-emission-id="${escapeHtml(emissionId)}" aria-label="${escapeHtml(`Open ${entry.asset?.name || entry.asset?.emitterLabel || "emitter"} visibility details`)}">
             <strong>${escapeHtml(entry.asset?.name || entry.asset?.emitterLabel || "Emitter")} | ${escapeHtml(entry.label)}</strong>
             <span>${escapeHtml(frequencyLabel)} | ${escapeHtml(rxLabel)} | ${escapeHtml(marginLabel)} | ${escapeHtml(positionLabel)}${escapeHtml(terrainLabel)}${escapeHtml(emissionCountLabel)}</span>
             <span class="sensor-detection-reason">${escapeHtml(reasonLabel)}</span>
-          </div>
+          </button>
         `;
         }).join("")}${summary.hiddenEmitterCount ? `<div class="emitters-net-empty">${escapeHtml(`${summary.hiddenEmitterCount} more emitter${summary.hiddenEmitterCount === 1 ? "" : "s"} evaluated`)}</div>` : ""}`
       : `<div class="emitters-net-empty">${escapeHtml(summary.message || "No detectable emitters yet.")}</div>`;
@@ -26242,6 +26746,13 @@ function renderSensorsWorkspace() {
         <div class="sensor-detection-list">${detectionMarkup}</div>
       </div>
     `;
+    card.querySelectorAll(".sensor-detection-action").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        openSensorEmitterDetailModal(button.dataset.sensorId, button.dataset.assetId, button.dataset.emissionId);
+      });
+    });
     card.addEventListener("click", (event) => {
       event.stopPropagation();
       _sensorsWorkspaceState.selectedSensorId = sensor.id;
@@ -26249,6 +26760,7 @@ function renderSensorsWorkspace() {
     });
     card.addEventListener("pointerdown", (event) => {
       if (event.button !== 0) return;
+      if (event.target.closest(".sensor-detection-action")) return;
       event.stopPropagation();
       hideSensorsContextMenu();
       _sensorsWorkspaceState.selectedSensorId = sensor.id;
@@ -26409,6 +26921,8 @@ function initSensorsViewIfNeeded() {
     dom.sensorModesInput,
   ].forEach((input) => input?.addEventListener("input", updateSensorCompatibleNodesEditor));
   addModalBackdropClose(dom.sensorEditorModal, closeSensorEditor);
+  dom.sensorEmitterDetailCloseBtn?.addEventListener("click", closeSensorEmitterDetailModal);
+  addModalBackdropClose(dom.sensorEmitterDetailModal, closeSensorEmitterDetailModal);
 
   document.addEventListener("click", (event) => {
     if (!dom.sensorsContextMenu?.contains(event.target)) {
@@ -26418,6 +26932,7 @@ function initSensorsViewIfNeeded() {
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
       hideSensorsContextMenu();
+      closeSensorEmitterDetailModal();
       closeSensorEditor();
     }
   });
@@ -41220,6 +41735,18 @@ const _sensorsWorkspaceState = {
   editingSensorId: "",
   pendingSpawnLayout: null,
   libraryCollapsed: false,
+};
+
+const _sensorEmitterDetailState = {
+  sensorId: "",
+  assetId: "",
+  emissionId: "",
+  coverageRequestId: "",
+  coverageCacheKey: "",
+  map: null,
+  baseLayer: null,
+  layerGroup: null,
+  coverageLayer: null,
 };
 
 const SENSOR_LIBRARY = Object.freeze([
