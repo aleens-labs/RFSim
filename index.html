@@ -322,24 +322,24 @@
                       <input id="terrainContourLineColorInput" class="terrain-color-input" type="color" value="#7dd3fc" aria-label="Contour line color">
                     </div>
                     <div id="terrainContourLinePalette" class="terrain-color-palette" role="group" aria-label="Contour line palette">
-                      <button class="terrain-color-swatch is-active" type="button" data-target="line" data-color="#7dd3fc" style="--swatch-color:#7dd3fc" aria-label="Contour line color cyan"></button>
-                      <button class="terrain-color-swatch" type="button" data-target="line" data-color="#facc15" style="--swatch-color:#facc15" aria-label="Contour line color amber"></button>
-                      <button class="terrain-color-swatch" type="button" data-target="line" data-color="#34d399" style="--swatch-color:#34d399" aria-label="Contour line color green"></button>
-                      <button class="terrain-color-swatch" type="button" data-target="line" data-color="#f97316" style="--swatch-color:#f97316" aria-label="Contour line color orange"></button>
-                      <button class="terrain-color-swatch" type="button" data-target="line" data-color="#e879f9" style="--swatch-color:#e879f9" aria-label="Contour line color violet"></button>
-                      <button class="terrain-color-swatch" type="button" data-target="line" data-color="#f8fafc" style="--swatch-color:#f8fafc" aria-label="Contour line color white"></button>
+                      <button class="terrain-color-swatch terrain-swatch-cyan is-active" type="button" data-target="line" data-color="#7dd3fc" aria-label="Contour line color cyan"></button>
+                      <button class="terrain-color-swatch terrain-swatch-amber" type="button" data-target="line" data-color="#facc15" aria-label="Contour line color amber"></button>
+                      <button class="terrain-color-swatch terrain-swatch-green" type="button" data-target="line" data-color="#34d399" aria-label="Contour line color green"></button>
+                      <button class="terrain-color-swatch terrain-swatch-orange" type="button" data-target="line" data-color="#f97316" aria-label="Contour line color orange"></button>
+                      <button class="terrain-color-swatch terrain-swatch-violet" type="button" data-target="line" data-color="#e879f9" aria-label="Contour line color violet"></button>
+                      <button class="terrain-color-swatch terrain-swatch-white" type="button" data-target="line" data-color="#f8fafc" aria-label="Contour line color white"></button>
                     </div>
                     <div class="terrain-heatmap-dropdown-header">
                       <span>Label Color</span>
                       <input id="terrainContourLabelColorInput" class="terrain-color-input" type="color" value="#f8fafc" aria-label="Contour label color">
                     </div>
                     <div id="terrainContourLabelPalette" class="terrain-color-palette" role="group" aria-label="Contour label palette">
-                      <button class="terrain-color-swatch is-active" type="button" data-target="label" data-color="#f8fafc" style="--swatch-color:#f8fafc" aria-label="Contour label color white"></button>
-                      <button class="terrain-color-swatch" type="button" data-target="label" data-color="#e0f2fe" style="--swatch-color:#e0f2fe" aria-label="Contour label color pale cyan"></button>
-                      <button class="terrain-color-swatch" type="button" data-target="label" data-color="#fef3c7" style="--swatch-color:#fef3c7" aria-label="Contour label color pale amber"></button>
-                      <button class="terrain-color-swatch" type="button" data-target="label" data-color="#dcfce7" style="--swatch-color:#dcfce7" aria-label="Contour label color pale green"></button>
-                      <button class="terrain-color-swatch" type="button" data-target="label" data-color="#fed7aa" style="--swatch-color:#fed7aa" aria-label="Contour label color pale orange"></button>
-                      <button class="terrain-color-swatch" type="button" data-target="label" data-color="#f5d0fe" style="--swatch-color:#f5d0fe" aria-label="Contour label color pale violet"></button>
+                      <button class="terrain-color-swatch terrain-swatch-white is-active" type="button" data-target="label" data-color="#f8fafc" aria-label="Contour label color white"></button>
+                      <button class="terrain-color-swatch terrain-swatch-pale-cyan" type="button" data-target="label" data-color="#e0f2fe" aria-label="Contour label color pale cyan"></button>
+                      <button class="terrain-color-swatch terrain-swatch-pale-amber" type="button" data-target="label" data-color="#fef3c7" aria-label="Contour label color pale amber"></button>
+                      <button class="terrain-color-swatch terrain-swatch-pale-green" type="button" data-target="label" data-color="#dcfce7" aria-label="Contour label color pale green"></button>
+                      <button class="terrain-color-swatch terrain-swatch-pale-orange" type="button" data-target="label" data-color="#fed7aa" aria-label="Contour label color pale orange"></button>
+                      <button class="terrain-color-swatch terrain-swatch-pale-violet" type="button" data-target="label" data-color="#f5d0fe" aria-label="Contour label color pale violet"></button>
                     </div>
                   </div>
                 </div>
@@ -357,7 +357,7 @@
                   </svg>
                   <span class="add-emitter-plus">+</span>
                 </button>
-                <input id="importFileInput" type="file" accept=".kml,.kmz,.geojson,.json,.zip" style="display:none" aria-hidden="true">
+                <input id="importFileInput" class="hidden" type="file" accept=".kml,.kmz,.geojson,.json,.zip" aria-label="Import map file" title="Import map file" aria-hidden="true">
                 <!-- Add Emitter -->
                 <button id="addEmitterBtn" class="ghost-button small icon-button add-emitter-btn mc-icon-btn" type="button" aria-label="Add Emitter" data-label="Emitter">
                   <!-- handheld radio silhouette — larger viewBox gives more drawing room -->
@@ -433,7 +433,7 @@
                       <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
                     </svg>
                   </span>
-                  <input id="mapContentsSearchInput" type="text" placeholder="Search map contents">
+                  <input id="mapContentsSearchInput" type="text" placeholder="Search map contents" aria-label="Search map contents" title="Search map contents">
                 </label>
                 <button id="mapContentsSearchClearBtn" class="ghost-button small icon-button map-contents-search-clear hidden" type="button" aria-label="Clear map contents search">
                   &#10005;
@@ -466,7 +466,7 @@
                   </div>
                   <div class="ss-picker-search-shell hidden" id="siteStudyPrimaryAssetSearchShell">
                     <button type="button" class="ss-picker-back-btn" id="siteStudyPrimaryAssetBack">← Back</button>
-                    <input type="text" class="ss-picker-search" id="siteStudyPrimaryAssetSearch" placeholder="Search…">
+                    <input type="text" class="ss-picker-search" id="siteStudyPrimaryAssetSearch" placeholder="Search…" aria-label="Search primary site study assets" title="Search primary site study assets">
                   </div>
                   <div class="ss-picker-list hidden" id="siteStudyPrimaryAssetList"></div>
                 </div>
@@ -484,7 +484,7 @@
                   </div>
                   <div class="ss-picker-search-shell hidden" id="siteStudySecondaryAssetSearchShell">
                     <button type="button" class="ss-picker-back-btn" id="siteStudySecondaryAssetBack">← Back</button>
-                    <input type="text" class="ss-picker-search" id="siteStudySecondaryAssetSearch" placeholder="Search…">
+                    <input type="text" class="ss-picker-search" id="siteStudySecondaryAssetSearch" placeholder="Search…" aria-label="Search secondary site study assets" title="Search secondary site study assets">
                   </div>
                   <div class="ss-picker-list hidden" id="siteStudySecondaryAssetList"></div>
                 </div>
@@ -502,7 +502,7 @@
                   </div>
                   <div class="ss-picker-search-shell hidden" id="siteStudyCandidateContentSearchShell">
                     <button type="button" class="ss-picker-back-btn" id="siteStudyCandidateContentBack">← Back</button>
-                    <input type="text" class="ss-picker-search" id="siteStudyCandidateContentSearch" placeholder="Search…">
+                    <input type="text" class="ss-picker-search" id="siteStudyCandidateContentSearch" placeholder="Search…" aria-label="Search candidate site study content" title="Search candidate site study content">
                   </div>
                   <div class="ss-picker-list hidden" id="siteStudyCandidateContentList"></div>
                 </div>
@@ -520,7 +520,7 @@
                   </div>
                   <div class="ss-picker-search-shell hidden" id="siteStudyObjectiveContentSearchShell">
                     <button type="button" class="ss-picker-back-btn" id="siteStudyObjectiveContentBack">← Back</button>
-                    <input type="text" class="ss-picker-search" id="siteStudyObjectiveContentSearch" placeholder="Search…">
+                    <input type="text" class="ss-picker-search" id="siteStudyObjectiveContentSearch" placeholder="Search…" aria-label="Search objective site study content" title="Search objective site study content">
                   </div>
                   <div class="ss-picker-list hidden" id="siteStudyObjectiveContentList"></div>
                 </div>
@@ -589,25 +589,25 @@
         <div class="control-panel-bottom">
           <!-- Hidden form fields kept for legacy app.js compatibility — not rendered -->
           <div class="hidden-form-fields" aria-hidden="true">
-            <select id="profileSelect"></select>
-            <input id="profileName" type="text" value="Standard VHF">
+            <select id="profileSelect" title="Legacy profile select" aria-label="Legacy profile select"></select>
+            <input id="profileName" type="text" value="Standard VHF" aria-label="Legacy profile name" title="Legacy profile name">
             <button id="saveProfileBtn" type="button"></button>
             <button id="deleteProfileBtn" type="button"></button>
             <button id="applyProfileBtn" type="button"></button>
             <button id="placeAssetBtn" type="button"></button>
-            <select id="assetType"><option value="radio">Radio</option><option value="jammer">Jammer</option><option value="relay">Relay</option><option value="receiver">Receiver</option></select>
-            <select id="assetForce"><option value="friendly">Friendly</option><option value="enemy">Enemy</option><option value="host-nation">Host Nation</option><option value="civilian">Civilian</option><option value="unknown">Unknown</option><option value="other">Other</option></select>
-            <input id="assetName" type="text" value="RF-01">
-            <input id="unitName" type="text" value="Alpha">
-            <input id="frequencyMHz" type="number" min="0.1" step="0.1" value="350">
-            <input id="powerW" type="number" min="0" step="0.1" value="50">
-            <input id="antennaHeight" type="number" min="0" step="0.5" value="10">
-            <input id="antennaGain" type="number" step="0.1" value="2.1">
-            <input id="receiverSensitivity" type="number" step="0.1" value="-95">
-            <input id="systemLoss" type="number" step="0.1" value="1.5">
-            <select id="assetIcon"><option value="radio">Radio</option><option value="tower">Tower</option><option value="jammer">Jammer</option><option value="receiver">Receiver</option><option value="sensor">Sensor</option></select>
-            <div class="color-picker-wrap"><input id="assetColor" type="color" value="#80c8ff"><div class="color-swatches" data-for="assetColor"></div></div>
-            <input id="assetNotes" type="text">
+            <select id="assetType" title="Legacy asset type" aria-label="Legacy asset type"><option value="radio">Radio</option><option value="jammer">Jammer</option><option value="relay">Relay</option><option value="receiver">Receiver</option></select>
+            <select id="assetForce" title="Legacy asset force" aria-label="Legacy asset force"><option value="friendly">Friendly</option><option value="enemy">Enemy</option><option value="host-nation">Host Nation</option><option value="civilian">Civilian</option><option value="unknown">Unknown</option><option value="other">Other</option></select>
+            <input id="assetName" type="text" value="RF-01" aria-label="Legacy asset name" title="Legacy asset name">
+            <input id="unitName" type="text" value="Alpha" aria-label="Legacy unit name" title="Legacy unit name">
+            <input id="frequencyMHz" type="number" min="0.1" step="0.1" value="350" aria-label="Legacy frequency in MHz" title="Legacy frequency in MHz">
+            <input id="powerW" type="number" min="0" step="0.1" value="50" aria-label="Legacy power in watts" title="Legacy power in watts">
+            <input id="antennaHeight" type="number" min="0" step="0.5" value="10" aria-label="Legacy antenna height" title="Legacy antenna height">
+            <input id="antennaGain" type="number" step="0.1" value="2.1" aria-label="Legacy antenna gain" title="Legacy antenna gain">
+            <input id="receiverSensitivity" type="number" step="0.1" value="-95" aria-label="Legacy receiver sensitivity" title="Legacy receiver sensitivity">
+            <input id="systemLoss" type="number" step="0.1" value="1.5" aria-label="Legacy system loss" title="Legacy system loss">
+            <select id="assetIcon" title="Legacy asset icon" aria-label="Legacy asset icon"><option value="radio">Radio</option><option value="tower">Tower</option><option value="jammer">Jammer</option><option value="receiver">Receiver</option><option value="sensor">Sensor</option></select>
+            <div class="color-picker-wrap"><input id="assetColor" type="color" value="#80c8ff" aria-label="Legacy asset color" title="Legacy asset color"><div class="color-swatches" data-for="assetColor"></div></div>
+            <input id="assetNotes" type="text" aria-label="Legacy asset notes" title="Legacy asset notes">
           </div>
 
           <div id="topBarDropdownLayer" class="top-bar-dropdown-layer"></div>
@@ -658,7 +658,7 @@
             </div>
             <div class="tak-chat-messages" id="takChatMessages"></div>
             <form class="tak-chat-form" id="takChatForm" autocomplete="off">
-              <input class="tak-chat-input" id="takChatInput" type="text" placeholder="Message…" maxlength="800" autocomplete="off">
+              <input class="tak-chat-input" id="takChatInput" type="text" placeholder="Message…" maxlength="800" autocomplete="off" aria-label="TAK chat message" title="TAK chat message">
               <button class="tak-chat-send" type="submit" aria-label="Send">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
               </button>
@@ -678,7 +678,7 @@
                 <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
               </svg>
             </span>
-            <input id="mapGeoSearchInput" type="text" placeholder="Search places, coordinates, MGRS…" autocomplete="off">
+            <input id="mapGeoSearchInput" type="text" placeholder="Search places, coordinates, MGRS…" autocomplete="off" aria-label="Search places, coordinates, or MGRS" title="Search places, coordinates, or MGRS">
             <button id="mapGeoSearchClearBtn" class="map-geo-search-clear hidden" type="button" aria-label="Clear search">&#10005;</button>
           </label>
           <div id="mapGeoSearchResults" class="map-search-geocoder-results" role="listbox"></div>
@@ -715,7 +715,7 @@
               <div class="overlay-metric-row">
                 <div class="overlay-metric-block">
                   <span>Date/Time</span>
-                  <strong id="clockValue" style="font-variant-numeric: tabular-nums;">--</strong>
+                  <strong id="clockValue" class="tabular-number">--</strong>
                 </div>
                 <div class="overlay-metric-block">
                   <span id="centerCoordinateLabel">Center Grid</span>
@@ -847,7 +847,7 @@
               <option value="army_group">Army Group</option>
               <option value="theater">Theater / Region</option>
             </select>
-            <input id="toUnitDesignator" type="text" class="to-input" placeholder="Unit Name (e.g. V34 CMD)" maxlength="32">
+            <input id="toUnitDesignator" type="text" class="to-input" placeholder="Unit Name (e.g. V34 CMD)" maxlength="32" aria-label="Unit designator" title="Unit designator">
             <button id="toAddUnitBtn" class="primary-button small" type="button">+ Add Unit</button>
             <button id="toPlaceUnitBtn" class="ghost-button small" type="button">Place / Relocate</button>
           </div>
@@ -1235,7 +1235,7 @@
             </div>
             <!-- Link type legend -->
             <div class="topo-legend">
-              <svg width="0" height="0" style="position:absolute">
+              <svg class="topo-legend-defs" width="0" height="0" aria-hidden="true">
                 <defs>
                   <line id="leg-vhf"    x1="0" y1="4" x2="32" y2="4" stroke-width="2.5"/>
                   <line id="leg-uhf"    x1="0" y1="4" x2="32" y2="4" stroke-width="2.5" stroke-dasharray="12,5"/>
@@ -1294,6 +1294,7 @@
                 <button id="topoLinkPopupClose" class="icon-button" type="button">&#10005;</button>
               </div>
               <div id="topoLinkPopupBody" class="topo-link-popup-body"></div>
+              <div id="topoLinkPopupResize" class="topo-link-popup-resize" aria-hidden="true"></div>
             </div>
           </div>
         </div>
@@ -1421,59 +1422,94 @@
           <button id="sensorEditorCloseBtn" class="ghost-button small icon-button" type="button" aria-label="Close">&#10005;</button>
         </div>
         <div class="emitter-modal-body sensor-editor-body">
-          <div class="emitter-param-grid sensor-editor-grid">
-            <label>
-              Sensor Type
-              <select id="sensorProfileSelect"></select>
-            </label>
-            <label>
-              Sensor Name
-              <input id="sensorNameInput" type="text" maxlength="80" placeholder="e.g. Beast+ Team 1">
-            </label>
-            <label>
-              Unit / Callsign
-              <input id="sensorUnitInput" type="text" maxlength="80" placeholder="e.g. S2 SIGINT">
-            </label>
-            <label>
-              Link to T/O Unit
-              <select id="sensorToUnitSelect"></select>
-            </label>
-            <label>
-              Min Frequency (MHz)
-              <input id="sensorFreqMinInput" type="number" step="any" min="0">
-            </label>
-            <label>
-              Max Frequency (MHz)
-              <input id="sensorFreqMaxInput" type="number" step="any" min="0">
-            </label>
-            <label>
-              Instantaneous BW (MHz)
-              <input id="sensorBandwidthInput" type="number" step="any" min="0">
-            </label>
-            <label>
-              Receivers / Channels
-              <input id="sensorChannelsInput" type="number" step="1" min="1">
-            </label>
-            <label>
-              Sensitivity (dBm)
-              <input id="sensorSensitivityInput" type="number" step="any">
-            </label>
-            <label>
-              Antenna Gain (dBi)
-              <input id="sensorAntennaGainInput" type="number" step="any">
-            </label>
-            <label>
-              Antenna Height (m)
-              <input id="sensorAntennaHeightInput" type="number" step="any" min="0">
-            </label>
-            <label>
-              Modes
-              <input id="sensorModesInput" type="text" maxlength="180" placeholder="AM, FM, USB, LSB, P25, DMR">
-            </label>
-            <label class="emitter-span-2">
-              Notes
-              <textarea id="sensorNotesInput" rows="3" placeholder="Optional receiver, DF, demodulator, or employment notes."></textarea>
-            </label>
+          <div class="sensor-editor-shell">
+            <section class="sensor-editor-card">
+              <div class="sensor-editor-section-title">Identity</div>
+              <div class="emitter-param-grid sensor-editor-grid sensor-editor-grid-identity">
+                <label>
+                  Sensor Type
+                  <select id="sensorProfileSelect"></select>
+                </label>
+                <label>
+                  Sensor Name
+                  <input id="sensorNameInput" type="text" maxlength="80" placeholder="e.g. Beast+ Team 1">
+                </label>
+                <label>
+                  Unit / Callsign
+                  <input id="sensorUnitInput" type="text" maxlength="80" placeholder="e.g. S2 SIGINT">
+                </label>
+                <label>
+                  Link to T/O Unit
+                  <select id="sensorToUnitSelect"></select>
+                </label>
+              </div>
+            </section>
+
+            <section class="sensor-editor-card">
+              <div class="sensor-editor-section-title">Receiver Capability</div>
+              <div class="emitter-param-grid sensor-editor-grid sensor-editor-grid-capability">
+                <label>
+                  Min Frequency (MHz)
+                  <input id="sensorFreqMinInput" type="number" step="any" min="0">
+                </label>
+                <label>
+                  Max Frequency (MHz)
+                  <input id="sensorFreqMaxInput" type="number" step="any" min="0">
+                </label>
+                <label>
+                  Instantaneous BW (MHz)
+                  <input id="sensorBandwidthInput" type="number" step="any" min="0">
+                </label>
+                <label>
+                  Receivers / Channels
+                  <input id="sensorChannelsInput" type="number" step="1" min="1">
+                </label>
+                <label>
+                  Sensitivity (dBm)
+                  <input id="sensorSensitivityInput" type="number" step="any">
+                </label>
+                <label>
+                  Antenna Type
+                  <select id="sensorAntennaTypeInput">
+                    <option value="Omni">Omni</option>
+                    <option value="Whip">Whip</option>
+                    <option value="Dipole">Dipole</option>
+                    <option value="Yagi">Yagi</option>
+                    <option value="Log-periodic">Log-periodic</option>
+                    <option value="Directional panel">Directional panel</option>
+                    <option value="DF array">DF array</option>
+                    <option value="Loop">Loop</option>
+                    <option value="Custom">Custom</option>
+                  </select>
+                </label>
+                <label>
+                  Antenna Gain (dBi)
+                  <input id="sensorAntennaGainInput" type="number" step="any">
+                </label>
+                <label>
+                  Antenna Height (m)
+                  <input id="sensorAntennaHeightInput" type="number" step="any" min="0">
+                </label>
+              </div>
+            </section>
+
+            <section class="sensor-editor-card sensor-editor-card-wide">
+              <div class="sensor-editor-section-title">Receive Compatibility</div>
+              <div class="emitter-param-grid sensor-editor-grid sensor-editor-grid-descriptors">
+                <label>
+                  Modes
+                  <input id="sensorModesInput" type="text" maxlength="180" placeholder="AM, FM, USB, LSB, P25, DMR">
+                </label>
+                <label>
+                  Compatible Receive Nodes
+                  <textarea id="sensorCompatibleNodesInput" rows="3" readonly placeholder="Compatible waveform and emitter-node descriptors"></textarea>
+                </label>
+                <label>
+                  Notes
+                  <textarea id="sensorNotesInput" rows="4" placeholder="Optional receiver, DF, demodulator, or employment notes."></textarea>
+                </label>
+              </div>
+            </section>
           </div>
         </div>
         <div class="emitter-modal-footer">
@@ -1673,7 +1709,7 @@
               <button id="aiAddAttachmentBtn" class="ghost-button small icon-button" type="button" title="Add context or files" disabled>
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               </button>
-              <input id="aiFileInput" type="file" multiple class="hidden" aria-hidden="true">
+          <input id="aiFileInput" type="file" multiple class="hidden" aria-label="Attach AI context files" title="Attach AI context files" aria-hidden="true">
               <div id="aiAttachmentMenu" class="ai-context-picker ai-attachment-menu hidden">
                 <button id="aiAddCurrentMapViewOption" class="ai-attachment-menu-item" type="button">Add Current Map View</button>
                 <button id="aiAddMapContextOption" class="ai-attachment-menu-item" type="button">Add Map Context</button>
@@ -1682,7 +1718,7 @@
               </div>
               <div id="aiContextPicker" class="ai-context-picker hidden">
                 <div class="ai-context-picker-search-shell">
-                  <input id="aiContextPickerSearch" class="ai-context-picker-search" type="text" placeholder="Search map contents">
+                  <input id="aiContextPickerSearch" class="ai-context-picker-search" type="text" placeholder="Search map contents" aria-label="Search AI context map contents" title="Search AI context map contents">
                 </div>
                 <div id="aiContextPickerList" class="ai-context-picker-list"></div>
               </div>
@@ -2965,7 +3001,7 @@
               <div class="settings-span-2 tak-cert-grid">
                 <div class="tak-cert-card">
                   <strong>Install Certificate Authority</strong>
-                  <input id="takCaCertInput" class="hidden" type="file" accept=".p12,.pfx,.pem,.crt,.cer,.txt">
+                  <input id="takCaCertInput" class="hidden" type="file" accept=".p12,.pfx,.pem,.crt,.cer,.txt" aria-label="Upload TAK CA certificate" title="Upload TAK CA certificate">
                   <label for="takCaCertInput" class="ghost-button small tak-file-upload">Choose File</label>
                   <div id="takCaCertSummary" class="tak-cert-summary">No CA certificate stored.</div>
                   <label id="takCaCertPasswordRow" class="tak-cert-password-row hidden">
@@ -2976,7 +3012,7 @@
                 </div>
                 <div class="tak-cert-card">
                   <strong>Install Client Certificate</strong>
-                  <input id="takClientCertInput" class="hidden" type="file" accept=".p12,.pfx,.pem,.crt,.cer,.txt">
+                  <input id="takClientCertInput" class="hidden" type="file" accept=".p12,.pfx,.pem,.crt,.cer,.txt" aria-label="Upload TAK client certificate" title="Upload TAK client certificate">
                   <label for="takClientCertInput" class="ghost-button small tak-file-upload">Choose File</label>
                   <div id="takClientCertSummary" class="tak-cert-summary">No client certificate stored.</div>
                   <label id="takClientCertPasswordRow" class="tak-cert-password-row hidden">
@@ -3050,7 +3086,7 @@
                     <div class="tak-trigger-input-row">
                       <div class="tak-trigger-chips" id="takTriggerChips"></div>
                       <div class="tak-trigger-add-row">
-                        <input id="takTriggerNewInput" type="text" maxlength="32" placeholder="/ai">
+                        <input id="takTriggerNewInput" type="text" maxlength="32" placeholder="/ai" aria-label="New TAK AI trigger" title="New TAK AI trigger">
                         <button id="takTriggerAddBtn" class="ghost-button small" type="button">Add</button>
                       </div>
                     </div>
@@ -3232,7 +3268,7 @@
           <div class="simulation-asset-summary">
             <div class="simulation-summary-eyebrow">Emitter</div>
             <strong id="simulationAssetSummary">No emitter selected</strong>
-            <select id="assetSelect" class="hidden" aria-hidden="true" tabindex="-1"></select>
+            <select id="assetSelect" class="hidden" title="Simulation asset" aria-label="Simulation asset" aria-hidden="true" tabindex="-1"></select>
           </div>
 
           <div class="sim-section-label">Coverage</div>
@@ -3507,8 +3543,8 @@
 
           <!-- Filter bar -->
           <div class="analytics-filter-bar">
-            <input id="analyticsSearchInput" type="text" placeholder="Filter…" class="analytics-search-input">
-            <select id="analyticsSortSelect" class="analytics-sort-select">
+            <input id="analyticsSearchInput" type="text" placeholder="Filter…" class="analytics-search-input" aria-label="Filter analytics" title="Filter analytics">
+            <select id="analyticsSortSelect" class="analytics-sort-select" title="Sort analytics" aria-label="Sort analytics">
               <option value="">Sort: Default</option>
             </select>
             <button id="analyticsRefreshBtn" class="ghost-button small" type="button">↻ Refresh</button>
@@ -3636,7 +3672,7 @@
         <div class="analytics-sidebar">
           <div class="analytics-chart-title">Daily Visits (60 days)</div>
           <canvas id="analyticsVisitChart" class="analytics-chart" width="220" height="120"></canvas>
-          <div class="analytics-chart-title" style="margin-top:18px">Token Usage by User</div>
+          <div class="analytics-chart-title analytics-chart-title-spaced">Token Usage by User</div>
           <canvas id="analyticsTokenChart" class="analytics-chart" width="220" height="120"></canvas>
         </div>
       </div>
@@ -3668,7 +3704,7 @@
             <div id="analyticsUserDetailProjects" class="analytics-user-detail-list"></div>
           </section>
         </div>
-        <section class="analytics-overview-card" style="margin-top:12px">
+        <section class="analytics-overview-card analytics-overview-card-spaced">
           <div class="analytics-overview-title">Recent Activity</div>
           <div id="analyticsUserDetailEvents" class="analytics-user-detail-list"></div>
         </section>
@@ -3740,7 +3776,7 @@
               <input type="checkbox" id="offlineIncludeTiles" checked>
               <span>Map imagery tiles</span>
             </label>
-            <label class="offline-check-row" style="padding-left:16px; font-size:0.78rem; color:var(--muted)">
+            <label class="offline-check-row offline-zoom-row">
               <span>Zoom levels:</span>
               <input id="offlineZoomMin" type="number" min="1" max="18" value="8" class="offline-zoom-input">
               <span>to</span>
@@ -3772,7 +3808,7 @@
           <div class="offline-step">
             <div class="offline-step-label">Cached data</div>
             <div id="offlineCacheStats" class="offline-cache-stats">—</div>
-            <button id="offlineClearCacheBtn" class="ghost-button small" type="button" style="color:var(--enemy)">Clear cache</button>
+            <button id="offlineClearCacheBtn" class="ghost-button small offline-clear-cache-btn" type="button">Clear cache</button>
           </div>
         </div>
 
@@ -3780,7 +3816,7 @@
         <div class="offline-progress-panel">
           <div class="offline-progress-title">Progress</div>
           <div id="offlineProgressBar" class="offline-progress-bar-wrap hidden">
-            <div id="offlineProgressFill" class="offline-progress-fill" style="width:0%"></div>
+            <div id="offlineProgressFill" class="offline-progress-fill"></div>
           </div>
           <div id="offlineProgressLog" class="offline-progress-log"></div>
           <div id="offlineServerStatus" class="offline-server-status">

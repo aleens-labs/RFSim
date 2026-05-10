@@ -10,12 +10,13 @@ This repository contains the web client, local helper services, and the optional
 
 ## What RF SIM Does
 
-RF SIM is organized around four core views selected from the top navigation bar:
+RF SIM is organized around the main planning views selected from the top navigation bar:
 
 - **T/O** builds the table of organization, unit hierarchy, and symbology baseline for the scenario.
 - **EMITTERS** is a dedicated workspace for creating, organizing, and configuring RF emitters as visual cards — independent of map placement.
+- **SENSORS** is an optional receiver and collection-planning workspace that can be enabled or disabled in **Settings > Views**. It sits between EMITTERS and MAP when enabled.
 - **MAP** is the main geographic workspace for placing emitters on terrain, importing overlays, and inspecting the physical battlespace.
-- **ANALYZE** turns terrain, geometry, emitter settings, and environment into RF findings such as coverage, masking, conflicts, and network risk. It also includes the TOPOLOGY network view for inspecting link structure and connection quality between emitters or units.
+- **ANALYSIS** turns terrain, geometry, emitter settings, sensor context, and environment into RF findings such as coverage, masking, conflicts, collection opportunities, and network risk.
 
 ## Core Capabilities
 
@@ -24,6 +25,7 @@ RF SIM is organized around four core views selected from the top navigation bar:
 - 2D Leaflet map plus synchronized 3D Cesium viewing.
 - Terrain heatmaps, contours, viewsheds, terrain sampling, and path-specific LOS inspection.
 - Emitter workspace with visual cards showing device graphics, net configuration, unit linkage, and map visibility status.
+- Optional Sensors workspace for adding RF receivers, linking them to T/O units, placing them on the map, and estimating which emitters can be received or collected from a given location.
 - Waveform-aware topology linking — radios must share the same waveform and frequency to draw a link (MIMO, Wave Relay, TSM-X, SINCGARS, P25, DMR, and others).
 - Import of `GeoJSON`, `KML`, `KMZ`, ATAK data package `ZIP`, and DTED terrain files.
 - Map Contents workflows for folders, visibility control, search, rename, reorder, relocation, and deletion.
@@ -38,10 +40,25 @@ RF SIM is organized around four core views selected from the top navigation bar:
 1. Build the unit structure in **T/O**.
 2. Open **EMITTERS** and add emitter cards for each radio in the scenario, configuring waveform, frequency, and RF parameters.
 3. Right-click cards in the Emitter Workspace to edit, duplicate, add or configure nets, link to a T/O unit, or delete.
-4. Place emitters on the map from **MAP** for geographic analysis, or keep them workspace-only for network planning.
-5. Load terrain and import overlays for the actual area of interest.
-6. Open **ANALYZE → Topology** to inspect network link relationships, filtered by waveform and frequency compatibility.
-7. Run RF studies and AI-assisted comparisons in **ANALYZE** to refine the plan and generate outputs.
+4. Optionally enable **SENSORS** in **Settings > Views** when collection planning matters, then add receiver systems, link them to collection units, and evaluate which placed emitters they can sense.
+5. Place emitters and sensors on the map from **MAP** for geographic analysis, or keep them workspace-only for planning.
+6. Load terrain and import overlays for the actual area of interest.
+7. Use **EMITTERS** topology controls to inspect network link relationships, filtered by waveform and frequency compatibility.
+8. Run RF studies and AI-assisted comparisons in **ANALYSIS** to refine the plan and generate outputs.
+
+## Sensors and Collection Planning
+
+The **SENSORS** view is optional. Enable it from **Settings > Views** when a scenario needs RF collection, spectrum monitoring, SIGINT/EW receiver placement, or sensor-to-emitter reasoning.
+
+Sensors help collection units answer practical questions:
+
+- Which emitters are likely detectable from this receiver location?
+- Is the receiver frequency range, bandwidth, sensitivity, antenna type, and height appropriate for the target emissions?
+- Which S2, EW, SIGINT, or collection team owns the receiver in the T/O?
+- Where should receivers be placed on terrain to improve collection opportunities?
+- Which emitters are below sensitivity, marginal, or likely collectible?
+
+The Sensors workspace is intentionally separate from EMITTERS: emitters represent transmitting RF assets, while sensors represent receiving/collection assets. Both can be linked to T/O units and placed on the map so ANALYSIS and AI workflows can reason across organization, RF configuration, and terrain.
 
 ## Ways To Use RF SIM
 

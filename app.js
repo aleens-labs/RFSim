@@ -558,7 +558,7 @@ function getDefaultTakTypeForForce(force = "unknown") {
 }
 
 function normalizeAssetToTakObject(asset) {
-  if (!asset || !Number.isFinite(Number(asset.lat)) || !Number.isFinite(Number(asset.lon))) {
+  if (!asset || !hasAssetMapLocation(asset)) {
     return null;
   }
   const tak = normalizeTakMetadata(asset.tak);
@@ -2189,9 +2189,11 @@ const dom = {
   sensorBandwidthInput: document.querySelector("#sensorBandwidthInput"),
   sensorChannelsInput: document.querySelector("#sensorChannelsInput"),
   sensorSensitivityInput: document.querySelector("#sensorSensitivityInput"),
+  sensorAntennaTypeInput: document.querySelector("#sensorAntennaTypeInput"),
   sensorAntennaGainInput: document.querySelector("#sensorAntennaGainInput"),
   sensorAntennaHeightInput: document.querySelector("#sensorAntennaHeightInput"),
   sensorModesInput: document.querySelector("#sensorModesInput"),
+  sensorCompatibleNodesInput: document.querySelector("#sensorCompatibleNodesInput"),
   sensorNotesInput: document.querySelector("#sensorNotesInput"),
   emittersNetModal: document.querySelector("#emittersNetModal"),
   emittersNetModalTitle: document.querySelector("#emittersNetModalTitle"),
@@ -12475,7 +12477,7 @@ function applySavedMapState(rawSaved) {
         asset.workspaceVisible = true;
       }
       state.assets.push(asset);
-      if (asset.lat == null || asset.lon == null) return;
+      if (!hasAssetMapLocation(asset)) return;
       const marker = L.marker([asset.lat, asset.lon], {
         icon: createEmitterIcon(asset),
         pane: getMapContentPaneName(`asset:${asset.id}`),
@@ -15292,6 +15294,131 @@ function renderDocumentMarkdown(text) {
 
 const SETTINGS_DOCUMENTATION_MD = "# RF SIM Operator Guide\n\n## Quick Start\n\n### Recommended operator flow\n\nRF SIM works best when you build the scenario in this order:\n\n```text\nT/O -\u003e EMITTERS -\u003e MAP -\u003e ANALYSIS\n```\n\n1. Build the unit structure in **T/O**.\n2. Create and configure radios in **EMITTERS**.\n3. Place emitters and tactical items in **MAP**.\n4. Review conclusions, metrics, links, terrain, and correlation in **ANALYSIS**.\n\n\u003e **Operator habit:** build structure first, then radios, then geography, then conclusions. Most confusing results come from skipping one of those layers.\n\n### Fast setup checklist\n\n- In **T/O**, click **Select Unit Type** and use **Choose Unit Symbology** to pick accurate unit symbols.\n- Add units, set size, and connect the hierarchy.\n- Use **Auto Layout** and **Fit View** after meaningful hierarchy edits.\n- In **EMITTERS**, create emitter cards and configure nets, frequency, waveform, power, antenna, and linked unit.\n- In **MAP**, use **Map Contents** to add emitters, tactical items, folders, overlays, terrain heatmap, contour lines, and imports.\n- Use **Place on Map** or map placement workflows when an emitter needs a geographic location.\n- In **ANALYSIS**, read operational conclusions first, then inspect the detailed relationship, link, terrain, and T/O correlation panels.\n\n### What each top tab is for\n\n| Tab | Primary job | Best used for |\n|---|---|---|\n| T/O | Force structure | Unit hierarchy, symbology, size, command relationships |\n| EMITTERS | RF/network workspace | Emitter cards, topology controls, Unit Cards vs Emitters, nets, filters |\n| MAP | Geographic workspace | Placement, overlays, terrain, weather, tactical items, Map Contents |\n| ANALYSIS | Insight workspace | Operational conclusions, metrics, link health, terrain coverage, T/O correlation |\n\n## Core Concepts\n\n### Units\n\nA **unit** is an organizational node in the T/O. It has a name, designator, affiliation, symbol, size, and parent-child relationships.\n\nUse units for:\n\n- headquarters, companies, platoons, teams, relays, sustainment nodes, ISR, EW, fires, logistics, and command posts\n- showing who reports to whom\n- giving AI and ANALYSIS a command structure to reason over\n- grouping linked emitters into **Unit Cards** in EMITTERS\n\n### Emitters\n\nAn **emitter** is an RF asset: a radio, relay, antenna system, SATCOM terminal, sensor link, or other communications node.\n\nEmitters carry technical details such as:\n\n- frequency and band\n- waveform and channel spacing\n- transmit power and losses\n- antenna type, gain, height, and pattern\n- linked T/O unit\n- map placement status\n\n\u003e **Important:** EMITTERS can hold cards that are not yet on the map. Those are valid workspace emitters, but terrain and distance analysis only becomes meaningful after placement.\n\n### Map contents\n\n**Map Contents** is the left-panel inventory for placed and imported map objects. It includes emitters that have been placed, tactical items, folders, imported overlays, shapes, routes, and other map-managed content.\n\nUse it to:\n\n- search map contents\n- add or import layers\n- organize content into folders\n- toggle heatmap and contour overlays\n- manage tactical items and placed emitters\n\n### Terrain, elevation, and environment\n\nTerrain affects line of sight, Fresnel clearance, masking, relay utility, and likely coverage. RF SIM can use local terrain data and configured 3D terrain services depending on settings.\n\nWeather and environmental context can also shape planning assumptions, especially for SATCOM, higher-frequency links, aviation, and terrain-dependent relay planning.\n\n### Analysis and AI\n\n**ANALYSIS** turns the scenario into conclusions. It looks across emitters, units, locations, terrain, and relationships. **AI Chat** helps explain and document what is in the scenario, but it should be treated as planning support, not a substitute for RF validation.\n\n## T/O\n\n### Purpose\n\nT/O is where the operator builds the Table of Organization before placing equipment on terrain.\n\nUse T/O to:\n\n- create units\n- choose accurate symbology\n- assign unit size\n- define command hierarchy\n- link emitters to units\n- keep the operational structure readable\n\n### Unit hierarchy\n\nCreate a hierarchy that reflects how the force actually operates. A clean hierarchy helps the EMITTERS view group radios correctly and helps ANALYSIS explain relationships.\n\nRecommended sequence:\n\n1. Add the highest command node first.\n2. Add subordinate units.\n3. Link parent and child units.\n4. Add support, sustainment, relay, fires, ISR, EW, and logistics nodes where they matter.\n5. Run **Auto Layout**.\n6. Run **Fit View**.\n\n### Symbology picker\n\nClick **Select Unit Type** to open **Choose Unit Symbology**. The picker follows the current track workflow and lets you search at every level.\n\nUse the picker to choose:\n\n- affiliation: Friendly, Hostile, Neutral, or Unknown\n- track family: air, ground, sea surface, space, subsurface, SOF, and specialized sets\n- unit category and branch\n- deeper modifiers where available\n\nThe rendered preview should become more specific as you traverse deeper. Root tracks show base frames. Specific branches and leaf units add the correct main icon or modifier.\n\n### Sizing and labels\n\nUnit size affects the displayed echelon indicator and the default label. Keep size and name aligned:\n\n| Size | Common use |\n|---|---|\n| Team | Small element, relay team, sensor team |\n| Squad / Section | Small tactical element |\n| Platoon | Maneuver or support platoon |\n| Company | Company, battery, troop, detachment |\n| Battalion / Squadron | Larger command or aviation-style formation |\n\nUse short labels that work visually in the T/O tree, such as `V34`, `I CO`, `K2`, `S6`, `Fires`, or `Relay A`.\n\n### Linking emitters\n\nLink emitters to T/O units when the radio belongs to an organizational element. Linked emitters can appear grouped under **Unit Cards** in EMITTERS and can be interpreted by ANALYSIS as part of the force structure.\n\nWays to link:\n\n- from an emitter card context menu in EMITTERS\n- from the add/edit emitter modal\n- from workflows that expose **Link to T/O Unit**\n\n### Auto Layout and Fit View\n\nUse **Auto Layout** after adding or changing hierarchy links. Use **Fit View** after layout, reload, login, or whenever the tree is off-screen.\n\nBest practice:\n\n```text\nEdit hierarchy -\u003e Auto Layout -\u003e Fit View -\u003e review labels and symbols\n```\n\n## EMITTERS\n\n### Purpose\n\nEMITTERS is the emitter and network workspace. It is not a sub-view inside ANALYSIS. It is where RF assets are created, organized, linked, filtered, and inspected before or after map placement.\n\nUse EMITTERS for:\n\n- emitter cards\n- network topology controls\n- filters by band or workspace state\n- Unit Cards vs Emitters display modes\n- right-click emitter workflows\n- linking radios to T/O units\n- preparing radios before they are placed on the map\n\n### Emitter workspace and topology controls\n\nThe workspace can show the RF network in two useful ways:\n\n| Mode | Meaning | Use when |\n|---|---|---|\n| Unit Cards | Groups emitters by linked T/O unit | Briefing command relationships or unit-level network health |\n| Emitters | Shows each radio as its own node | Debugging exact radio-to-radio links |\n\nUse filters when the workspace gets busy. Band filters such as HF, VHF, UHF, and SATCOM control which links are visible.\n\n### Add-emitter modal\n\nUse the add-emitter modal to configure a radio before it enters the workspace.\n\nImportant areas:\n\n- emitter library and saved profiles\n- identity: emitter name, unit/callsign, affiliation, icon, marker color\n- RF tab: frequency, bandwidth, modulation, waveform\n- transmitter and receiver parameters\n- antenna settings\n- link budget settings\n- network and location tabs\n\nClick **Add to Workspace** when the emitter should become a workspace card. Place it on the map later when geography matters.\n\n### Nets and frequencies\n\nA link requires compatible RF settings. In practical terms, check:\n\n- same waveform\n- same frequency or compatible channel\n- band visibility filter is enabled\n- both nodes are present in the current workspace mode\n- placement exists when terrain analysis is expected\n\n### Unit Cards vs Emitters\n\nUse **Unit Cards** when the question is organizational: which units can communicate and where the weak command paths are.\n\nUse **Emitters** when the question is technical: which radio, waveform, antenna, or placement is causing the problem.\n\n### Workspace-only vs placed emitters\n\nAn emitter can exist in EMITTERS without being placed on the map. This is useful for planning, but distance, terrain, and elevation findings depend on placement.\n\nTypical statuses:\n\n| Status | Meaning |\n|---|---|\n| In workspace | Emitter card exists |\n| Linked to T/O | Emitter belongs to a unit |\n| Placed on map | Emitter has coordinates |\n| Not placed | Emitter is not ready for terrain analysis |\n\n## MAP\n\n### Purpose\n\nMAP is the geographic workspace. It is where you place RF assets, manage overlays, draw tactical items, inspect terrain, and switch between 2D and 3D context.\n\nUse MAP for:\n\n- placing emitters\n- drawing tactical graphics\n- importing KML, KMZ, GeoJSON, and supported packages\n- organizing **Map Contents**\n- terrain heatmap and contour overlays\n- 2D/3D controls\n- weather and GPS context\n- TAK identity and stream readiness\n\n### Map Contents\n\nThe **Map Contents** panel is the operator inventory for geographic objects. It is intentionally separate from EMITTERS: a radio card can exist in EMITTERS before it is placed into Map Contents.\n\nUse Map Contents to:\n\n- search placed objects and overlays\n- create folders\n- add emitters or tactical items\n- import files\n- toggle terrain heatmap and contour overlays\n- manage shape visibility and selection\n\n### Tactical items\n\nUse tactical items for non-radio map graphics and tracks. The current workflow uses **Choose Unit Symbology** so track frames, affiliations, branches, and modifiers stay consistent with the T/O picker.\n\nCommon uses:\n\n- friendly, hostile, neutral, or unknown tracks\n- routes and control measures\n- tactical overlays\n- markers for command posts, relays, or points of interest\n\n### Placing emitters\n\nUse **Place on Map** or the map add workflow when a workspace emitter needs coordinates.\n\nPlacement matters because it drives:\n\n- distance\n- terrain obstruction\n- elevation and antenna height context\n- link quality\n- coverage interpretation\n- relay recommendations\n\n### 2D and 3D controls\n\nUse 2D for fast editing, searches, overlays, and flat planning.\n\nUse 3D for:\n\n- terrain awareness\n- line-of-sight intuition\n- elevation context\n- siting emitters on ridges, valleys, slopes, or urban terrain\n\nThe 3D overlay includes subtle orientation tools and an inclinometer for terrain-aware review.\n\n### Terrain and weather\n\nTerrain heatmap and contour overlays help reveal elevation patterns. Weather settings provide planning context for environmental effects.\n\nBefore running analysis, confirm:\n\n- terrain source is loaded or configured\n- overlays are aligned\n- emitter locations are realistic\n- weather assumptions are appropriate for the scenario\n\n### TAK identity\n\nTAK identity and streaming controls live in Settings and top-bar status areas. On the map, TAK-related context matters when RF SIM objects need to correspond to operational TAK tracks or be streamed outward.\n\n## ANALYSIS\n\n### Purpose\n\nANALYSIS is the insight workspace. It summarizes what the current scenario implies across emitters, units, terrain, location, and relationships.\n\nStart with **Operational Conclusions**, then use the detailed panels to understand the evidence behind the conclusion.\n\n### Operational conclusions\n\nOperational conclusions are the first read. They should answer:\n\n- what is ready\n- what is missing\n- where the network is fragile\n- which links or units need attention\n- whether the scenario has enough placement and RF data to support analysis\n\n### Metrics and visuals\n\nMetrics are designed to show readiness and risk without requiring the operator to inspect every item manually.\n\nLook for:\n\n- emitter readiness\n- link health\n- terrain coverage quality\n- T/O correlation\n- placement completeness\n- configuration gaps\n\n### Relationship and link panels\n\nRelationship/link panels explain which emitters or units can communicate, which links are weak, and which relationships are missing enough information.\n\nUse these panels to answer:\n\n- which units are isolated\n- which emitters are acting as hubs\n- where alternate paths exist\n- whether link failures are caused by RF mismatch, terrain, distance, or missing placement\n\n### Terrain and elevation panels\n\nTerrain/elevation panels focus on physical placement quality.\n\nThey help identify:\n\n- low-ground placements\n- likely masked links\n- ridge or relay opportunities\n- elevation-driven risks\n- terrain data gaps\n\n### T/O correlation panels\n\nT/O correlation explains whether the RF layer matches the organizational layer.\n\nCommon findings:\n\n- emitter exists but is not linked to a unit\n- unit exists but has no emitter\n- map item exists but does not correlate to T/O\n- critical command node has weak or missing RF support\n\n## AI Chat and Documents\n\n### AI Chat\n\nAI Chat can reason over the current scenario, selected context, map contents, T/O units, emitters, and analysis findings.\n\nGood prompts are specific:\n\n```text\nExplain why K CO cannot reach S6 through the current relay plan.\nList emitters that are placed on low terrain and recommend better relay positions.\nGenerate a PACE plan from the current emitter frequencies and unit hierarchy.\n```\n\n### Context selection\n\nAttach relevant map contents or scenario objects when asking focused questions. The AI performs best when the scenario has clean names, linked units, configured emitters, and realistic placement.\n\n### Document generation\n\nUse document generation for:\n\n- RF plans\n- PACE plans\n- SOI/CEOI drafts\n- AARs\n- spectrum management plans\n- terrain and relay recommendations\n\nAlways verify generated documents against the current scenario before operational use.\n\n## Settings\n\n### General, imagery, terrain, and weather\n\nSettings controls configure the environment around the workflow.\n\nCommon tasks:\n\n- choose imagery providers\n- configure terrain sources\n- set weather context\n- adjust marker and tactical display settings\n- manage workspace behavior\n\n### AI Integration\n\nUse **Settings \u003e AI Integration** to configure provider, model, relay, and connection testing.\n\nRecommended sequence:\n\n1. Choose provider.\n2. Enter credentials or relay configuration.\n3. Select model.\n4. Test connection.\n5. Run a small scenario-specific prompt before relying on long reports.\n\n### Documentation tab\n\nThe **Documentation** tab is this operator guide. It is meant to be used in-app while building and checking a scenario.\n\n## TAK\n\n### TAK settings\n\nUse **Settings \u003e TAK** to configure TAK servers, certificates, TLS server name, and streaming behavior.\n\nTypical flow:\n\n1. Create or select a TAK server profile.\n2. Set host, port, and protocol.\n3. Load required CA/client certificates.\n4. Set TLS server name when the certificate hostname differs from the IP you connect to.\n5. Test connection.\n6. Enable streaming only when the scenario is ready.\n\n### Certificates\n\nTAK certificate setup depends on your server requirements. Keep CA trust, client certificate, and password handling consistent with the TAK environment you are connecting to.\n\n### Streaming discipline\n\nBefore streaming, confirm:\n\n- object names are clean\n- affiliations are correct\n- coordinates are intentional\n- tactical symbols are appropriate\n- test objects have been removed or isolated\n\n## Site Analytics\n\n### Purpose\n\nSite Analytics is an admin-only view for usage monitoring. It helps workspace admins understand activity, provider usage, AI requests, token spend, logins, projects, and active users.\n\n### What to look for\n\nUse Site Analytics to answer:\n\n- which users are active\n- which AI providers are being used\n- how token spend is trending\n- which projects or use cases are generating load\n- whether admin-visible activity looks expected\n\n### Operational note\n\nSite Analytics is not part of RF planning. It is a workspace administration tool.\n\n## Troubleshooting\n\n### T/O problems\n\n| Symptom | Check |\n|---|---|\n| Tree is off-screen | Run **Fit View** |\n| Tree is messy | Run **Auto Layout**, then **Fit View** |\n| Unit symbol is wrong | Reopen **Select Unit Type** and choose from **Choose Unit Symbology** |\n| Unit label is confusing | Shorten name or use designator field |\n| Emitter grouping looks wrong | Confirm emitters are linked to the intended units |\n\n### EMITTERS problems\n\n| Symptom | Check |\n|---|---|\n| Expected link missing | Same waveform and same frequency |\n| Link is hidden | Band filter or workspace filter may be off |\n| Unit Card missing radio | Emitter may not be linked to the T/O unit |\n| Radio cannot be terrain-analyzed | It may not be placed on the map |\n| Workspace is cluttered | Switch between **Unit Cards** and **Emitters**, then use filters |\n\n### MAP problems\n\n| Symptom | Check |\n|---|---|\n| Imported overlay is misplaced | Confirm source projection and coordinates |\n| Terrain result looks wrong | Confirm terrain source coverage |\n| Emitter does not appear in Map Contents | It may only exist in EMITTERS |\n| 3D view looks unexpected | Check terrain provider and camera position |\n| TAK object is wrong | Check affiliation, name, symbol, and stream setting |\n\n### ANALYSIS problems\n\n| Symptom | Check |\n|---|---|\n| Conclusions say not ready | Missing emitters, placement, terrain, links, or T/O correlation |\n| Link findings look unrealistic | Check frequency, waveform, power, antenna, height, and location |\n| Terrain panels are sparse | Load or configure terrain source |\n| T/O correlation is weak | Link emitters to units and clean names/designators |\n\n### Pre-brief checklist\n\n```text\nT/O clean? Symbols and sizes correct?\nEmitters configured? Nets and waveforms checked?\nMap placements realistic? Terrain loaded?\nAnalysis ready? Weak links explained?\nAI/document output verified against scenario data?\n```";
 
+const SETTINGS_DOCUMENTATION_SENSORS_CORE_MD = `
+### Sensors
+
+A **sensor** is an RF receiver or collection asset. Sensors are optional and are managed in the SENSORS view when that view is enabled from **Settings > Views**.
+
+Use sensors for:
+
+- SIGINT, EW, spectrum-monitoring, and collection-team receiver placement
+- comparing receiver range, bandwidth, sensitivity, antenna type, gain, and height against known emitters
+- linking receiver assets to S2, EW, SIGINT, or other collection units in the T/O
+- estimating which placed emitters are detectable, marginal, or below receiver sensitivity
+- planning where collection units should move or emplace sensors to improve collection opportunities
+
+Emitters represent transmitting RF assets. Sensors represent receiving or collection assets. Both can be linked to T/O units and placed on the map so ANALYSIS and AI can reason across organization, RF configuration, terrain, and collection geometry.
+`;
+
+const SETTINGS_DOCUMENTATION_SENSORS_VIEW_MD = `
+## SENSORS
+
+### Purpose
+
+SENSORS is an optional receiver and collection-planning workspace. Enable or disable it from **Settings > Views**. When enabled, it appears in the top navigation between **EMITTERS** and **MAP**.
+
+Use SENSORS when the scenario needs collection planning, spectrum monitoring, SIGINT/EW receiver siting, or sensor-to-emitter reasoning.
+
+### Receiver workspace
+
+The Sensors workspace works similarly to EMITTERS, but the cards represent receivers rather than transmitters. Add RF sensors from the sensor library, then configure:
+
+- sensor name and unit/callsign
+- linked T/O unit
+- receive frequency range
+- instantaneous bandwidth
+- receiver channels
+- sensitivity
+- antenna type, gain, and height
+- supported receive modes
+- compatible receive-node descriptors
+
+### Collection planning
+
+Sensors help collection units answer:
+
+- Which placed emitters can this receiver likely detect?
+- Which emitters are below sensitivity or only marginal?
+- Does the receiver cover the emitter frequency and waveform family?
+- Does the planned antenna type and height make sense for the collection task?
+- Which T/O unit owns or operates the receiver?
+- Where should the receiver be moved to improve collection geometry?
+
+This is useful for S2, EW, SIGINT, spectrum-management, and other collection cells because it turns receiver placement into a visible planning layer instead of a note buried in the RF plan.
+
+### Linking and placement
+
+Link sensors to T/O units so RF SIM can preserve ownership and operational context. Place sensors on the map when terrain, distance, and relative position matter.
+
+Typical flow:
+
+\`\`\`text
+Settings > Views > Enable Sensors View
+T/O -> create or confirm collection unit
+SENSORS -> add receiver and link it to the unit
+MAP -> place receiver near the intended collection site
+ANALYSIS -> compare collection readiness with emitter and terrain context
+\`\`\`
+
+### Auto evaluation
+
+When auto evaluation is enabled in **Settings > Views**, sensor cards summarize detectable emissions from placed emitters. These estimates use receiver frequency range, bandwidth, sensitivity, antenna settings, emitter power, antenna settings, and distance. Treat them as planning support: verify against terrain, mission context, and real receiver performance.
+`;
+
+function getSettingsDocumentationMarkdown() {
+  let markdown = SETTINGS_DOCUMENTATION_MD
+    .replace(
+      "RF SIM works best when you build the scenario in this order:",
+      "RF SIM works best when you build the scenario in this order. SENSORS is optional and only appears when enabled from **Settings > Views**:"
+    )
+    .replace(
+      "T/O -> EMITTERS -> MAP -> ANALYSIS",
+      "T/O -> EMITTERS -> optional SENSORS -> MAP -> ANALYSIS"
+    )
+    .replace(
+      "3. Place emitters and tactical items in **MAP**.\n4. Review conclusions, metrics, links, terrain, and correlation in **ANALYSIS**.",
+      "3. Optionally enable **SENSORS** in **Settings > Views** when collection planning matters, then add receiver systems and link them to collection units.\n4. Place emitters, sensors, and tactical items in **MAP**.\n5. Review conclusions, metrics, links, terrain, collection context, and correlation in **ANALYSIS**."
+    )
+    .replace(
+      "- In **EMITTERS**, create emitter cards and configure nets, frequency, waveform, power, antenna, and linked unit.\n- In **MAP**, use **Map Contents** to add emitters, tactical items, folders, overlays, terrain heatmap, contour lines, and imports.",
+      "- In **EMITTERS**, create emitter cards and configure nets, frequency, waveform, power, antenna, and linked unit.\n- Optionally enable **SENSORS** from **Settings > Views**, then add receivers for SIGINT, EW, spectrum monitoring, or collection planning.\n- In **MAP**, use **Map Contents** to add emitters, sensors, tactical items, folders, overlays, terrain heatmap, contour lines, and imports."
+    )
+    .replace(
+      "| EMITTERS | RF/network workspace | Emitter cards, topology controls, Unit Cards vs Emitters, nets, filters |\n| MAP | Geographic workspace | Placement, overlays, terrain, weather, tactical items, Map Contents |",
+      "| EMITTERS | RF/network workspace | Emitter cards, topology controls, Unit Cards vs Emitters, nets, filters |\n| SENSORS | Optional collection workspace | Receiver cards, collection units, detection estimates, sensor placement |\n| MAP | Geographic workspace | Placement, overlays, terrain, weather, tactical items, Map Contents |"
+    )
+    .replace(
+      "sensor link, or other communications node.",
+      "relay link, or other communications node."
+    )
+    .replace(
+      "> **Important:** EMITTERS can hold cards that are not yet on the map. Those are valid workspace emitters, but terrain and distance analysis only becomes meaningful after placement.\n\n### Map contents",
+      `> **Important:** EMITTERS can hold cards that are not yet on the map. Those are valid workspace emitters, but terrain and distance analysis only becomes meaningful after placement.\n\n${SETTINGS_DOCUMENTATION_SENSORS_CORE_MD.trim()}\n\n### Map contents`
+    )
+    .replace(
+      "- link emitters to units\n",
+      "- link emitters and sensors to units\n"
+    )
+    .replace(
+      "## MAP\n\n### Purpose",
+      `${SETTINGS_DOCUMENTATION_SENSORS_VIEW_MD.trim()}\n\n## MAP\n\n### Purpose`
+    )
+    .replace(
+      "### AI Integration\n\nUse **Settings > AI Integration** to configure provider, model, relay, and connection testing.",
+      "### Views tab\n\nUse **Settings > Views** to enable or disable optional workspaces. **Sensors View** adds the SENSORS tab between EMITTERS and MAP for receiver and collection planning. The same tab also controls sensor auto evaluation, which estimates detectable emissions from placed emitters.\n\n### AI Integration\n\nUse **Settings > AI Integration** to configure provider, model, relay, and connection testing."
+    )
+    .replace(
+      "### MAP problems",
+      "### SENSORS problems\n\n| Symptom | Check |\n|---|---|\n| SENSORS tab is missing | Enable **Sensors View** in **Settings > Views** |\n| Sensor does not show detections | Confirm auto evaluation is enabled and emitters are placed on the map |\n| Expected emitter is not detected | Check receiver frequency range, bandwidth, sensitivity, antenna type, and emitter placement |\n| Collection ownership is unclear | Link the sensor to the correct T/O unit |\n| Estimates look unrealistic | Confirm emitter power, antenna height, sensor antenna height, and distance |\n\n### MAP problems"
+    )
+    .replace(
+      "Emitters configured? Nets and waveforms checked?\nMap placements realistic?",
+      "Emitters configured? Nets and waveforms checked?\nSensors enabled if collection planning matters? Receivers linked and placed?\nMap placements realistic?"
+    );
+
+  return markdown;
+}
+
 let _settingsDocumentationRendered = false;
 const SETTINGS_DOCUMENTATION_SCROLL_OFFSET = 24;
 
@@ -15320,7 +15447,7 @@ function renderSettingsDocumentation() {
   if (_settingsDocumentationRendered) return;
   const content = dom.settingsDocumentationContent;
   const nav = dom.settingsDocumentationNav;
-  content.innerHTML = renderDocumentMarkdown(SETTINGS_DOCUMENTATION_MD);
+  content.innerHTML = renderDocumentMarkdown(getSettingsDocumentationMarkdown());
   content.querySelectorAll("p").forEach((paragraph) => {
     if (!paragraph.innerHTML.trim().startsWith("&gt;")) return;
     const callout = document.createElement("blockquote");
@@ -19078,6 +19205,7 @@ function serializeAssetForAi(asset) {
   }
   const linkedUnit = Number.isFinite(Number(asset.toUnitId)) ? getPlanUnitById(asset.toUnitId) : null;
   const linkedTactical = linkedUnit ? getTacticalObjectByPlanUnitId(linkedUnit.id) : null;
+  const placedOnMap = hasAssetMapLocation(asset);
   return {
     id: asset.id,
     contentId: `asset:${asset.id}`,
@@ -19092,9 +19220,9 @@ function serializeAssetForAi(asset) {
     icon: asset.icon ?? "",
     color: asset.color ?? "",
     notes: asset.notes ?? "",
-    lat: roundAiNumber(asset.lat),
-    lon: roundAiNumber(asset.lon),
-    placedOnMap: Number.isFinite(Number(asset.lat)) && Number.isFinite(Number(asset.lon)),
+    lat: placedOnMap ? roundAiNumber(asset.lat) : null,
+    lon: placedOnMap ? roundAiNumber(asset.lon) : null,
+    placedOnMap,
     frequencyMHz: roundAiNumber(asset.frequencyMHz, 3),
     bandwidthKHz: roundAiNumber(asset.bandwidthKHz ?? asset.ext?.bandwidthKHz, 3),
     waveform: asset.waveform ?? asset.ext?.waveform ?? "",
@@ -19152,6 +19280,7 @@ function serializeSensorForAi(sensor) {
   const linkedTactical = linkedUnit ? getTacticalObjectByPlanUnitId(linkedUnit.id) : null;
   const effectivePosition = getSensorEffectiveMapPosition(sensor);
   const summary = getSensorReceptionSummary(sensor);
+  const placedOnMap = hasSensorMapLocation(sensor);
   return {
     id: sensor.id,
     contentId: `sensor:${sensor.id}`,
@@ -19162,9 +19291,9 @@ function serializeSensorForAi(sensor) {
     category: sensor.category,
     unit: sensor.unit ?? "",
     notes: sensor.notes ?? "",
-    lat: roundAiNumber(sensor.lat),
-    lon: roundAiNumber(sensor.lon),
-    placedOnMap: hasSensorMapLocation(sensor),
+    lat: placedOnMap ? roundAiNumber(sensor.lat) : null,
+    lon: placedOnMap ? roundAiNumber(sensor.lon) : null,
+    placedOnMap,
     effectiveLocation: effectivePosition ? {
       lat: roundAiNumber(effectivePosition.lat),
       lon: roundAiNumber(effectivePosition.lon),
@@ -19176,9 +19305,11 @@ function serializeSensorForAi(sensor) {
     channels: roundAiNumber(sensor.channels, 0),
     demodulators: roundAiNumber(sensor.demodulators, 0),
     sensitivityDbm: roundAiNumber(sensor.sensitivityDbm, 2),
+    antennaType: sensor.antennaType ?? "",
     antennaGainDbi: roundAiNumber(sensor.antennaGainDbi, 2),
     antennaHeightM: roundAiNumber(sensor.antennaHeightM, 2),
     modes: sensor.modes ?? "",
+    compatibleReceiveNodes: sensor.compatibleReceiveNodes ?? "",
     receptionSummary: {
       detectableOrMarginalCount: summary.count,
       topDetections: summary.detections.map((entry) => ({
@@ -22764,7 +22895,7 @@ async function executeAiAction(action, { placedAssetIds = [], touchedObjects = [
         asset.lon = Number(updateSource.lon ?? updateSource.lng);
       }
     }
-    if (Number.isFinite(Number(asset.lat)) && Number.isFinite(Number(asset.lon))) {
+    if (hasAssetMapLocation(asset)) {
       asset.groundElevationM = sampleTerrainElevation(asset.lat, asset.lon);
       asset.workspaceVisible = true;
     }
@@ -22772,9 +22903,9 @@ async function executeAiAction(action, { placedAssetIds = [], touchedObjects = [
     asset.lastModified = nowIso();
     ensureTakMetadataForAsset(asset);
     let marker = state.assetMarkers.get(asset.id);
-    if (marker && Number.isFinite(Number(asset.lat)) && Number.isFinite(Number(asset.lon))) {
+    if (marker && hasAssetMapLocation(asset)) {
       marker.setLatLng([asset.lat, asset.lon]);
-    } else if (!marker && Number.isFinite(Number(asset.lat)) && Number.isFinite(Number(asset.lon))) {
+    } else if (!marker && hasAssetMapLocation(asset)) {
       marker = L.marker([asset.lat, asset.lon], {
         icon: createEmitterIcon(asset),
         pane: getMapContentPaneName(`asset:${asset.id}`),
@@ -24193,7 +24324,7 @@ function getPlacementDistanceMeters(options = {}) {
 function buildPlacementReferenceGeometry(entry, importedItem = null) {
   if (entry.id.startsWith("asset:")) {
     const asset = state.assets.find((item) => `asset:${item.id}` === entry.id);
-    if (!asset || !Number.isFinite(Number(asset.lat)) || !Number.isFinite(Number(asset.lon))) {
+    if (!asset || !hasAssetMapLocation(asset)) {
       return null;
     }
     const point = { lat: asset.lat, lng: asset.lon };
@@ -24209,11 +24340,10 @@ function buildPlacementReferenceGeometry(entry, importedItem = null) {
 
   if (entry.id.startsWith("sensor:")) {
     const sensor = state.sensors.find((item) => `sensor:${item.id}` === entry.id);
-    const position = sensor ? getSensorEffectiveMapPosition(sensor) : null;
-    if (!position) {
+    if (!sensor || !hasSensorMapLocation(sensor)) {
       return null;
     }
-    const point = { lat: position.lat, lng: position.lon };
+    const point = { lat: Number(sensor.lat), lng: Number(sensor.lon) };
     return {
       kind: "point",
       point,
@@ -25058,7 +25188,9 @@ const SENSOR_GRAPHIC_FILES = Object.freeze({
   "caci-kraken": "KRAKEN.png",
   "limesdr-usb": "LIME SDR.png",
   "limesdr-mini-2": "LIME SDR.png",
+  "usrp-b200-b210": "USRP B200.png",
   "airspy-r2": "AIRSPY R2.png",
+  "sdrplay-rspdx-r2": "SDR Play RSPdx R2.png",
   "signal-hound-bb60c": "SH BB60C.png",
   "rs-pr200": "R&S PR200.png",
 });
@@ -25072,7 +25204,9 @@ const SENSOR_GRAPHIC_URLS = Object.freeze({
   "LIME SDR.png": new URL("./images/sensor_graphics/LIME SDR.png", import.meta.url).href,
   "R&S PR200.png": new URL("./images/sensor_graphics/R&S PR200.png", import.meta.url).href,
   "RTLSDR.png": new URL("./images/sensor_graphics/RTLSDR.png", import.meta.url).href,
+  "SDR Play RSPdx R2.png": new URL("./images/sensor_graphics/SDR Play RSPdx R2.png", import.meta.url).href,
   "SH BB60C.png": new URL("./images/sensor_graphics/SH BB60C.png", import.meta.url).href,
+  "USRP B200.png": new URL("./images/sensor_graphics/USRP B200.png", import.meta.url).href,
 });
 
 function normalizeSensorGraphicLookup(value = "") {
@@ -25104,6 +25238,10 @@ function getSensorGraphicFile(sensorOrProfile) {
     ["HACK RF PRO", "HACK RF PRO.png"],
     ["HACK RF ONE", "HACK RF ONE.png"],
     ["LIME SDR", "LIME SDR.png"],
+    ["USRP B200 B210", "USRP B200.png"],
+    ["USRP B200", "USRP B200.png"],
+    ["SDRPLAY RSPDX R2", "SDR Play RSPdx R2.png"],
+    ["SDR PLAY RSPDX R2", "SDR Play RSPdx R2.png"],
     ["AIRSPY R2", "AIRSPY R2.png"],
     ["SH BB60C", "SH BB60C.png"],
     ["RS PR200", "R&S PR200.png"],
@@ -25143,6 +25281,40 @@ function sensorIconSvg() {
   `;
 }
 
+function deriveSensorCompatibleReceiveNodes(source = {}) {
+  const modes = String(source.modes || "").toUpperCase();
+  const nodes = [];
+  const range = formatSensorFrequencyRange(source);
+  if (range && range !== "Range unset") {
+    nodes.push(`RF emitter emissions within ${range}`);
+  }
+  if (/IQ|SPECTRUM|REAL[-\s]*TIME|SURVEY/.test(modes)) {
+    nodes.push("wideband IQ / spectrum survey nodes");
+  }
+  if (/WFM|NFM|SFM|\bFM\b/.test(modes)) {
+    nodes.push("FM voice and narrowband tactical radio nodes");
+  }
+  if (/WAM|NAM|\bAM\b/.test(modes)) {
+    nodes.push("AM voice / airband-style nodes");
+  }
+  if (/USB|LSB|SSB/.test(modes)) {
+    nodes.push("SSB voice and low-rate data nodes");
+  }
+  if (/CW/.test(modes)) {
+    nodes.push("CW / narrowband carrier nodes");
+  }
+  if (/P25|DMR|NXDN|TETRA|TET-RA/.test(modes)) {
+    nodes.push("digital LMR presence and demod-capable nodes");
+  }
+  if (/LTE|CDMA|WCDMA|GSM|WIFI|WI-FI/.test(modes)) {
+    nodes.push("cellular / Wi-Fi waveform-indicator nodes");
+  }
+  if (/CUAS|NEAR[-\s]*PEER|WAVEFORM/.test(modes)) {
+    nodes.push("CUAS and near-peer waveform indicator nodes");
+  }
+  return nodes.length ? nodes.join("; ") : "Frequency-compatible emissions; waveform compatibility depends on receiver chain and demodulator support.";
+}
+
 function normalizeSensorRecord(raw = {}) {
   const profile = getSensorProfile(raw.profileId || raw.id || "");
   const source = { ...profile, ...(raw && typeof raw === "object" ? raw : {}) };
@@ -25158,17 +25330,19 @@ function normalizeSensorRecord(raw = {}) {
     name,
     unit: String(source.unit || "").trim(),
     toUnitId: Number.isFinite(Number(source.toUnitId)) ? Number(source.toUnitId) : null,
-    lat: Number.isFinite(Number(source.lat)) ? Number(source.lat) : null,
-    lon: Number.isFinite(Number(source.lon)) ? Number(source.lon) : null,
+    lat: normalizeOptionalMapCoordinate(source.lat),
+    lon: normalizeOptionalMapCoordinate(source.lon),
     frequencyMinMHz: Number.isFinite(minMHz) ? Math.max(0, minMHz) : 0,
     frequencyMaxMHz: Number.isFinite(maxMHz) ? Math.max(0, maxMHz) : 6000,
     instantaneousBandwidthMHz: Number.isFinite(Number(source.instantaneousBandwidthMHz)) ? Math.max(0, Number(source.instantaneousBandwidthMHz)) : 0,
     channels: Number.isFinite(Number(source.channels)) ? Math.max(1, Math.round(Number(source.channels))) : 1,
     demodulators: Number.isFinite(Number(source.demodulators)) ? Math.max(0, Math.round(Number(source.demodulators))) : null,
     sensitivityDbm: Number.isFinite(Number(source.sensitivityDbm)) ? Number(source.sensitivityDbm) : -105,
+    antennaType: String(source.antennaType || "Omni").trim(),
     antennaGainDbi: Number.isFinite(Number(source.antennaGainDbi)) ? Number(source.antennaGainDbi) : 0,
     antennaHeightM: Number.isFinite(Number(source.antennaHeightM)) ? Math.max(0, Number(source.antennaHeightM)) : 2,
     modes: String(source.modes || "").trim(),
+    compatibleReceiveNodes: String(source.compatibleReceiveNodes || deriveSensorCompatibleReceiveNodes(source)).trim(),
     notes: String(source.notes || "").trim(),
     color: String(source.color || "#7dd3fc"),
     workspaceLayout: source.workspaceLayout && Number.isFinite(Number(source.workspaceLayout.x)) && Number.isFinite(Number(source.workspaceLayout.y))
@@ -25200,7 +25374,7 @@ function buildSensorRecordFromProfile(profileId, overrides = {}) {
 }
 
 function hasSensorMapLocation(sensor) {
-  return Number.isFinite(Number(sensor?.lat)) && Number.isFinite(Number(sensor?.lon));
+  return hasUsableMapCoordinatePair(sensor?.lat, sensor?.lon);
 }
 
 function getMappedTacticalAnchorForSensor(sensor) {
@@ -25251,13 +25425,19 @@ function renderSensorPopup(sensor) {
     <strong>${escapeHtml(sensor.name || "RF Sensor")}</strong><br>
     ${escapeHtml(sensor.profileName || sensor.category || "Sensor")}<br>
     ${escapeHtml(formatSensorFrequencyRange(sensor))} | BW ${escapeHtml(formatSensorBandwidth(sensor.instantaneousBandwidthMHz))}<br>
-    Sens ${escapeHtml(formatDbm(sensor.sensitivityDbm))} | ${escapeHtml(String(sensor.channels || 1))} RX${linkedLine}<br>
+    Sens ${escapeHtml(formatDbm(sensor.sensitivityDbm))} | ${escapeHtml(String(sensor.channels || 1))} RX | ${escapeHtml(sensor.antennaType || "Omni")}${linkedLine}<br>
     ${Number(sensor.lat).toFixed(5)}, ${Number(sensor.lon).toFixed(5)}
   `;
 }
 
 function addOrUpdateSensorMarker(sensor) {
   if (!state.map || !hasSensorMapLocation(sensor)) {
+    const sensorId = sensor?.id;
+    const marker = sensorId ? state.sensorMarkers.get(sensorId) : null;
+    if (marker) {
+      marker.remove();
+      state.sensorMarkers.delete(sensorId);
+    }
     return null;
   }
   let marker = state.sensorMarkers.get(sensor.id);
@@ -25571,6 +25751,7 @@ function renderSensorsWorkspace() {
         <div class="emitters-card-kv"><dt>Linked</dt><dd>${escapeHtml(linkedLabel)}</dd></div>
         <div class="emitters-card-kv"><dt>Map</dt><dd>${escapeHtml(visibilityLabel)}</dd></div>
         <div class="emitters-card-kv"><dt>Sens</dt><dd>${escapeHtml(formatDbm(sensor.sensitivityDbm))}</dd></div>
+        <div class="emitters-card-kv"><dt>Ant</dt><dd>${escapeHtml(sensor.antennaType || "Omni")}</dd></div>
       </dl>
       <div class="emitters-card-net">
         <div class="emitters-card-net-header">
@@ -25738,6 +25919,11 @@ function initSensorsViewIfNeeded() {
   dom.sensorEditorCancelBtn?.addEventListener("click", closeSensorEditor);
   dom.sensorEditorSaveBtn?.addEventListener("click", saveSensorEditor);
   dom.sensorProfileSelect?.addEventListener("change", applySensorProfileToEditor);
+  [
+    dom.sensorFreqMinInput,
+    dom.sensorFreqMaxInput,
+    dom.sensorModesInput,
+  ].forEach((input) => input?.addEventListener("input", updateSensorCompatibleNodesEditor));
   addModalBackdropClose(dom.sensorEditorModal, closeSensorEditor);
 
   document.addEventListener("click", (event) => {
@@ -25789,9 +25975,11 @@ function openSensorEditor(sensorId = "", profileId = "", options = {}) {
   if (dom.sensorBandwidthInput) dom.sensorBandwidthInput.value = source.instantaneousBandwidthMHz ?? "";
   if (dom.sensorChannelsInput) dom.sensorChannelsInput.value = source.channels ?? "";
   if (dom.sensorSensitivityInput) dom.sensorSensitivityInput.value = source.sensitivityDbm ?? "";
+  if (dom.sensorAntennaTypeInput) dom.sensorAntennaTypeInput.value = source.antennaType || "Omni";
   if (dom.sensorAntennaGainInput) dom.sensorAntennaGainInput.value = source.antennaGainDbi ?? "";
   if (dom.sensorAntennaHeightInput) dom.sensorAntennaHeightInput.value = source.antennaHeightM ?? "";
   if (dom.sensorModesInput) dom.sensorModesInput.value = source.modes || "";
+  if (dom.sensorCompatibleNodesInput) dom.sensorCompatibleNodesInput.value = source.compatibleReceiveNodes || deriveSensorCompatibleReceiveNodes(source);
   if (dom.sensorNotesInput) dom.sensorNotesInput.value = source.notes || "";
   dom.sensorEditorModal?.classList.remove("hidden");
   updateModalBodyState();
@@ -25811,10 +25999,27 @@ function applySensorProfileToEditor() {
   if (dom.sensorBandwidthInput) dom.sensorBandwidthInput.value = profile.instantaneousBandwidthMHz;
   if (dom.sensorChannelsInput) dom.sensorChannelsInput.value = profile.channels;
   if (dom.sensorSensitivityInput) dom.sensorSensitivityInput.value = profile.sensitivityDbm;
+  if (dom.sensorAntennaTypeInput) dom.sensorAntennaTypeInput.value = profile.antennaType || "Omni";
   if (dom.sensorAntennaGainInput) dom.sensorAntennaGainInput.value = profile.antennaGainDbi;
   if (dom.sensorAntennaHeightInput) dom.sensorAntennaHeightInput.value = profile.antennaHeightM;
   if (dom.sensorModesInput) dom.sensorModesInput.value = profile.modes || "";
+  if (dom.sensorCompatibleNodesInput) dom.sensorCompatibleNodesInput.value = profile.compatibleReceiveNodes || deriveSensorCompatibleReceiveNodes(profile);
   if (dom.sensorNotesInput) dom.sensorNotesInput.value = profile.notes || "";
+}
+
+function getSensorEditorCompatibilitySource() {
+  const profile = getSensorProfile(dom.sensorProfileSelect?.value);
+  return {
+    ...(profile || {}),
+    frequencyMinMHz: Number(dom.sensorFreqMinInput?.value),
+    frequencyMaxMHz: Number(dom.sensorFreqMaxInput?.value),
+    modes: dom.sensorModesInput?.value || profile?.modes || "",
+  };
+}
+
+function updateSensorCompatibleNodesEditor() {
+  if (!dom.sensorCompatibleNodesInput) return;
+  dom.sensorCompatibleNodesInput.value = deriveSensorCompatibleReceiveNodes(getSensorEditorCompatibilitySource());
 }
 
 function getSensorEditorData() {
@@ -25832,9 +26037,11 @@ function getSensorEditorData() {
     instantaneousBandwidthMHz: Number(dom.sensorBandwidthInput?.value),
     channels: Number(dom.sensorChannelsInput?.value),
     sensitivityDbm: Number(dom.sensorSensitivityInput?.value),
+    antennaType: dom.sensorAntennaTypeInput?.value || "Omni",
     antennaGainDbi: Number(dom.sensorAntennaGainInput?.value),
     antennaHeightM: Number(dom.sensorAntennaHeightInput?.value),
     modes: dom.sensorModesInput?.value || "",
+    compatibleReceiveNodes: dom.sensorCompatibleNodesInput?.value || "",
     notes: dom.sensorNotesInput?.value || "",
   });
 }
@@ -26003,6 +26210,13 @@ function createEmitterIcon(asset) {
 
 function updateAssetMarker(asset) {
   const marker = state.assetMarkers.get(asset.id);
+  if (!hasAssetMapLocation(asset)) {
+    if (marker) {
+      marker.remove();
+      state.assetMarkers.delete(asset.id);
+    }
+    return;
+  }
   if (!marker) {
     return;
   }
@@ -26062,11 +26276,31 @@ function renderAssetPopup(asset) {
   `;
 }
 
-function hasAssetMapLocation(asset) {
-  if (asset?.lat === null || asset?.lat === undefined || asset?.lon === null || asset?.lon === undefined) {
+function normalizeOptionalMapCoordinate(value) {
+  if (value === null || value === undefined || (typeof value === "string" && value.trim() === "")) {
+    return null;
+  }
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function hasUsableMapCoordinatePair(lat, lon) {
+  const normalizedLat = normalizeOptionalMapCoordinate(lat);
+  const normalizedLon = normalizeOptionalMapCoordinate(lon);
+  if (normalizedLat === null || normalizedLon === null) {
     return false;
   }
-  return Number.isFinite(Number(asset.lat)) && Number.isFinite(Number(asset.lon));
+  if (normalizedLat === 0 && normalizedLon === 0) {
+    return false;
+  }
+  return normalizedLat >= -90 && normalizedLat <= 90 && normalizedLon >= -180 && normalizedLon <= 180;
+}
+
+function hasAssetMapLocation(asset) {
+  if (!hasUsableMapCoordinatePair(asset?.lat, asset?.lon)) {
+    return false;
+  }
+  return true;
 }
 
 function isEmitterWorkspaceAsset(asset) {
@@ -30300,7 +30534,7 @@ function showPointTerrainPopup(latlng) {
   const lat = latlng.lat;
   const lon = latlng.lng;
   const cachedElevationM = sampleTerrainElevation(lat, lon);
-  const popup = L.popup()
+  const popup = L.popup({ className: "map-terrain-popup" })
     .setLatLng([lat, lon])
     .setContent(buildPointTerrainPopup(lat, lon, cachedElevationM))
     .openOn(state.map);
@@ -30385,9 +30619,8 @@ function getMapContentEntries() {
     });
   });
 
-  state.assets.filter((asset) => Boolean(getAssetEffectiveMapPosition(asset))).forEach((asset) => {
+  state.assets.filter((asset) => hasAssetMapLocation(asset)).forEach((asset) => {
     const radioName = asset.emitterLabel || asset.name || "Radio";
-    const effectivePosition = getAssetEffectiveMapPosition(asset);
     let displayName;
     if (asset.toUnitId) {
       const toUnit = (_toState?.units || []).find(u => u.id === asset.toUnitId);
@@ -30401,29 +30634,26 @@ function getMapContentEntries() {
       kind: "asset",
       assetType: asset.type,
       name: displayName,
-      subtitle: hasAssetMapLocation(asset)
-        ? `${asset.type} | ${asset.unit}`
-        : `${asset.type} | ${asset.unit} | Linked to mapped unit`,
-      anchoredToUnit: Boolean(effectivePosition?.tacticalObject),
+      subtitle: [asset.type, asset.unit, "placed"].filter(Boolean).join(" | "),
+      anchoredToUnit: false,
     });
   });
 
-  state.sensors.filter((sensor) => Boolean(getSensorEffectiveMapPosition(sensor))).forEach((sensor) => {
-    const effectivePosition = getSensorEffectiveMapPosition(sensor);
+  state.sensors.filter((sensor) => hasSensorMapLocation(sensor)).forEach((sensor) => {
     const linkedUnit = Number.isFinite(Number(sensor.toUnitId)) ? getPlanUnitById(sensor.toUnitId) : null;
     const linkedLabel = linkedUnit ? (linkedUnit.label || linkedUnit.designator || "") : "";
     const displayName = linkedLabel ? `${linkedLabel}: ${sensor.name || "RF Sensor"}` : (sensor.name || "RF Sensor");
     const statusParts = [
       "sensor",
       formatSensorFrequencyRange(sensor),
-      hasSensorMapLocation(sensor) ? "placed" : "linked unit position",
+      "placed",
     ];
     entries.push({
       id: `sensor:${sensor.id}`,
       kind: "sensor",
       name: displayName,
       subtitle: statusParts.filter(Boolean).join(" | "),
-      anchoredToUnit: Boolean(effectivePosition?.tacticalObject),
+      anchoredToUnit: false,
     });
   });
 
@@ -35710,7 +35940,7 @@ function _syncCesiumEntitiesImmediate() {
   };
 
   // --- ASSETS ---
-  state.assets.filter((asset) => isVisible(`asset:${asset.id}`) && asset.lat != null && asset.lon != null).forEach((asset) => {
+  state.assets.filter((asset) => isVisible(`asset:${asset.id}`) && hasAssetMapLocation(asset)).forEach((asset) => {
     const assetHeight = resolveAbsoluteHeight(asset);
     const heightRef = assetHeight.useRelativeToGround ? C.HeightReference.RELATIVE_TO_GROUND : C.HeightReference.NONE;
     const showLabel = Boolean(asset.name) && !isContentLabelEffectivelyHidden(`asset:${asset.id}`);
@@ -35741,13 +35971,12 @@ function _syncCesiumEntitiesImmediate() {
 
   // --- SENSORS ---
   state.sensors
-    .filter((sensor) => isVisible(`sensor:${sensor.id}`) && Boolean(getSensorEffectiveMapPosition(sensor)))
+    .filter((sensor) => isVisible(`sensor:${sensor.id}`) && hasSensorMapLocation(sensor))
     .forEach((sensor) => {
-      const position = getSensorEffectiveMapPosition(sensor);
       const color = sensor.color || "#7dd3fc";
       safeAddEntity({
         id: `managed:sensor:${sensor.id}`,
-        position: C.Cartesian3.fromDegrees(position.lon, position.lat, 0),
+        position: C.Cartesian3.fromDegrees(Number(sensor.lon), Number(sensor.lat), 0),
         point: {
           pixelSize: 12,
           color: C.Color.fromCssColorString(color),
@@ -35757,8 +35986,8 @@ function _syncCesiumEntitiesImmediate() {
           disableDepthTestDistance: 0,
         },
         label: buildCesiumLabelOptions({
-          lat: position.lat,
-          lon: position.lon,
+          lat: Number(sensor.lat),
+          lon: Number(sensor.lon),
           text: sensor.name || "RF Sensor",
           font: "13px Bahnschrift",
           fillColor: C.Color.fromCssColorString("#dbeafe"),
@@ -40509,6 +40738,7 @@ const SENSOR_LIBRARY = Object.freeze([
     instantaneousBandwidthMHz: 2.4,
     channels: 1,
     sensitivityDbm: -105,
+    antennaType: "Whip",
     antennaGainDbi: 0,
     antennaHeightM: 2,
     modes: "IQ, AM, FM, USB, LSB, CW",
@@ -40523,6 +40753,7 @@ const SENSOR_LIBRARY = Object.freeze([
     instantaneousBandwidthMHz: 20,
     channels: 1,
     sensitivityDbm: -100,
+    antennaType: "Omni",
     antennaGainDbi: 0,
     antennaHeightM: 2,
     modes: "Wideband IQ, AM, FM, USB, LSB, CW, digital demod via software",
@@ -40537,6 +40768,7 @@ const SENSOR_LIBRARY = Object.freeze([
     instantaneousBandwidthMHz: 20,
     channels: 1,
     sensitivityDbm: -100,
+    antennaType: "Omni",
     antennaGainDbi: 0,
     antennaHeightM: 2,
     modes: "Wideband IQ, AM, FM, USB, LSB, CW, digital demod via software",
@@ -40552,6 +40784,7 @@ const SENSOR_LIBRARY = Object.freeze([
     channels: 3,
     demodulators: 16,
     sensitivityDbm: -112,
+    antennaType: "Omni",
     antennaGainDbi: 2,
     antennaHeightM: 2,
     modes: "WFM, NFM, SFM, WAM, AM, NAM, USB, LSB, CW, DMR, P25, NXDN, TETRA, CUAS, near-peer waveforms",
@@ -40567,6 +40800,7 @@ const SENSOR_LIBRARY = Object.freeze([
     channels: 8,
     demodulators: 8,
     sensitivityDbm: -113,
+    antennaType: "DF array",
     antennaGainDbi: 2,
     antennaHeightM: 2,
     modes: "WFM, NFM, SFM, WAM, AM, NAM, USB, LSB, CW, DMR, APCO P25, NXDN, LTE, CDMA, WCDMA, GSM, WiFi, CUAS",
@@ -40581,6 +40815,7 @@ const SENSOR_LIBRARY = Object.freeze([
     instantaneousBandwidthMHz: 61.44,
     channels: 2,
     sensitivityDbm: -104,
+    antennaType: "Omni",
     antennaGainDbi: 0,
     antennaHeightM: 2,
     modes: "2x2 MIMO IQ, AM, FM, digital demod via software",
@@ -40595,6 +40830,7 @@ const SENSOR_LIBRARY = Object.freeze([
     instantaneousBandwidthMHz: 40,
     channels: 1,
     sensitivityDbm: -102,
+    antennaType: "Omni",
     antennaGainDbi: 0,
     antennaHeightM: 2,
     modes: "IQ, AM, FM, digital demod via software",
@@ -40609,6 +40845,7 @@ const SENSOR_LIBRARY = Object.freeze([
     instantaneousBandwidthMHz: 56,
     channels: 2,
     sensitivityDbm: -106,
+    antennaType: "Omni",
     antennaGainDbi: 0,
     antennaHeightM: 2,
     modes: "IQ, AM, FM, digital demod via GNU Radio / UHD",
@@ -40623,6 +40860,7 @@ const SENSOR_LIBRARY = Object.freeze([
     instantaneousBandwidthMHz: 10,
     channels: 1,
     sensitivityDbm: -108,
+    antennaType: "Whip",
     antennaGainDbi: 0,
     antennaHeightM: 2,
     modes: "IQ, AM, FM, USB, LSB, CW",
@@ -40637,6 +40875,7 @@ const SENSOR_LIBRARY = Object.freeze([
     instantaneousBandwidthMHz: 10,
     channels: 1,
     sensitivityDbm: -108,
+    antennaType: "Dipole",
     antennaGainDbi: 0,
     antennaHeightM: 2,
     modes: "AM, FM, USB, LSB, CW, digital demod via software",
@@ -40651,6 +40890,7 @@ const SENSOR_LIBRARY = Object.freeze([
     instantaneousBandwidthMHz: 27,
     channels: 1,
     sensitivityDbm: -111,
+    antennaType: "Omni",
     antennaGainDbi: 0,
     antennaHeightM: 2,
     modes: "Real-time spectrum, IQ capture, AM, FM, digital demod via software",
@@ -40665,6 +40905,7 @@ const SENSOR_LIBRARY = Object.freeze([
     instantaneousBandwidthMHz: 40,
     channels: 1,
     sensitivityDbm: -114,
+    antennaType: "DF array",
     antennaGainDbi: 0,
     antennaHeightM: 2,
     modes: "AM, FM, USB, LSB, CW, I/Q, spectrum monitoring, direction-finding capable with DF antenna",
@@ -43834,14 +44075,179 @@ function linkTypeClass(emA, emB) {
   return "topo-link-type-vhf"; // fallback
 }
 
+const TOPO_LINK_POPUP_DEFAULT_LAYOUT = Object.freeze({
+  left: 18,
+  top: 18,
+  width: 460,
+  height: 380,
+});
+let _topoLinkPopupLayout = { ...TOPO_LINK_POPUP_DEFAULT_LAYOUT };
+let _topoLinkPopupDrag = null;
+let _topoLinkPopupResize = null;
+let _topoLinkPopupInteractionsReady = false;
+
+function getTopoLinkPopupCanvas(popup = document.getElementById("topoLinkPopup")) {
+  return popup?.parentElement?.id === "topoCanvas"
+    ? popup.parentElement
+    : document.getElementById("topoCanvas");
+}
+
+function clampTopoLinkPopupLayout(layout = _topoLinkPopupLayout, popup = document.getElementById("topoLinkPopup")) {
+  const canvas = getTopoLinkPopupCanvas(popup);
+  const canvasRect = canvas?.getBoundingClientRect?.();
+  const canvasWidth = Math.max(1, canvasRect?.width || 900);
+  const canvasHeight = Math.max(1, canvasRect?.height || 620);
+  const margin = 10;
+  const maxWidth = Math.max(360, canvasWidth - margin * 2);
+  const maxHeight = Math.max(260, canvasHeight - margin * 2);
+  const width = clamp(Math.round(Number(layout.width) || TOPO_LINK_POPUP_DEFAULT_LAYOUT.width), 360, maxWidth);
+  const height = clamp(Math.round(Number(layout.height) || TOPO_LINK_POPUP_DEFAULT_LAYOUT.height), 260, maxHeight);
+  return {
+    left: clamp(Math.round(Number(layout.left) || margin), margin, Math.max(margin, canvasWidth - width - margin)),
+    top: clamp(Math.round(Number(layout.top) || margin), margin, Math.max(margin, canvasHeight - height - margin)),
+    width,
+    height,
+  };
+}
+
+function applyTopoLinkPopupLayout(popup = document.getElementById("topoLinkPopup")) {
+  if (!popup) return;
+  _topoLinkPopupLayout = clampTopoLinkPopupLayout(_topoLinkPopupLayout, popup);
+  popup.style.left = `${_topoLinkPopupLayout.left}px`;
+  popup.style.top = `${_topoLinkPopupLayout.top}px`;
+  popup.style.right = "auto";
+  popup.style.bottom = "auto";
+  popup.style.width = `${_topoLinkPopupLayout.width}px`;
+  popup.style.height = `${_topoLinkPopupLayout.height}px`;
+  popup.style.maxHeight = "none";
+}
+
+function handleTopoLinkPopupWheel(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  const body = document.getElementById("topoLinkPopupBody");
+  if (!body) return;
+  body.scrollTop += event.deltaY;
+  body.scrollLeft += event.deltaX;
+}
+
+function onTopoLinkPopupPointerMove(event) {
+  if (_topoLinkPopupDrag) {
+    event.preventDefault();
+    event.stopPropagation();
+    const { popup, startClientX, startClientY, startLayout } = _topoLinkPopupDrag;
+    _topoLinkPopupLayout = {
+      ...startLayout,
+      left: startLayout.left + (event.clientX - startClientX),
+      top: startLayout.top + (event.clientY - startClientY),
+    };
+    applyTopoLinkPopupLayout(popup);
+    return;
+  }
+  if (_topoLinkPopupResize) {
+    event.preventDefault();
+    event.stopPropagation();
+    const { popup, startClientX, startClientY, startLayout } = _topoLinkPopupResize;
+    _topoLinkPopupLayout = {
+      ...startLayout,
+      width: startLayout.width + (event.clientX - startClientX),
+      height: startLayout.height + (event.clientY - startClientY),
+    };
+    applyTopoLinkPopupLayout(popup);
+  }
+}
+
+function endTopoLinkPopupPointerInteraction(event) {
+  if (_topoLinkPopupDrag) {
+    try {
+      _topoLinkPopupDrag.handle?.releasePointerCapture?.(event.pointerId);
+    } catch {}
+    _topoLinkPopupDrag = null;
+    document.body.classList.remove("topo-link-popup-dragging");
+  }
+  if (_topoLinkPopupResize) {
+    try {
+      _topoLinkPopupResize.handle?.releasePointerCapture?.(event.pointerId);
+    } catch {}
+    _topoLinkPopupResize = null;
+    document.body.classList.remove("topo-link-popup-resizing");
+  }
+}
+
+function ensureTopoLinkPopupInteractions(popup = document.getElementById("topoLinkPopup")) {
+  if (!popup) return null;
+  const canvas = document.getElementById("topoCanvas");
+  if (canvas && popup.parentElement !== canvas) {
+    canvas.appendChild(popup);
+  }
+  if (_topoLinkPopupInteractionsReady) {
+    applyTopoLinkPopupLayout(popup);
+    return popup;
+  }
+  _topoLinkPopupInteractionsReady = true;
+  const header = popup.querySelector(".topo-link-popup-header");
+  let resizeHandle = popup.querySelector(".topo-link-popup-resize");
+  if (!resizeHandle) {
+    resizeHandle = document.createElement("div");
+    resizeHandle.className = "topo-link-popup-resize";
+    resizeHandle.setAttribute("aria-hidden", "true");
+    popup.appendChild(resizeHandle);
+  }
+
+  popup.addEventListener("wheel", handleTopoLinkPopupWheel, { passive: false });
+  popup.addEventListener("mousedown", (event) => event.stopPropagation());
+  popup.addEventListener("click", (event) => event.stopPropagation());
+  header?.addEventListener("pointerdown", (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    if (event.button !== 0 || target?.closest("button")) return;
+    event.preventDefault();
+    event.stopPropagation();
+    _topoLinkPopupLayout = clampTopoLinkPopupLayout(_topoLinkPopupLayout, popup);
+    _topoLinkPopupDrag = {
+      popup,
+      handle: header,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startLayout: { ..._topoLinkPopupLayout },
+    };
+    header.setPointerCapture?.(event.pointerId);
+    document.body.classList.add("topo-link-popup-dragging");
+  });
+  resizeHandle.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    _topoLinkPopupLayout = clampTopoLinkPopupLayout(_topoLinkPopupLayout, popup);
+    _topoLinkPopupResize = {
+      popup,
+      handle: resizeHandle,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startLayout: { ..._topoLinkPopupLayout },
+    };
+    resizeHandle.setPointerCapture?.(event.pointerId);
+    document.body.classList.add("topo-link-popup-resizing");
+  });
+  document.addEventListener("pointermove", onTopoLinkPopupPointerMove);
+  document.addEventListener("pointerup", endTopoLinkPopupPointerInteraction);
+  document.addEventListener("pointercancel", endTopoLinkPopupPointerInteraction);
+  document.getElementById("topoLinkPopupClose")?.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    popup.classList.add("hidden");
+  });
+  applyTopoLinkPopupLayout(popup);
+  return popup;
+}
+
 function showTopoLinkDetail(a, b, quality, nameA, nameB) {
-  const popup = document.getElementById("topoLinkPopup");
+  const popup = ensureTopoLinkPopupInteractions();
   const title = document.getElementById("topoLinkPopupTitle");
   const body  = document.getElementById("topoLinkPopupBody");
   if (!popup || !body) return;
   nameA = nameA || a.name || a.id || "Emitter A";
   nameB = nameB || b.name || b.id || "Emitter B";
-  if (title) title.textContent = `${nameA} â†” ${nameB}`;
+  if (title) title.textContent = `${nameA} \u2194 ${nameB}`;
   const scoreColor = linkQualityColor(quality.score);
   const t = quality.terrain;
   const sourceLine = formatTopologyLinkSourceLine(quality);
@@ -43872,15 +44278,14 @@ function showTopoLinkDetail(a, b, quality, nameA, nameB) {
       ${quality.reasons.map(r => `<li>${esc(r)}</li>`).join("")}
     </ul>
   `;
+  applyTopoLinkPopupLayout(popup);
   popup.classList.remove("hidden");
-  document.getElementById("topoLinkPopupClose")?.addEventListener("click", () => popup.classList.add("hidden"), { once: true });
 }
 
 function showEmitterWorkspaceLinkDetail(a, b, quality, nameA, nameB) {
-  const popup = document.getElementById("topoLinkPopup");
+  const popup = ensureTopoLinkPopupInteractions();
   const title = document.getElementById("topoLinkPopupTitle");
   const body = document.getElementById("topoLinkPopupBody");
-  const canvas = document.getElementById("topoCanvas");
   if (!popup || !body) return;
   const leftName = nameA || a?.name || a?.id || "Emitter A";
   const rightName = nameB || b?.name || b?.id || "Emitter B";
@@ -43903,7 +44308,7 @@ function showEmitterWorkspaceLinkDetail(a, b, quality, nameA, nameB) {
         ${quality.marginDb != null ? `<span>Margin ${quality.marginDb.toFixed(0)} dB</span>` : ""}
       </div>`
     : "";
-  if (title) title.textContent = `${leftName} -> ${rightName}`;
+  if (title) title.textContent = `${leftName} \u2194 ${rightName}`;
   body.innerHTML = `
     <div style="margin-bottom:8px;display:flex;align-items:center;gap:10px">
       <div style="font-size:1.4rem;font-weight:700;color:${scoreColor}">${isUnplaced ? "NP" : Math.round(Number(quality?.score) || 0)}</div>
@@ -43919,15 +44324,8 @@ function showEmitterWorkspaceLinkDetail(a, b, quality, nameA, nameB) {
       ${(quality?.reasons || []).map((reason) => `<li>${esc(reason)}</li>`).join("")}
     </ul>
   `;
-  popup.style.top = "16px";
-  popup.style.left = "16px";
-  popup.style.right = "auto";
-  popup.style.bottom = "auto";
-  if (canvas && popup.parentElement !== canvas) {
-    canvas.appendChild(popup);
-  }
+  applyTopoLinkPopupLayout(popup);
   popup.classList.remove("hidden");
-  document.getElementById("topoLinkPopupClose")?.addEventListener("click", () => popup.classList.add("hidden"), { once: true });
 }
 
 function getOrCreateTopoTooltip() {
@@ -44693,14 +45091,14 @@ function redrawTopoLinks() {
         tooltip.style.left = (e.clientX + 12) + "px";
         tooltip.style.top = (e.clientY - 8) + "px";
         if (isUnplacedLinkQuality(lnk.quality)) {
-          tooltip.innerHTML = `<strong>${esc(lnk.nameA)} -> ${esc(lnk.nameB)}</strong><br>` +
+          tooltip.innerHTML = `<strong>${esc(lnk.nameA)} \u2194 ${esc(lnk.nameB)}</strong><br>` +
             `Status: <strong>${esc(lnk.quality.label)}</strong><br>` +
             `Place the emitters on the map to assess this link.`;
           return;
         }
         const rxA = Number.isFinite(lnk.quality.reverseRssiDbm) ? `${lnk.quality.reverseRssiDbm.toFixed(1)} dBm` : "N/A";
         const rxB = Number.isFinite(lnk.quality.forwardRssiDbm) ? `${lnk.quality.forwardRssiDbm.toFixed(1)} dBm` : "N/A";
-        tooltip.innerHTML = `<strong>${esc(lnk.nameA)} â†” ${esc(lnk.nameB)}</strong><br>` +
+        tooltip.innerHTML = `<strong>${esc(lnk.nameA)} \u2194 ${esc(lnk.nameB)}</strong><br>` +
           `Quality: <strong>${esc(lnk.quality.label)}</strong> (${Math.round(lnk.quality.score)})<br>` +
           `${esc(lnk.nameA)} RX: ${rxA}<br>` +
           `${esc(lnk.nameB)} RX: ${rxB}`;
