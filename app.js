@@ -25615,34 +25615,35 @@ function getSensorReceptionSummary(sensor) {
 }
 
 function buildSensorWorkspaceDefaultLayout(index = 0) {
-  const columnCount = 3;
+  const { cardWidth, columnGap, startX, startY } = getSensorWorkspaceLayoutMetrics();
+  const columnCount = 6;
   const column = index % columnCount;
   const row = Math.floor(index / columnCount);
   return {
-    x: 190 + (column * 320),
-    y: 180 + (row * 300),
+    x: startX + (column * (cardWidth + columnGap)),
+    y: startY + (row * 620),
   };
 }
 
 function getSensorWorkspaceLayoutMetrics() {
   return {
     cardWidth: 300,
-    cardHeight: 390,
-    columnGap: 34,
-    rowGap: 36,
-    startX: 180,
-    startY: 190,
+    cardHeight: 560,
+    columnGap: 54,
+    rowGap: 72,
+    startX: 190,
+    startY: 360,
   };
 }
 
 function getSensorAutoLayoutColumnCount(sensorCount = state.sensors.length) {
   const canvas = dom.sensorsCanvas;
   const { cardWidth, columnGap } = getSensorWorkspaceLayoutMetrics();
-  const maxByWidth = canvas?.clientWidth
-    ? Math.max(1, Math.floor((canvas.clientWidth - 180) / (cardWidth + columnGap)))
-    : 3;
-  const balancedColumns = Math.max(1, Math.ceil(Math.sqrt(Math.max(1, sensorCount) * 1.25)));
-  return clamp(Math.min(maxByWidth, balancedColumns, 4), 1, 4);
+  const readableByWidth = canvas?.clientWidth
+    ? Math.max(1, Math.floor((canvas.clientWidth - 160) / (cardWidth + columnGap)))
+    : 5;
+  const preferredHorizontalLimit = Math.max(readableByWidth, Math.min(sensorCount, 8));
+  return Math.max(1, Math.min(sensorCount, preferredHorizontalLimit));
 }
 
 function autoLayoutSensorsWorkspace({ fitView = true } = {}) {
@@ -25662,13 +25663,13 @@ function autoLayoutSensorsWorkspace({ fitView = true } = {}) {
   });
   renderSensorsWorkspace();
   if (fitView) {
-    requestAnimationFrame(() => fitSensorsWorkspaceToContent());
+    requestAnimationFrame(() => fitSensorsWorkspaceToContent({ minZoom: 0.72, padding: 118 }));
   }
   saveMapState();
-  setStatus("Sensor workspace auto layout complete.");
+  setStatus("Sensor workspace arranged side by side.");
 }
 
-function fitSensorsWorkspaceToContent({ sensorId = "", padding = 130 } = {}) {
+function fitSensorsWorkspaceToContent({ sensorId = "", padding = 130, minZoom = 0.45 } = {}) {
   const canvas = dom.sensorsCanvas;
   if (!canvas) {
     return;
@@ -25692,7 +25693,7 @@ function fitSensorsWorkspaceToContent({ sensorId = "", padding = 130 } = {}) {
   const zoomX = canvas.clientWidth > 0 ? (canvas.clientWidth - (padding * 2)) / contentWidth : _sensorsWorkspaceState.zoom;
   const zoomY = canvas.clientHeight > 0 ? (canvas.clientHeight - (padding * 2)) / contentHeight : _sensorsWorkspaceState.zoom;
   if (!sensorId && canvas.clientWidth > 0 && canvas.clientHeight > 0) {
-    _sensorsWorkspaceState.zoom = clamp(Math.min(zoomX, zoomY, 1), 0.45, 1.8);
+    _sensorsWorkspaceState.zoom = clamp(Math.min(zoomX, zoomY, 1), minZoom, 1.8);
   }
   const centerX = (minX + maxX) / 2;
   const centerY = (minY + maxY) / 2;
