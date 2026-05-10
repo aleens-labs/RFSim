@@ -718,10 +718,38 @@ body[data-current-view="analyze"] .top-bar-left {
   color: var(--text);
 }
 
-.settings-check-row input {
+.settings-check-row input[type="checkbox"] {
+  -webkit-appearance: none;
+  appearance: none;
+  position: relative;
   width: 16px;
   height: 16px;
-  accent-color: var(--accent);
+  margin: 0;
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+  color: var(--text);
+  flex: 0 0 auto;
+  cursor: pointer;
+}
+
+.settings-check-row input[type="checkbox"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.settings-check-row input[type="checkbox"]:checked::after {
+  content: "X";
+}
+
+.settings-check-row input[type="checkbox"]:focus-visible {
+  outline: 2px solid rgba(var(--accent-rgb), 0.45);
+  outline-offset: 2px;
 }
 
 .status-chip {
@@ -6451,7 +6479,6 @@ button:focus {
   height: 14px;
   margin: 0;
   flex: 0 0 auto;
-  accent-color: var(--accent);
 }
 
 .settings-modal-grid .settings-xbox-row input[type="checkbox"] {
@@ -6678,8 +6705,8 @@ button:focus {
 }
 
 .tak-settings-section {
-  gap: 8px;
-  padding: 10px 12px;
+  gap: 10px;
+  padding: 12px;
 }
 
 .tak-settings-section .menu-title-row {
@@ -6688,12 +6715,15 @@ button:focus {
 
 .tak-settings-section #takMemberSection {
   display: grid;
-  gap: 8px;
+  gap: 10px;
+  width: min(100%, 1180px);
+  margin-inline: auto;
 }
 
 .tak-settings-grid {
   grid-template-columns: repeat(12, minmax(0, 1fr));
-  gap: 5px 10px;
+  gap: 8px 10px;
+  align-items: stretch;
 }
 
 .tak-settings-grid .tak-settings-wide,
@@ -6738,7 +6768,15 @@ button:focus {
 
 .tak-settings-grid .settings-check-row {
   min-height: 34px;
-  padding: 4px 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+}
+
+.tak-settings-grid > label.settings-check-row:not(.tak-enroll-row) {
+  grid-column: 1 / span 6;
+  width: 100%;
+  max-width: 560px;
+  box-sizing: border-box;
 }
 
 .tak-inline-actions {
@@ -6771,10 +6809,12 @@ button:focus {
 .tak-cert-card,
 .tak-project-shell {
   display: grid;
-  gap: 4px 8px;
-  padding: 6px 8px;
+  gap: 8px;
+  padding: 10px 12px;
   border: 1px solid var(--border);
+  border-radius: 6px;
   background: var(--bg-input);
+  box-sizing: border-box;
 }
 
 .tak-cert-card {
@@ -6856,20 +6896,19 @@ button:focus {
 }
 
 .tak-project-header {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: baseline;
-  justify-content: space-between;
   gap: 12px;
-  flex-wrap: wrap;
 }
 
 .tak-project-checklist {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(240px, 320px));
   gap: 8px;
   max-height: 180px;
   overflow-y: auto;
-  align-items: stretch;
+  align-items: start;
 }
 
 .tak-project-item {
@@ -6881,6 +6920,7 @@ button:focus {
   min-height: 92px;
   padding: 10px 12px;
   border: 1px solid var(--border);
+  border-radius: 4px;
   background: var(--bg-soft);
   cursor: pointer;
 }
@@ -7006,10 +7046,12 @@ button:focus {
 
 /* ── TAK Triggered Prompting ─────────────────────────────────────────────── */
 .tak-triggered-card {
-  margin-top: 16px;
-  padding: 14px 16px 16px;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 6px;
+  padding: 14px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 8px;
   background: var(--bg-soft);
   display: flex;
   flex-direction: column;
@@ -7036,10 +7078,11 @@ button:focus {
   color: var(--text-muted);
   line-height: 1.5;
   margin: 0;
+  max-width: 112ch;
 }
 .tak-triggered-two-col {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   align-items: start;
 }
@@ -7047,6 +7090,7 @@ button:focus {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  min-width: 0;
 }
 .tak-triggered-field-label {
   display: flex;
@@ -7070,7 +7114,7 @@ button:focus {
   gap: 6px;
   padding: 8px 10px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 6px;
   background: rgba(8, 13, 24, 0.55);
 }
 .tak-trigger-chips {
@@ -7121,6 +7165,7 @@ button:focus {
 .tak-triggered-section .settings-check-row {
   font-size: 0.82rem;
   gap: 8px;
+  width: min(100%, 680px);
 }
 .tak-triggered-status-row {
   display: flex;
@@ -7129,7 +7174,7 @@ button:focus {
   gap: 16px;
   padding: 10px 14px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 6px;
   background: rgba(8, 13, 24, 0.55);
   flex-wrap: wrap;
 }
@@ -9357,6 +9402,10 @@ body.emitter-modal-open {
   align-items: center;
   gap: 8px;
   min-width: 0;
+}
+
+.sensors-library-title > span {
+  margin-left: 6px;
 }
 
 .sensors-library-toggle {

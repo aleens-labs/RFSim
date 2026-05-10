@@ -25496,12 +25496,21 @@ function createSensorIcon(sensor) {
 function renderSensorPopup(sensor) {
   const linkedUnit = Number.isFinite(Number(sensor.toUnitId)) ? getPlanUnitById(sensor.toUnitId) : null;
   const linkedLine = linkedUnit ? `<br>Linked ${escapeHtml(linkedUnit.label || linkedUnit.designator || String(linkedUnit.id))}` : "";
+  const lat = Number(sensor.lat);
+  const lon = Number(sensor.lon);
+  const coordinateSystem = state.settings?.coordinateSystem || "mgrs";
+  const coordinateRaw = Number.isFinite(lat) && Number.isFinite(lon)
+    ? formatCoordinate(lat, lon, coordinateSystem)
+    : "";
+  const coordinateLabel = coordinateRaw
+    ? (coordinateSystem === "mgrs" ? formatMgrsDisplay(coordinateRaw) : coordinateRaw)
+    : "Position unset";
   return `
     <strong>${escapeHtml(sensor.name || "RF Sensor")}</strong><br>
     ${escapeHtml(sensor.profileName || sensor.category || "Sensor")}<br>
     ${escapeHtml(formatSensorFrequencyRange(sensor))} | BW ${escapeHtml(formatSensorBandwidth(sensor.instantaneousBandwidthMHz))}<br>
     Sens ${escapeHtml(formatDbm(sensor.sensitivityDbm))} | ${escapeHtml(String(sensor.channels || 1))} RX | ${escapeHtml(sensor.antennaType || "Omni")}${linkedLine}<br>
-    ${Number(sensor.lat).toFixed(5)}, ${Number(sensor.lon).toFixed(5)}
+    ${escapeHtml(coordinateLabel)}
   `;
 }
 
@@ -25587,6 +25596,26 @@ function estimateSensorReception(sensor, asset, emission) {
   const sensorPosition = getSensorEffectiveMapPosition(sensor);
   const emitterPosition = getAssetEffectiveMapPosition(asset);
   const frequencyMHz = Number(emission.frequencyMHz);
+  const sensorMinMHz = Number(sensor?.frequencyMinMHz);
+  const sensorMaxMHz = Number(sensor?.frequencyMaxMHz);
+  if (
+    Number.isFinite(frequencyMHz)
+    && Number.isFinite(sensorMinMHz)
+    && Number.isFinite(sensorMaxMHz)
+    && (frequencyMHz < sensorMinMHz || frequencyMHz > sensorMaxMHz)
+  ) {
+    return {
+      status: "out-of-range",
+      label: "Outside receiver range",
+      className: "not-detected",
+      marginDb: Number.NEGATIVE_INFINITY,
+      rxDbm: null,
+      distanceM: null,
+      positionLabel: sensorPosition && emitterPosition ? "" : getSensorEvaluationPlacementLabel(sensorPosition, emitterPosition),
+      asset,
+      emission,
+    };
+  }
   if (!sensorPosition || !emitterPosition) {
     return {
       status: "not-placed",
@@ -25595,18 +25624,7 @@ function estimateSensorReception(sensor, asset, emission) {
       marginDb: Number.NEGATIVE_INFINITY,
       rxDbm: null,
       distanceM: null,
-      asset,
-      emission,
-    };
-  }
-  if (frequencyMHz < Number(sensor.frequencyMinMHz) || frequencyMHz > Number(sensor.frequencyMaxMHz)) {
-    return {
-      status: "out-of-range",
-      label: "Outside receiver range",
-      className: "not-detected",
-      marginDb: Number.NEGATIVE_INFINITY,
-      rxDbm: null,
-      distanceM: null,
+      positionLabel: getSensorEvaluationPlacementLabel(sensorPosition, emitterPosition),
       asset,
       emission,
     };
@@ -25647,9 +25665,10 @@ function estimateSensorReception(sensor, asset, emission) {
   const sensitivity = Number.isFinite(Number(sensor.sensitivityDbm)) ? Number(sensor.sensitivityDbm) : -105;
   const marginDb = rxDbm - sensitivity;
   const className = marginDb >= 8 ? "detectable" : marginDb >= 0 ? "marginal" : "not-detected";
+  const status = marginDb >= 8 ? "detectable" : marginDb >= 0 ? "marginal" : "below-sensitivity";
   const label = marginDb >= 20 ? "Strong" : marginDb >= 8 ? "Detectable" : marginDb >= 0 ? "Marginal" : "Below sensitivity";
   return {
-    status: className,
+    status,
     label,
     className,
     marginDb,
@@ -25662,27 +25681,108 @@ function estimateSensorReception(sensor, asset, emission) {
   };
 }
 
+function getSensorEvaluationPlacementLabel(sensorPosition, emitterPosition) {
+  if (!sensorPosition && !emitterPosition) return "Sensor + emitter not placed";
+  if (!sensorPosition) return "Sensor not placed";
+  if (!emitterPosition) return "Emitter not placed";
+  return "";
+}
+
+function getSensorEvaluableEmitterAssets() {
+  const candidates = getEmitterWorkspaceAssets();
+  const seenIds = new Set();
+  return candidates.filter((asset) => {
+    if (!asset || typeof asset !== "object") return false;
+    const id = String(asset.id || "").trim();
+    if (id) {
+      if (seenIds.has(id)) return false;
+      seenIds.add(id);
+    }
+    return true;
+  });
+}
+
+function getSensorEmissionEvaluationSortScore(entry) {
+  const statusWeight = {
+    detectable: 5000,
+    marginal: 4000,
+    "below-sensitivity": 3000,
+    "not-placed": 2000,
+    "out-of-range": 1000,
+    unconfigured: 0,
+  }[entry?.status] ?? 0;
+  const margin = Number.isFinite(Number(entry?.marginDb)) ? clamp(Number(entry.marginDb), -200, 200) : -200;
+  return statusWeight + margin;
+}
+
+function pickBestSensorEmissionEvaluation(entries = []) {
+  return entries.reduce((best, entry) => {
+    if (!best) return entry;
+    const entryScore = getSensorEmissionEvaluationSortScore(entry);
+    const bestScore = getSensorEmissionEvaluationSortScore(best);
+    return entryScore > bestScore ? entry : best;
+  }, null);
+}
+
+function getSensorEmitterEvaluation(sensor, asset) {
+  const emissions = getEmitterEmissionEntries(asset);
+  if (!emissions.length) {
+    return {
+      status: "unconfigured",
+      label: "No RF emission configured",
+      className: "not-detected",
+      marginDb: Number.NEGATIVE_INFINITY,
+      rxDbm: null,
+      distanceM: null,
+      positionLabel: "",
+      asset,
+      emission: null,
+      emissions: [],
+      emissionCount: 0,
+      detectableEmissionCount: 0,
+    };
+  }
+  const evaluated = emissions.map((emission) => estimateSensorReception(sensor, asset, emission));
+  const best = pickBestSensorEmissionEvaluation(evaluated) || evaluated[0];
+  return {
+    ...best,
+    asset,
+    emissions: evaluated,
+    emissionCount: evaluated.length,
+    detectableEmissionCount: evaluated.filter((entry) => entry.className === "detectable" || entry.className === "marginal").length,
+  };
+}
+
+function sortSensorEmitterEvaluations(entries = []) {
+  return [...entries].sort((a, b) => {
+    const scoreDelta = getSensorEmissionEvaluationSortScore(b) - getSensorEmissionEvaluationSortScore(a);
+    if (scoreDelta) return scoreDelta;
+    const aName = String(a.asset?.name || a.asset?.emitterLabel || "");
+    const bName = String(b.asset?.name || b.asset?.emitterLabel || "");
+    return aName.localeCompare(bName);
+  });
+}
+
 function getSensorReceptionSummary(sensor) {
   if (state.settings.sensorAutoEvaluate === false) {
     return {
       count: 0,
       detections: [],
+      evaluatedEmitterCount: 0,
+      hiddenEmitterCount: 0,
       message: "Auto evaluation is off in Settings > Views.",
     };
   }
-  const detections = [];
-  (state.assets || []).forEach((asset) => {
-    getEmitterEmissionEntries(asset).forEach((emission) => {
-      detections.push(estimateSensorReception(sensor, asset, emission));
-    });
-  });
-  const ranked = detections
-    .sort((a, b) => (Number.isFinite(b.marginDb) ? b.marginDb : -9999) - (Number.isFinite(a.marginDb) ? a.marginDb : -9999));
+  const emitterEvaluations = getSensorEvaluableEmitterAssets().map((asset) => getSensorEmitterEvaluation(sensor, asset));
+  const ranked = sortSensorEmitterEvaluations(emitterEvaluations);
   const count = ranked.filter((entry) => entry.className === "detectable" || entry.className === "marginal").length;
+  const maxRows = 6;
   return {
     count,
-    detections: ranked.slice(0, 4),
-    message: ranked.length ? "" : "No emitter emissions to evaluate.",
+    detections: ranked.slice(0, maxRows),
+    evaluatedEmitterCount: ranked.length,
+    hiddenEmitterCount: Math.max(0, ranked.length - maxRows),
+    message: ranked.length ? "" : "No emitters to evaluate.",
   };
 }
 
@@ -25895,13 +25995,23 @@ function renderSensorsWorkspace() {
       ? (isContentEffectivelyHidden(`sensor:${sensor.id}`) ? "Hidden on map" : "Visible on map")
       : (getMappedTacticalAnchorForSensor(sensor) ? "Linked unit map anchor" : "Not on map");
     const summary = getSensorReceptionSummary(sensor);
+    const summaryCountLabel = summary.evaluatedEmitterCount ? `${summary.count}/${summary.evaluatedEmitterCount}` : `${summary.count}`;
     const detectionMarkup = summary.detections.length
-      ? summary.detections.map((entry) => `
+      ? `${summary.detections.map((entry) => {
+          const frequencyLabel = Number.isFinite(Number(entry.emission?.frequencyMHz))
+            ? formatEmitterWorkspaceFrequency(entry.emission.frequencyMHz)
+            : "No frequency";
+          const rxLabel = entry.rxDbm === null ? "RX --" : `RX ${entry.rxDbm.toFixed(1)} dBm`;
+          const positionLabel = entry.distanceM ? formatDistance(entry.distanceM) : (entry.positionLabel || "No map position");
+          const emissionCountLabel = entry.emissionCount > 1 ? ` | ${entry.emissionCount} emissions checked` : "";
+          const terrainLabel = entry.terrainLos?.hasTerrain ? ` | ${entry.terrainLos.blocked ? "Terrain masked" : "Terrain LOS"}` : "";
+          return `
           <div class="sensor-detection-row ${entry.className}">
             <strong>${escapeHtml(entry.asset?.name || entry.asset?.emitterLabel || "Emitter")} | ${escapeHtml(entry.label)}</strong>
-            <span>${escapeHtml(formatEmitterWorkspaceFrequency(entry.emission.frequencyMHz))} | ${entry.rxDbm === null ? "RX --" : `RX ${entry.rxDbm.toFixed(1)} dBm`} | ${entry.distanceM ? formatDistance(entry.distanceM) : "No map position"}${entry.terrainLos?.hasTerrain ? ` | ${entry.terrainLos.blocked ? "Terrain masked" : "Terrain LOS"}` : ""}</span>
+            <span>${escapeHtml(frequencyLabel)} | ${escapeHtml(rxLabel)} | ${escapeHtml(positionLabel)}${escapeHtml(emissionCountLabel)}${escapeHtml(terrainLabel)}</span>
           </div>
-        `).join("")
+        `;
+        }).join("")}${summary.hiddenEmitterCount ? `<div class="emitters-net-empty">${escapeHtml(`${summary.hiddenEmitterCount} more emitter${summary.hiddenEmitterCount === 1 ? "" : "s"} evaluated`)}</div>` : ""}`
       : `<div class="emitters-net-empty">${escapeHtml(summary.message || "No detectable emitters yet.")}</div>`;
     const card = document.createElement("article");
     card.className = `emitters-card sensor-card${_sensorsWorkspaceState.selectedSensorId === sensor.id ? " is-selected" : ""}`;
@@ -25914,7 +26024,7 @@ function renderSensorsWorkspace() {
           <strong>${escapeHtml(sensor.name || "RF Sensor")}</strong>
           <span>${escapeHtml(sensor.profileName || sensor.category || "Sensor")}</span>
         </div>
-        <span class="force-pill"><span class="force-dot" style="background:${escapeHtml(sensor.color || "#7dd3fc")}"></span>${summary.count} RX</span>
+        <span class="force-pill"><span class="force-dot" style="background:${escapeHtml(sensor.color || "#7dd3fc")}"></span>${escapeHtml(summaryCountLabel)} RX</span>
       </div>
       <div class="emitters-card-media">
         ${renderSensorGraphic(sensor, "workspace")}
@@ -25928,8 +26038,8 @@ function renderSensorsWorkspace() {
       </dl>
       <div class="emitters-card-net">
         <div class="emitters-card-net-header">
-          <span class="emitters-card-net-title">Detected Emissions</span>
-          <span class="emitters-card-net-count">${summary.count}</span>
+          <span class="emitters-card-net-title">Emitter Visibility</span>
+          <span class="emitters-card-net-count">${escapeHtml(summaryCountLabel)}</span>
         </div>
         <div class="sensor-detection-list">${detectionMarkup}</div>
       </div>
