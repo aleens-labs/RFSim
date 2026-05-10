@@ -26917,14 +26917,17 @@ function buildSensorEmitterDetailCoverageContext(selection) {
   const distanceM = Number.isFinite(Number(entry?.distanceM)) ? Number(entry.distanceM) : fallbackDistanceM;
   const radiusMeters = clamp(Math.max(distanceM * 1.15, 1500), 1500, 250000);
   const gridMeters = clamp(radiusMeters / 120, 15, 2000);
-  const terrainGridRequest = terrain ? null : buildSensorTerrainGridRequest({
+  const terrainGridRequest = buildSensorTerrainGridRequest({
     purpose: "sensor-detail-coverage-terrain",
     bounds: boundsFromCenter(emitterPosition.lat, emitterPosition.lon, radiusMeters),
     gridMeters,
     propagationModel,
     cacheParts: [sensor?.id || "", asset?.id || "", emission?.id || "primary"],
   });
-  const cacheTerrain = terrain || terrainGridRequest?.virtualTerrain || null;
+  // Area coverage needs a terrain grid over the whole sweep. A single local DTED
+  // tile is only safe for point-to-point profiles and creates hard tile-shaped
+  // artifacts in the popup overlay when the radius crosses tile boundaries.
+  const cacheTerrain = terrainGridRequest?.virtualTerrain || terrain || null;
   const cacheKey = [
     "sensor-detail-coverage",
     Math.round(radiusMeters),
