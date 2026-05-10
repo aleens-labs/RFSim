@@ -80,6 +80,7 @@
             <span class="view-mode-thumb" id="viewModeThumb" aria-hidden="true"></span>
             <button class="view-mode-tab" data-view="plan" role="tab" aria-selected="false" type="button">T/O</button>
             <button class="view-mode-tab" data-view="topology" role="tab" aria-selected="false" type="button">EMITTERS</button>
+            <button class="view-mode-tab view-mode-tab-sensors hidden" data-view="sensors" role="tab" aria-selected="false" type="button">SENSORS</button>
             <button class="view-mode-tab active" data-view="map" role="tab" aria-selected="true" type="button">MAP</button>
             <button class="view-mode-tab" data-view="analyze" role="tab" aria-selected="false" type="button">ANALYSIS</button>
           </div>
@@ -1358,6 +1359,133 @@
       </div>
     </div>
 
+    <div id="sensorsView" class="view-panel hidden">
+      <div class="emitters-shell sensors-shell">
+        <div class="emitters-toolbar to-toolbar">
+          <div class="to-toolbar-section">
+            <span class="to-toolbar-label">Sensors Workspace</span>
+            <span class="emitters-toolbar-copy">RF receivers, unit links, and emitter detection</span>
+          </div>
+          <div class="to-toolbar-section to-toolbar-section-right emitters-toolbar-actions">
+            <button id="sensorsAddBtn" class="primary-button small" type="button">Add Sensor</button>
+            <button id="sensorsRefreshBtn" class="ghost-button small" type="button">Refresh</button>
+            <button id="sensorsOpenMapBtn" class="ghost-button small" type="button">Open Map</button>
+          </div>
+        </div>
+        <div class="sensors-main">
+          <aside class="sensors-library-panel">
+            <div class="list-header emitters-workspace-header">
+              <span>Sensor Library</span>
+              <span class="fine-print">Add common RF receivers.</span>
+            </div>
+            <div id="sensorsLibraryList" class="sensors-library-list"></div>
+          </aside>
+          <div class="emitters-workspace-shell sensors-workspace-shell">
+            <div class="list-header emitters-workspace-header">
+              <span>Sensor Workspace</span>
+              <span class="fine-print">Right-click a card to edit, link, place, duplicate, or delete.</span>
+            </div>
+            <div id="sensorsCanvas" class="emitters-canvas sensors-canvas" tabindex="0">
+              <div id="sensorsWorld" class="emitters-world sensors-world"></div>
+              <div id="sensorsEmptyState" class="emitters-empty-state">
+                <strong>No sensors in the workspace yet.</strong>
+                <span>Add a receiver from the library to evaluate placed emitters.</span>
+              </div>
+              <div id="sensorsContextMenu" class="emitters-context-menu hidden">
+                <div class="emitters-ctx-header">
+                  <span id="sensorsCtxTitle" class="emitters-ctx-title"></span>
+                  <button id="sensorsCtxClose" class="emitters-ctx-close" type="button" aria-label="Close">&#x2715;</button>
+                </div>
+                <div class="emitters-ctx-grid">
+                  <button id="sensorsCtxEdit" class="emitters-ctx-btn" type="button">Edit Sensor</button>
+                  <button id="sensorsCtxLinkUnit" class="emitters-ctx-btn" type="button">Link to T/O Unit</button>
+                  <button id="sensorsCtxPlaceMap" class="emitters-ctx-btn" type="button">Place on Map</button>
+                  <button id="sensorsCtxShowMap" class="emitters-ctx-btn" type="button">Show on Map</button>
+                  <button id="sensorsCtxDuplicate" class="emitters-ctx-btn" type="button">Duplicate Sensor</button>
+                  <button id="sensorsCtxDelete" class="emitters-ctx-btn emitters-ctx-btn--danger" type="button">Delete Sensor</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="sensorEditorModal" class="emitter-modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="sensorEditorTitle">
+      <div class="emitter-modal sensor-editor-modal">
+        <div class="emitter-modal-header">
+          <div class="emitter-modal-title-group">
+            <h2 id="sensorEditorTitle">Add RF Sensor</h2>
+            <p id="sensorEditorSubtitle">Configure receive range, bandwidth, sensitivity, and T/O link.</p>
+          </div>
+          <button id="sensorEditorCloseBtn" class="ghost-button small icon-button" type="button" aria-label="Close">&#10005;</button>
+        </div>
+        <div class="emitter-modal-body sensor-editor-body">
+          <div class="emitter-param-grid sensor-editor-grid">
+            <label>
+              Sensor Type
+              <select id="sensorProfileSelect"></select>
+            </label>
+            <label>
+              Sensor Name
+              <input id="sensorNameInput" type="text" maxlength="80" placeholder="e.g. Beast+ Team 1">
+            </label>
+            <label>
+              Unit / Callsign
+              <input id="sensorUnitInput" type="text" maxlength="80" placeholder="e.g. S2 SIGINT">
+            </label>
+            <label>
+              Link to T/O Unit
+              <select id="sensorToUnitSelect"></select>
+            </label>
+            <label>
+              Min Frequency (MHz)
+              <input id="sensorFreqMinInput" type="number" step="any" min="0">
+            </label>
+            <label>
+              Max Frequency (MHz)
+              <input id="sensorFreqMaxInput" type="number" step="any" min="0">
+            </label>
+            <label>
+              Instantaneous BW (MHz)
+              <input id="sensorBandwidthInput" type="number" step="any" min="0">
+            </label>
+            <label>
+              Receivers / Channels
+              <input id="sensorChannelsInput" type="number" step="1" min="1">
+            </label>
+            <label>
+              Sensitivity (dBm)
+              <input id="sensorSensitivityInput" type="number" step="any">
+            </label>
+            <label>
+              Antenna Gain (dBi)
+              <input id="sensorAntennaGainInput" type="number" step="any">
+            </label>
+            <label>
+              Antenna Height (m)
+              <input id="sensorAntennaHeightInput" type="number" step="any" min="0">
+            </label>
+            <label>
+              Modes
+              <input id="sensorModesInput" type="text" maxlength="180" placeholder="AM, FM, USB, LSB, P25, DMR">
+            </label>
+            <label class="emitter-span-2">
+              Notes
+              <textarea id="sensorNotesInput" rows="3" placeholder="Optional receiver, DF, demodulator, or employment notes."></textarea>
+            </label>
+          </div>
+        </div>
+        <div class="emitter-modal-footer">
+          <div id="sensorEditorValidation" class="emitter-validation"></div>
+          <div class="emitter-footer-actions">
+            <button id="sensorEditorCancelBtn" class="ghost-button" type="button">Cancel</button>
+            <button id="sensorEditorSaveBtn" class="primary-button" type="button">Add to Workspace</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div id="emittersNetModal" class="emitter-modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="emittersNetModalTitle">
       <div class="emitter-modal emitters-net-modal">
         <div class="emitter-modal-header">
@@ -2273,6 +2401,7 @@
           <button class="settings-tab-button" type="button" role="tab" aria-selected="false" data-settings-tab="weather">Weather</button>
           <button class="settings-tab-button" type="button" role="tab" aria-selected="false" data-settings-tab="ai">AI Integration</button>
           <button class="settings-tab-button" type="button" role="tab" aria-selected="false" data-settings-tab="tak">TAK</button>
+          <button class="settings-tab-button" type="button" role="tab" aria-selected="false" data-settings-tab="views">Views</button>
           <button class="settings-tab-button" type="button" role="tab" aria-selected="false" data-settings-tab="documentation">Documentation</button>
         </div>
         <div class="settings-tab-panels">
@@ -2968,6 +3097,37 @@
                 </div>
               </div>
             </div><!-- /tak-triggered-card -->
+          </div>
+        </section>
+        </section>
+        <section class="settings-tab-panel" data-settings-panel="views" role="tabpanel" hidden>
+        <section class="settings-modal-section settings-views-section">
+          <div class="menu-title-row">
+            <strong>Views</strong>
+          </div>
+          <div class="settings-views-shell">
+            <div class="settings-view-card settings-view-card-primary">
+              <div class="settings-view-card-copy">
+                <span class="eyebrow">Optional Workspace</span>
+                <strong>Sensors View</strong>
+                <p>Add a dedicated RF receiver workspace between EMITTERS and MAP. Sensors can be linked to T/O units, placed on the map, and used to estimate which placed emitters they can receive.</p>
+              </div>
+              <label class="settings-check-row settings-view-toggle">
+                <input id="enableSensorsViewToggle" type="checkbox">
+                <span>Enable Sensors View</span>
+              </label>
+            </div>
+            <div class="settings-view-card">
+              <div class="settings-view-card-copy">
+                <span class="eyebrow">Sensor Estimates</span>
+                <strong>Auto evaluate receiver coverage</strong>
+                <p>Sensor cards summarize detectable emissions from placed emitters using receiver range, sensitivity, bandwidth, emitter power, antenna gain, and distance.</p>
+              </div>
+              <label class="settings-check-row settings-view-toggle">
+                <input id="sensorAutoEvaluateToggle" type="checkbox">
+                <span>Auto Evaluate Sensors</span>
+              </label>
+            </div>
           </div>
         </section>
         </section>
@@ -3686,7 +3846,8 @@
     const authCtx = authCanvas ? authCanvas.getContext('2d', { alpha: false }) : null;
     const titleCtx = titleCanvas ? titleCanvas.getContext('2d', { alpha: false }) : null;
     const SCROLL_SPEED = 0.35;
-    const NOISE_LEVEL = 0.13;
+    const ROW_TIME_STEP = 0.058;
+    const NOISE_LEVEL = 0.09;
     let emitters = [];
     let scrollAccumulator = 0;
     let time = 0;
@@ -3721,29 +3882,44 @@
     function initEmitters() {
       emitters = [];
       const width = getPrimaryWidth();
-      const count = Math.max(4, Math.floor(width / 180));
+      const count = Math.max(5, Math.floor(width / 210));
       for (let i = 0; i < count; i++) {
+        const majorEmission = Math.random() < 0.38;
         emitters.push({
-          x: Math.random() * width,
-          width: 8 + Math.random() * 40,
-          power: 0.4 + Math.random() * 0.6,
-          drift: (Math.random() - 0.5) * 0.1,
-          variationPhase: Math.random() * 1000,
-          variationSpeed: 0.002 + Math.random() * 0.01,
+          xNorm: Math.random(),
+          widthNorm: (majorEmission ? 18 + Math.random() * 52 : 8 + Math.random() * 32) / Math.max(width, 1),
+          power: majorEmission ? 0.72 + Math.random() * 0.48 : 0.34 + Math.random() * 0.56,
+          colorLift: majorEmission ? 1.18 + Math.random() * 0.22 : 1,
+          coreHotness: majorEmission ? 0.34 + Math.random() * 0.18 : 0.12 + Math.random() * 0.1,
+          driftNorm: (0.002 + Math.random() * 0.011) * (Math.random() < 0.5 ? -1 : 1),
+          driftSpeed: 0.015 + Math.random() * 0.045,
+          phase: Math.random() * 1000,
+          flickerSpeed: 0.8 + Math.random() * 2.4,
+          pulseSpeed: 0.24 + Math.random() * 0.55,
+          dutyBias: 0.34 + Math.random() * 0.34,
         });
       }
     }
 
     function getColor(v) {
-      v = Math.min(1, v);
-      if (v < 0.2) {
-        const t = v / 0.2;
-        return [Math.floor(8 + t * 20), Math.floor(t * 5), Math.floor(20 + t * 40)];
+      v = Math.min(1, Math.max(0, 1 - Math.exp(-Math.max(0, v) * 1.25)));
+      if (v < 0.24) {
+        const t = v / 0.24;
+        return [Math.floor(9 + t * 20), Math.floor(3 + t * 8), Math.floor(28 + t * 58)];
       }
-      if (v < 0.4) return [70, 0, 110];
-      if (v < 0.6) return [130, 20, 20];
-      if (v < 0.8) return [170, 80, 0];
-      return [220, 180, 50];
+      if (v < 0.45) {
+        const t = (v - 0.24) / 0.21;
+        return [Math.floor(48 + t * 42), Math.floor(8 + t * 5), Math.floor(108 - t * 40)];
+      }
+      if (v < 0.64) {
+        const t = (v - 0.45) / 0.19;
+        return [Math.floor(112 + t * 48), Math.floor(22 + t * 46), Math.floor(26 - t * 10)];
+      }
+      if (v < 0.82) {
+        const t = (v - 0.64) / 0.18;
+        return [Math.floor(174 + t * 44), Math.floor(92 + t * 72), Math.floor(12 + t * 18)];
+      }
+      return [232, 188, 58];
     }
 
     function smoothNoise(x, t) {
@@ -3754,36 +3930,42 @@
       ) / 3;
     }
 
+    function pseudoNoise(x, t, seed = 0) {
+      const value = Math.sin((x + 19.19) * 12.9898 + (t + seed) * 78.233) * 43758.5453;
+      return value - Math.floor(value);
+    }
+
     function generateRow(width, t) {
       const row = new Float32Array(width);
       for (let x = 0; x < row.length; x++) {
-        const grain = Math.random() * NOISE_LEVEL;
-        const smooth = (smoothNoise(x, t) * 0.5 + 0.5) * 0.06;
-        row[x] = grain + smooth;
+        const grain = pseudoNoise(x, Math.floor(t * 46)) * NOISE_LEVEL;
+        const smooth = (smoothNoise(x, t * 0.5) * 0.5 + 0.5) * 0.055;
+        row[x] = 0.025 + grain + smooth;
       }
       emitters.forEach((emitter) => {
-        emitter.x += emitter.drift;
-        if (emitter.x < 0) emitter.x = width;
-        if (emitter.x > width) emitter.x = 0;
-        emitter.variationPhase += emitter.variationSpeed;
-        const powerMod = Math.sin(emitter.variationPhase) * 0.5 + 0.5;
-        const center = Math.floor(emitter.x);
-        const half = Math.floor(emitter.width / 2);
+        const drift = Math.sin(t * emitter.driftSpeed + emitter.phase) * emitter.driftNorm;
+        const center = Math.floor((((emitter.xNorm + drift) % 1 + 1) % 1) * width);
+        const half = Math.max(3, Math.floor((emitter.widthNorm * width) / 2));
+        const flicker = Math.sin(t * emitter.flickerSpeed + emitter.phase) * 0.5 + 0.5;
+        const pulse = Math.sin(t * emitter.pulseSpeed + emitter.phase * 0.37) * 0.5 + 0.5;
+        const envelope = 0.22 + 0.78 * Math.max(emitter.dutyBias, pulse);
         for (let i = -half; i <= half; i++) {
-          const idx = center + i;
-          if (idx >= 0 && idx < row.length) {
-            const shape = Math.exp(-(i * i) / (2 * (half * 0.6) ** 2));
-            const texture = smoothNoise(idx, t) * 0.15;
-            row[idx] += emitter.power * (0.6 + 0.4 * powerMod) * shape + texture;
+          const wrapped = (center + i + width) % width;
+          if (wrapped >= 0 && wrapped < row.length) {
+            const shape = Math.exp(-(i * i) / (2 * (half * 0.66) ** 2));
+            const core = Math.exp(-(i * i) / (2 * (Math.max(1, half * 0.24)) ** 2));
+            const edgeTexture = 0.84 + pseudoNoise(wrapped, t, emitter.phase) * 0.32;
+            const heat = (shape + core * emitter.coreHotness) * emitter.colorLift;
+            row[wrapped] += emitter.power * (0.58 + 0.42 * flicker) * envelope * heat * edgeTexture;
           }
         }
       });
-      if (Math.random() < 0.01) {
-        const start = Math.floor(Math.random() * width);
-        const bandWidth = 40 + Math.random() * 120;
+      if (pseudoNoise(7, Math.floor(t * 7.5), 91) > 0.982) {
+        const start = Math.floor(pseudoNoise(3, t, 121) * width);
+        const bandWidth = 58 + pseudoNoise(11, t, 222) * 170;
         for (let i = 0; i < bandWidth; i++) {
           const idx = start + i;
-          if (idx < row.length) row[idx] += 0.3 + Math.random() * 0.4;
+          if (idx < row.length) row[idx] += 0.26 + pseudoNoise(idx, t, 333) * 0.48;
         }
       }
       return row;
@@ -3805,9 +3987,9 @@
 
     function prefillTarget(targetCanvas, targetCtx, timeOffset) {
       if (!targetCanvas || !targetCtx) return;
-      for (let y = targetCanvas.height - 1; y >= 0; y--) {
-        time += 0.02;
-        putRow(targetCtx, targetCanvas.width, generateRow(targetCanvas.width, time + timeOffset), y);
+      const now = time + timeOffset;
+      for (let y = 0; y < targetCanvas.height; y++) {
+        putRow(targetCtx, targetCanvas.width, generateRow(targetCanvas.width, now - (y * ROW_TIME_STEP)), y);
       }
     }
 

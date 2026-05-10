@@ -84,6 +84,25 @@ self.addEventListener("message", async (event) => {
         type: "site-study:complete",
         payload: runSiteStudy(payload),
       });
+      return;
+    }
+
+    if (type === "link-profile:start") {
+      try {
+        await ensureComputeEngineReady();
+        self.postMessage({
+          type: "link-profile:complete",
+          payload: runPointToPointLinkProfile(payload),
+        });
+      } catch (error) {
+        self.postMessage({
+          type: "link-profile:complete",
+          payload: {
+            requestId: payload?.requestId,
+            error: error instanceof Error ? error.message : "Point-to-point link profile failed.",
+          },
+        });
+      }
     }
   } catch (error) {
     if (error instanceof Error && error.message === "SIMULATION_CANCELED") {
@@ -917,6 +936,7 @@ function buildPathProfile(source, target, terrain, weather, propagationModel, cl
       passesPolicy,
       minClearanceM: Number.isFinite(minClearanceM) ? minClearanceM : 0,
       minFresnelClearanceM: Number.isFinite(minFresnelClearanceM) ? minFresnelClearanceM : 0,
+      minRequiredFresnelClearanceM: Number.isFinite(minRequiredFresnelClearanceM) ? minRequiredFresnelClearanceM : 0,
       buildingBlocked: terrainProfile.buildingLineOfSightBlocked,
       pathLossDb: simulated.pathLossDb,
       rssiDbm: simulated.rssiDbm,
@@ -926,6 +946,39 @@ function buildPathProfile(source, target, terrain, weather, propagationModel, cl
       worstPoint,
     };
   }, 2000);
+}
+
+function runPointToPointLinkProfile(payload = {}) {
+  const terrain = resolveTerrain(payload.terrainId);
+  const weather = payload.weather ?? {};
+  const propagationModel = payload.propagationModel || "itu-hybrid";
+  const clearancePolicy = payload.clearancePolicy || "fresnel-60";
+  const txAsset = payload.txAsset ?? {};
+  const rxTarget = payload.rxTarget ?? {};
+  const forwardSimulation = simulateLink(txAsset, rxTarget, terrain, weather, propagationModel);
+  const reverseSimulation = simulateLink(rxTarget, txAsset, terrain, weather, propagationModel);
+  const hasTerrain = Boolean(terrain);
+  const forwardProfile = hasTerrain
+    ? buildPathProfile(txAsset, rxTarget, terrain, weather, propagationModel, clearancePolicy)
+    : null;
+  const reverseProfile = hasTerrain
+    ? buildPathProfile(rxTarget, txAsset, terrain, weather, propagationModel, clearancePolicy)
+    : null;
+  return {
+    requestId: payload.requestId,
+    terrainId: terrain?.id ?? "",
+    terrainSource: terrain?.sourceType ?? null,
+    terrainSourceLabel: terrain?.sourceLabel ?? null,
+    terrainCompleteness: terrain?.terrainCompleteness ?? null,
+    buildingAware: Boolean(terrain?.osmBuildingsEnabled && usesBuildingEffects(propagationModel)),
+    propagationModel,
+    clearancePolicy,
+    engine: getComputeEngineLabel(),
+    forwardSimulation,
+    reverseSimulation,
+    forwardProfile,
+    reverseProfile,
+  };
 }
 
 function simulateLink(txAsset, rxTarget, terrain, weather, propagationModel) {

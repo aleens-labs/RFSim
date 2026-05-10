@@ -387,7 +387,7 @@ function loadExternalStylesheet(href) {
 // Bump this integer whenever the serialized state shape changes in a way that
 // requires a migration. applySavedMapState() runs migrateStatePayload() first
 // so old saves are always upgraded before being applied.
-const STATE_SCHEMA_VERSION = 5;
+const STATE_SCHEMA_VERSION = 6;
 
 function nowIso() {
   return new Date().toISOString();
@@ -488,6 +488,19 @@ function migrateStatePayload(payload) {
       hiddenLabelContentIds: Array.isArray(payload.hiddenLabelContentIds)
         ? payload.hiddenLabelContentIds
         : [],
+    };
+  }
+
+  if (from < 6) {
+    payload = {
+      ...payload,
+      schemaVersion: 6,
+      sensors: Array.isArray(payload.sensors) ? payload.sensors : [],
+      settings: {
+        ...(payload.settings && typeof payload.settings === "object" ? payload.settings : {}),
+        enableSensorsView: Boolean(payload?.settings?.enableSensorsView),
+        sensorAutoEvaluate: payload?.settings?.sensorAutoEvaluate !== false,
+      },
     };
   }
 
@@ -2100,6 +2113,8 @@ const dom = {
   planView: document.querySelector("#planView"),
   emittersView: document.querySelector("#emittersView"),
   topologyView: document.querySelector("#topologyView"),
+  sensorsView: document.querySelector("#sensorsView"),
+  sensorsViewTab: document.querySelector('.view-mode-tab[data-view="sensors"]'),
   topoFilterFreqBtn: document.querySelector("#topoFilterFreqBtn"),
   topoFilterFreqMenu: document.querySelector("#topoFilterFreqMenu"),
   topoBandHF: document.querySelector("#topoBandHF"),
@@ -2142,6 +2157,42 @@ const dom = {
   emittersCtxDuplicate: document.querySelector("#emittersCtxDuplicate"),
   emittersCtxDelete: document.querySelector("#emittersCtxDelete"),
   emittersCtxClose: document.querySelector("#emittersCtxClose"),
+  sensorsAddBtn: document.querySelector("#sensorsAddBtn"),
+  sensorsRefreshBtn: document.querySelector("#sensorsRefreshBtn"),
+  sensorsOpenMapBtn: document.querySelector("#sensorsOpenMapBtn"),
+  sensorsLibraryList: document.querySelector("#sensorsLibraryList"),
+  sensorsCanvas: document.querySelector("#sensorsCanvas"),
+  sensorsWorld: document.querySelector("#sensorsWorld"),
+  sensorsEmptyState: document.querySelector("#sensorsEmptyState"),
+  sensorsContextMenu: document.querySelector("#sensorsContextMenu"),
+  sensorsCtxTitle: document.querySelector("#sensorsCtxTitle"),
+  sensorsCtxEdit: document.querySelector("#sensorsCtxEdit"),
+  sensorsCtxLinkUnit: document.querySelector("#sensorsCtxLinkUnit"),
+  sensorsCtxPlaceMap: document.querySelector("#sensorsCtxPlaceMap"),
+  sensorsCtxShowMap: document.querySelector("#sensorsCtxShowMap"),
+  sensorsCtxDuplicate: document.querySelector("#sensorsCtxDuplicate"),
+  sensorsCtxDelete: document.querySelector("#sensorsCtxDelete"),
+  sensorsCtxClose: document.querySelector("#sensorsCtxClose"),
+  sensorEditorModal: document.querySelector("#sensorEditorModal"),
+  sensorEditorTitle: document.querySelector("#sensorEditorTitle"),
+  sensorEditorSubtitle: document.querySelector("#sensorEditorSubtitle"),
+  sensorEditorCloseBtn: document.querySelector("#sensorEditorCloseBtn"),
+  sensorEditorCancelBtn: document.querySelector("#sensorEditorCancelBtn"),
+  sensorEditorSaveBtn: document.querySelector("#sensorEditorSaveBtn"),
+  sensorEditorValidation: document.querySelector("#sensorEditorValidation"),
+  sensorProfileSelect: document.querySelector("#sensorProfileSelect"),
+  sensorNameInput: document.querySelector("#sensorNameInput"),
+  sensorUnitInput: document.querySelector("#sensorUnitInput"),
+  sensorToUnitSelect: document.querySelector("#sensorToUnitSelect"),
+  sensorFreqMinInput: document.querySelector("#sensorFreqMinInput"),
+  sensorFreqMaxInput: document.querySelector("#sensorFreqMaxInput"),
+  sensorBandwidthInput: document.querySelector("#sensorBandwidthInput"),
+  sensorChannelsInput: document.querySelector("#sensorChannelsInput"),
+  sensorSensitivityInput: document.querySelector("#sensorSensitivityInput"),
+  sensorAntennaGainInput: document.querySelector("#sensorAntennaGainInput"),
+  sensorAntennaHeightInput: document.querySelector("#sensorAntennaHeightInput"),
+  sensorModesInput: document.querySelector("#sensorModesInput"),
+  sensorNotesInput: document.querySelector("#sensorNotesInput"),
   emittersNetModal: document.querySelector("#emittersNetModal"),
   emittersNetModalTitle: document.querySelector("#emittersNetModalTitle"),
   emittersNetModalSubtitle: document.querySelector("#emittersNetModalSubtitle"),
@@ -2337,6 +2388,8 @@ const dom = {
   settingsTabPanels: document.querySelectorAll(".settings-tab-panel"),
   settingsDocumentationNav: document.querySelector("#settingsDocumentationNav"),
   settingsDocumentationContent: document.querySelector("#settingsDocumentationContent"),
+  enableSensorsViewToggle: document.querySelector("#enableSensorsViewToggle"),
+  sensorAutoEvaluateToggle: document.querySelector("#sensorAutoEvaluateToggle"),
   autoFetchWeatherOnSimToggle: document.querySelector("#autoFetchWeatherOnSimToggle"),
   tacticalMarkerSizeInput: document.querySelector("#tacticalMarkerSizeInput"),
   tacticalMarkerSizeValue: document.querySelector("#tacticalMarkerSizeValue"),
@@ -2708,6 +2761,8 @@ const state = {
   },
   assetMarkers: new Map(),
   assets: [],
+  sensorMarkers: new Map(),
+  sensors: [],
   tacticalObjects: [],
   tacticalLayers: new Map(),
   importedItems: [],
@@ -2807,6 +2862,11 @@ const state = {
   undoBannerTimerId: null,
   activeMapContentMenuId: null,
   relocatingAssetId: null,
+  relocatingSensorId: null,
+  topologyLinkProfileCache: new Map(),
+  topologyLinkProfileRequests: new Map(),
+  topologyLinkProfilePendingKeys: new Map(),
+  topologyLinkProfileRequestSeq: 0,
   renamingMapContentId: null,
   workspaceMenuOpen: false,
   mapContentsSearch: "",
@@ -2841,6 +2901,8 @@ const state = {
     takTriggeredLog: true,
     autoFetchWeatherOnSim: false,
     tacticalMarkerSize: 60,
+    enableSensorsView: false,
+    sensorAutoEvaluate: true,
   },
   weather: {
     temperatureC: 20,
@@ -3933,7 +3995,22 @@ function hydrateWorkerTerrainCaches() {
   });
 }
 
+function clearTopologyLinkProfileCache() {
+  state.topologyLinkProfileCache.clear();
+}
+
+function resolvePendingTopologyLinkProfiles(value = null) {
+  state.topologyLinkProfileRequests.forEach((entry) => {
+    clearTimeout(entry.timeoutId);
+    entry.resolve(value);
+  });
+  state.topologyLinkProfileRequests.clear();
+  state.topologyLinkProfilePendingKeys.clear();
+}
+
 function recreateSimulationWorker() {
+  resolvePendingTopologyLinkProfiles(null);
+  clearTopologyLinkProfileCache();
   try {
     state.worker?.terminate();
   } catch {}
@@ -4238,9 +4315,28 @@ function buildTacticalPointIcon(object) {
 
 function renderTacticalPopup(object, { live = false, panel = "summary", emitterId = "" } = {}) {
   const selectedEmitterId = String(emitterId || "").trim();
-  const linkedEmitters = !live && isUnitTacticalObject(object)
+  const isUnit = !live && isUnitTacticalObject(object);
+  const linkedEmitters = isUnit
     ? getLinkedEmitterAssetsForTacticalObject(object)
     : [];
+  const unitName = object?.name || object?.designator || object?.uid || "Unit";
+  const unitIdAttribute = object?.id ? `data-tactical-id="${escapeHtml(object.id)}"` : "";
+  if (isUnit && object?.id && panel === "actions") {
+    return `
+      <div class="tactical-unit-action-menu">
+        <div class="tactical-unit-action-title">${escapeHtml(unitName)}</div>
+        <button class="ghost-button small tactical-popup-action-button" type="button"
+          data-tactical-popup-action="show-emitters"
+          ${unitIdAttribute}>Emitters (${linkedEmitters.length})</button>
+        <button class="ghost-button small tactical-popup-action-button" type="button"
+          data-tactical-popup-action="relocate-unit"
+          ${unitIdAttribute}>Relocate</button>
+        <button class="ghost-button small tactical-popup-action-button" type="button"
+          data-tactical-popup-action="edit-unit"
+          ${unitIdAttribute}>Edit Unit</button>
+      </div>
+    `;
+  }
   const lines = [];
   if (object?.cotType) lines.push(`CoT: ${object.cotType}`);
   if (object?.objectClass) lines.push(`Class: ${object.objectClass}`);
@@ -4255,36 +4351,36 @@ function renderTacticalPopup(object, { live = false, panel = "summary", emitterI
     : null;
   let actionHtml = "";
 
-  if (linkedEmitters.length && object?.id) {
-    if (panel === "emitters") {
-      actionHtml = `
-        <div class="tactical-popup-actions">
-          <div class="tactical-popup-subtitle">Linked Emitters</div>
-          <div class="tactical-popup-emitter-list">
-            ${linkedEmitters.map((asset) => {
-              const label = asset.emitterLabel || asset.name || "Emitter";
-              const waveform = asset.waveform || asset.ext?.waveform || "";
-              const freq = Number.isFinite(Number(asset.frequencyMHz))
-                ? `${Number(asset.frequencyMHz).toFixed(3)} MHz`
-                : "No frequency";
-              const detail = [waveform, freq].filter(Boolean).join(" | ");
-              return `
-                <button class="ghost-button small tactical-popup-emitter-row" type="button"
-                  data-tactical-popup-action="show-emitter-detail"
-                  data-tactical-id="${escapeHtml(object.id)}"
-                  data-emitter-id="${escapeHtml(asset.id)}">
-                  <span class="tactical-popup-emitter-name">${escapeHtml(label)}</span>
-                  <span class="tactical-popup-emitter-meta">${escapeHtml(detail)}</span>
-                </button>
-              `;
-            }).join("")}
-          </div>
-          <button class="ghost-button small" type="button"
-            data-tactical-popup-action="show-summary"
-            data-tactical-id="${escapeHtml(object.id)}">Back</button>
+  if (isUnit && object?.id && panel === "emitters") {
+    actionHtml = `
+      <div class="tactical-popup-actions">
+        <div class="tactical-popup-subtitle">Linked Emitters</div>
+        <div class="tactical-popup-emitter-list">
+          ${linkedEmitters.length ? linkedEmitters.map((asset) => {
+            const label = asset.emitterLabel || asset.name || "Emitter";
+            const waveform = asset.waveform || asset.ext?.waveform || "";
+            const freq = Number.isFinite(Number(asset.frequencyMHz))
+              ? `${Number(asset.frequencyMHz).toFixed(3)} MHz`
+              : "No frequency";
+            const detail = [waveform, freq].filter(Boolean).join(" | ");
+            return `
+              <button class="ghost-button small tactical-popup-emitter-row" type="button"
+                data-tactical-popup-action="show-emitter-detail"
+                data-tactical-id="${escapeHtml(object.id)}"
+                data-emitter-id="${escapeHtml(asset.id)}">
+                <span class="tactical-popup-emitter-name">${escapeHtml(label)}</span>
+                <span class="tactical-popup-emitter-meta">${escapeHtml(detail)}</span>
+              </button>
+            `;
+          }).join("") : `<div class="tactical-popup-empty">No emitters linked.</div>`}
         </div>
-      `;
-    } else if (panel === "emitter-detail" && detailEmitter) {
+        <button class="ghost-button small" type="button"
+          data-tactical-popup-action="show-unit-actions"
+          data-tactical-id="${escapeHtml(object.id)}">Back</button>
+      </div>
+    `;
+  } else if (linkedEmitters.length && object?.id) {
+    if (panel === "emitter-detail" && detailEmitter) {
       const label = detailEmitter.emitterLabel || detailEmitter.name || "Emitter";
       const waveform = detailEmitter.waveform || detailEmitter.ext?.waveform || "";
       const profile = detailEmitter.profileName || detailEmitter.profileId || "";
@@ -4441,6 +4537,38 @@ function openTacticalPopupPanel(tacticalId, panel = "summary", emitterId = "") {
   layer.openPopup();
 }
 
+function editTacticalMapUnitFromPopup(tacticalId) {
+  const object = getTacticalObjectById(tacticalId);
+  if (!object || !isUnitTacticalObject(object)) {
+    return;
+  }
+  initPlanViewIfNeeded();
+  let unit = getLinkedPlanUnitForTacticalObject(object);
+  if (!unit) {
+    unit = ensureLinkedPlanUnitForTacticalObject(object);
+    renderMapContents();
+    saveMapState();
+  }
+  if (!unit) {
+    setStatus("Could not find a T/O unit to edit.");
+    return;
+  }
+  _toState.selectedUnit = unit.id;
+  syncSelectedPlanUnitToToolbar();
+  renderToView();
+  state.map?.closePopup?.();
+  openToEditModal(unit.id);
+}
+
+function relocateTacticalMapUnitFromPopup(tacticalId) {
+  const object = getTacticalObjectById(tacticalId);
+  if (!object || !isUnitTacticalObject(object) || object.geometryType !== "Point") {
+    return;
+  }
+  state.map?.closePopup?.();
+  startTacticalRelocation(tacticalId);
+}
+
 function openLinkedEmitterPopupForAsset(asset) {
   if (!asset) {
     return;
@@ -4475,11 +4603,10 @@ function createTacticalLeafletLayer(object, contentId, { live = false } = {}) {
     layer.on("click", () => focusMapContent(contentId));
     if (!live) {
       layer.on("contextmenu", (event) => {
-        const linkedEmitters = getLinkedEmitterAssetsForTacticalObject(tactical);
-        if (linkedEmitters.length) {
+        if (isUnitTacticalObject(tactical)) {
           event.originalEvent?.preventDefault?.();
           L.DomEvent.stopPropagation(event);
-          layer.setPopupContent(renderTacticalPopup(tactical, { panel: "summary" }));
+          layer.setPopupContent(renderTacticalPopup(tactical, { panel: "actions" }));
           layer.openPopup(event.latlng);
           return;
         }
@@ -10981,6 +11108,10 @@ function wireEvents() {
       const action = actionButton.dataset.tacticalPopupAction;
       const tacticalId = actionButton.dataset.tacticalId || "";
       const emitterId = actionButton.dataset.emitterId || "";
+      if (action === "show-unit-actions") {
+        openTacticalPopupPanel(tacticalId, "actions");
+        return;
+      }
       if (action === "show-emitters") {
         openTacticalPopupPanel(tacticalId, "emitters");
         return;
@@ -10991,6 +11122,14 @@ function wireEvents() {
       }
       if (action === "show-summary") {
         openTacticalPopupPanel(tacticalId, "summary");
+        return;
+      }
+      if (action === "relocate-unit") {
+        relocateTacticalMapUnitFromPopup(tacticalId);
+        return;
+      }
+      if (action === "edit-unit") {
+        editTacticalMapUnitFromPopup(tacticalId);
         return;
       }
       if (action === "simulate-emitter") {
@@ -11431,6 +11570,7 @@ function wireEvents() {
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
       if (state.relocatingAssetId) { finishAssetRelocation(null); }
+      else if (state.relocatingSensorId) { finishSensorRelocation(null); }
       else if (state.relocatingTacticalId) { finishTacticalRelocation(null); }
       else if (state.relocatingImportedItemId) { finishImportedPointRelocation(null); }
       else if (state.relocatingCircleItemId) { finishCircleRelocation(null); }
@@ -11533,6 +11673,8 @@ function wireEvents() {
   dom.takTriggeredIncludeMapContextToggle?.addEventListener("change", onSettingsChanged);
   dom.takTriggeredNotifyToggle?.addEventListener("change", onSettingsChanged);
   dom.takTriggeredLogToggle?.addEventListener("change", onSettingsChanged);
+  dom.enableSensorsViewToggle?.addEventListener("change", onSettingsChanged);
+  dom.sensorAutoEvaluateToggle?.addEventListener("change", onSettingsChanged);
   dom.takTriggerAddBtn?.addEventListener("click", () => {
     const val = dom.takTriggerNewInput?.value || "";
     if (val.trim()) {
@@ -11835,6 +11977,8 @@ function loadSettings() {
     if (typeof parsed.takTriggeredNotify === "boolean") state.settings.takTriggeredNotify = parsed.takTriggeredNotify;
     if (typeof parsed.takTriggeredLog === "boolean") state.settings.takTriggeredLog = parsed.takTriggeredLog;
     if (typeof parsed.autoFetchWeatherOnSim === "boolean") state.settings.autoFetchWeatherOnSim = parsed.autoFetchWeatherOnSim;
+    if (typeof parsed.enableSensorsView === "boolean") state.settings.enableSensorsView = parsed.enableSensorsView;
+    if (typeof parsed.sensorAutoEvaluate === "boolean") state.settings.sensorAutoEvaluate = parsed.sensorAutoEvaluate;
     if (typeof parsed.tacticalMarkerSize === "number" && parsed.tacticalMarkerSize >= 30 && parsed.tacticalMarkerSize <= 120) {
       state.settings.tacticalMarkerSize = parsed.tacticalMarkerSize;
     }
@@ -11974,6 +12118,7 @@ function serializeCurrentMapState(options = {}) {
     savedAt: nowIso(),
     mapView,
     assets: state.assets,
+    sensors: state.sensors,
     plan: serializeToPlanState(),
     weather: state.weather,
     settings: state.settings,
@@ -12054,6 +12199,7 @@ function persistMapStateNow() {
         activeProjectId: compactPayload.activeProjectId,
         importedItems: [],
         assets: compactPayload.assets,
+        sensors: compactPayload.sensors,
       };
       window.localStorage.setItem(getMapStateStorageKey(), JSON.stringify(minimalPayload));
     } catch { /* truly out of space */ }
@@ -12095,6 +12241,11 @@ function resetLoadedMapState() {
   state.assetMarkers.forEach((marker) => marker?.remove?.());
   state.assetMarkers.clear();
   state.assets = [];
+
+  state.sensorMarkers.forEach((marker) => marker?.remove?.());
+  state.sensorMarkers.clear();
+  state.sensors = [];
+  state.relocatingSensorId = null;
 
   state.tacticalLayers.forEach((layer) => layer?.remove?.());
   state.tacticalLayers.clear();
@@ -12168,6 +12319,7 @@ function resetLoadedMapState() {
   clearToSelection();
 
   _emittersWorkspaceState.selectedAssetId = "";
+  _sensorsWorkspaceState.selectedSensorId = "";
   invalidateMapContentsSearchIndex();
   renderTakContactsOverlay();
 }
@@ -12336,6 +12488,19 @@ function applySavedMapState(rawSaved) {
   }
 
   // Restore imported items â€” carry version metadata through.
+  state.sensorMarkers.forEach((marker) => marker?.remove?.());
+  state.sensorMarkers.clear();
+  state.sensors = [];
+  if (Array.isArray(saved.sensors)) {
+    saved.sensors.forEach((rawSensor) => {
+      const sensor = normalizeSensorRecord(rawSensor);
+      state.sensors.push(sensor);
+      if (hasSensorMapLocation(sensor)) {
+        addOrUpdateSensorMarker(sensor);
+      }
+    });
+  }
+
   if (Array.isArray(saved.importedItems)) {
     let skipped = 0;
     saved.importedItems.forEach((saved) => {
@@ -12701,6 +12866,8 @@ function onSettingsChanged() {
   if (dom.takTriggeredIncludeMapContextToggle) state.settings.takTriggeredIncludeMapContext = dom.takTriggeredIncludeMapContextToggle.checked;
   if (dom.takTriggeredNotifyToggle) state.settings.takTriggeredNotify = dom.takTriggeredNotifyToggle.checked;
   if (dom.takTriggeredLogToggle) state.settings.takTriggeredLog = dom.takTriggeredLogToggle.checked;
+  if (dom.enableSensorsViewToggle) state.settings.enableSensorsView = dom.enableSensorsViewToggle.checked;
+  if (dom.sensorAutoEvaluateToggle) state.settings.sensorAutoEvaluate = dom.sensorAutoEvaluateToggle.checked;
   syncTakTriggeredPromptingUi();
   if (dom.autoFetchWeatherOnSimToggle) state.settings.autoFetchWeatherOnSim = dom.autoFetchWeatherOnSimToggle.checked;
   const prevMarkerSize = state.settings.tacticalMarkerSize;
@@ -12709,6 +12876,7 @@ function onSettingsChanged() {
   const markerSizeChanged = state.settings.tacticalMarkerSize !== prevMarkerSize;
   applySettings();
   if (markerSizeChanged) refreshAllTacticalLayers();
+  renderSensorsWorkspace();
 }
 
 function applySettings() {
@@ -12728,6 +12896,8 @@ function applySettings() {
   if (dom.takTriggeredIncludeMapContextToggle) dom.takTriggeredIncludeMapContextToggle.checked = Boolean(state.settings.takTriggeredIncludeMapContext);
   if (dom.takTriggeredNotifyToggle) dom.takTriggeredNotifyToggle.checked = state.settings.takTriggeredNotify !== false;
   if (dom.takTriggeredLogToggle) dom.takTriggeredLogToggle.checked = state.settings.takTriggeredLog !== false;
+  if (dom.enableSensorsViewToggle) dom.enableSensorsViewToggle.checked = Boolean(state.settings.enableSensorsView);
+  if (dom.sensorAutoEvaluateToggle) dom.sensorAutoEvaluateToggle.checked = state.settings.sensorAutoEvaluate !== false;
   renderTakTriggerChips();
   syncTakTriggeredPromptingUi();
   if (dom.autoFetchWeatherOnSimToggle) {
@@ -12763,6 +12933,7 @@ function applySettings() {
   renderPlanningResults();
   syncCesiumEntities();
   applyAllItemLabels();
+  syncOptionalViewTabs();
 }
 
 function updateCenterCrosshairVisibility() {
@@ -13371,6 +13542,11 @@ function onWorkerMessage(event) {
     return;
   }
 
+  if (type === "link-profile:complete") {
+    consumeTopologyLinkProfileResult(payload);
+    return;
+  }
+
   if (type === "engine:error") {
     closeSimulationProgress();
     setStatus(payload.message, true);
@@ -13389,6 +13565,7 @@ function loadCesiumIonToken() {
 }
 
 function clearIonTerrainCaches() {
+  clearTopologyLinkProfileCache();
   state.ionTerrainCache.forEach((terrain) => {
     state.worker.postMessage({
       type: "terrain:remove",
@@ -13680,19 +13857,23 @@ function applyPanelMode() {
 }
 
 /* â”€â”€â”€ Multi-view switching â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-const VIEW_ORDER = ["plan", "emitters", "topology", "map", "analyze"];
-const VIEW_NAV_INDEX = Object.freeze({
-  plan: 0,
-  emitters: 1,
-  topology: 1,
-  map: 2,
-  analyze: 3,
-});
+const VIEW_ORDER = ["plan", "emitters", "topology", "sensors", "map", "analyze"];
+
+function getVisibleViewSequence() {
+  return [
+    "plan",
+    "topology",
+    ...(state.settings?.enableSensorsView ? ["sensors"] : []),
+    "map",
+    "analyze",
+  ];
+}
 
 function getViewNavIndex(view = "") {
-  const navIndex = VIEW_NAV_INDEX[view];
-  if (Number.isFinite(navIndex)) {
-    return navIndex;
+  const normalizedView = view === "emitters" ? "topology" : view;
+  const visibleIndex = getVisibleViewSequence().indexOf(normalizedView);
+  if (visibleIndex >= 0) {
+    return visibleIndex;
   }
   return VIEW_ORDER.indexOf(view);
 }
@@ -13702,11 +13883,34 @@ function getViewEl(view) {
   if (view === "plan") return dom.planView;
   if (view === "emitters") return dom.emittersView;
   if (view === "topology") return dom.topologyView;
+  if (view === "sensors") return dom.sensorsView;
   if (view === "analyze") return dom.analyzeView;
   return null;
 }
 
+function syncOptionalViewTabs() {
+  const sensorsEnabled = Boolean(state.settings?.enableSensorsView);
+  dom.sensorsViewTab?.classList.toggle("hidden", !sensorsEnabled);
+  const tabCount = getVisibleViewSequence().length;
+  dom.viewModeToggle?.style.setProperty("--view-tab-count", String(tabCount));
+  if (!sensorsEnabled && state.ui?.currentView === "sensors") {
+    switchView("topology", true);
+    return;
+  }
+  if (dom.viewModeToggle) {
+    dom.viewModeToggle.style.setProperty("--view-active-index", String(getViewNavIndex(state.ui?.currentView || "map") || 0));
+  }
+}
+
 function switchView(view, skipAnimation) {
+  if (view === "sensors" && !state.settings?.enableSensorsView) {
+    setSettingsModalTab("views");
+    dom.settingsMenu?.classList.remove("hidden");
+    state.settingsMenuOpen = true;
+    document.body.classList.add("settings-modal-open");
+    setStatus("Enable Sensors View in Settings > Views to use that workspace.");
+    return;
+  }
   const prev = state.ui.currentView;
   if (prev === view) return;
 
@@ -13785,6 +13989,7 @@ function afterSwitchView(view) {
   document.body.dataset.currentView = view;
   if (view === "emitters") renderEmittersView();
   if (view === "topology") renderTopologyView();
+  if (view === "sensors") renderSensorsView();
   if (view === "analyze")  renderAnalyzeView();
   if (view === "plan") {
     initPlanViewIfNeeded();
@@ -13797,6 +14002,7 @@ function afterSwitchView(view) {
 
 function initViewModeToggle() {
   if (!dom.viewModeToggle) return;
+  syncOptionalViewTabs();
   dom.viewModeToggle.addEventListener("click", (e) => {
     const tab = e.target.closest(".view-mode-tab");
     if (!tab) return;
@@ -13808,6 +14014,7 @@ function initViewModeToggle() {
   if (dom.planView)     dom.planView.classList.add("hidden");
   if (dom.emittersView) dom.emittersView.classList.add("hidden");
   if (dom.topologyView) dom.topologyView.classList.add("hidden");
+  if (dom.sensorsView)  dom.sensorsView.classList.add("hidden");
   if (dom.analyzeView)  dom.analyzeView.classList.add("hidden");
   if (dom.viewModeToggle) {
     dom.viewModeToggle.querySelectorAll(".view-mode-tab").forEach(tab => {
@@ -15218,7 +15425,7 @@ function renderSettingsDocumentation() {
   _settingsDocumentationRendered = true;
 }
 function setSettingsModalTab(tab = "general") {
-  state.settingsModalTab = ["general", "imagery", "terrain", "weather", "ai", "tak", "documentation"].includes(tab) ? tab : "general";
+  state.settingsModalTab = ["general", "imagery", "terrain", "weather", "ai", "tak", "views", "documentation"].includes(tab) ? tab : "general";
   dom.settingsTabButtons?.forEach((button) => {
     const active = button.dataset.settingsTab === state.settingsModalTab;
     button.classList.toggle("is-active", active);
@@ -15230,6 +15437,7 @@ function setSettingsModalTab(tab = "general") {
     panel.hidden = !active;
   });
   if (state.settingsModalTab === "documentation") renderSettingsDocumentation();
+  if (state.settingsModalTab === "views") syncOptionalViewTabs();
 }
 
 function wireSettingsModalTabs() {
@@ -17037,6 +17245,14 @@ function setContentLayerVisible(contentId, visible) {
   } else if (contentId.startsWith("asset:")) {
     const id = contentId.slice("asset:".length);
     const marker = state.assetMarkers.get(id);
+    if (marker) {
+      if (visible) marker.addTo(state.map);
+      else marker.remove();
+    }
+  } else if (contentId.startsWith("sensor:")) {
+    const id = contentId.slice("sensor:".length);
+    const sensor = state.sensors.find((entry) => entry.id === id);
+    const marker = state.sensorMarkers.get(id) || (visible && sensor ? addOrUpdateSensorMarker(sensor) : null);
     if (marker) {
       if (visible) marker.addTo(state.map);
       else marker.remove();
@@ -18928,6 +19144,75 @@ function serializeAssetForAi(asset) {
   };
 }
 
+function serializeSensorForAi(sensor) {
+  if (!sensor) {
+    return null;
+  }
+  const linkedUnit = Number.isFinite(Number(sensor.toUnitId)) ? getPlanUnitById(sensor.toUnitId) : null;
+  const linkedTactical = linkedUnit ? getTacticalObjectByPlanUnitId(linkedUnit.id) : null;
+  const effectivePosition = getSensorEffectiveMapPosition(sensor);
+  const summary = getSensorReceptionSummary(sensor);
+  return {
+    id: sensor.id,
+    contentId: `sensor:${sensor.id}`,
+    kind: "sensor",
+    name: sensor.name,
+    profileId: sensor.profileId,
+    profileName: sensor.profileName,
+    category: sensor.category,
+    unit: sensor.unit ?? "",
+    notes: sensor.notes ?? "",
+    lat: roundAiNumber(sensor.lat),
+    lon: roundAiNumber(sensor.lon),
+    placedOnMap: hasSensorMapLocation(sensor),
+    effectiveLocation: effectivePosition ? {
+      lat: roundAiNumber(effectivePosition.lat),
+      lon: roundAiNumber(effectivePosition.lon),
+      source: effectivePosition.tacticalObject ? "linked-unit" : "sensor-marker",
+    } : null,
+    frequencyMinMHz: roundAiNumber(sensor.frequencyMinMHz, 3),
+    frequencyMaxMHz: roundAiNumber(sensor.frequencyMaxMHz, 3),
+    instantaneousBandwidthMHz: roundAiNumber(sensor.instantaneousBandwidthMHz, 3),
+    channels: roundAiNumber(sensor.channels, 0),
+    demodulators: roundAiNumber(sensor.demodulators, 0),
+    sensitivityDbm: roundAiNumber(sensor.sensitivityDbm, 2),
+    antennaGainDbi: roundAiNumber(sensor.antennaGainDbi, 2),
+    antennaHeightM: roundAiNumber(sensor.antennaHeightM, 2),
+    modes: sensor.modes ?? "",
+    receptionSummary: {
+      detectableOrMarginalCount: summary.count,
+      topDetections: summary.detections.map((entry) => ({
+        emitterId: entry.asset?.id ?? null,
+        emitterName: entry.asset?.emitterLabel || entry.asset?.name || "",
+        emissionName: entry.emission?.name || "",
+        frequencyMHz: roundAiNumber(entry.emission?.frequencyMHz, 3),
+        label: entry.label,
+        marginDb: Number.isFinite(entry.marginDb) ? roundAiNumber(entry.marginDb, 2) : null,
+        rxDbm: Number.isFinite(entry.rxDbm) ? roundAiNumber(entry.rxDbm, 2) : null,
+        distanceM: Number.isFinite(entry.distanceM) ? roundAiNumber(entry.distanceM, 1) : null,
+        terrainLossDb: Number.isFinite(entry.terrainLossDb) ? roundAiNumber(entry.terrainLossDb, 2) : null,
+        terrainLosBlocked: entry.terrainLos?.blocked ?? null,
+        terrainMinClearanceM: Number.isFinite(entry.terrainLos?.minClearanceM) ? roundAiNumber(entry.terrainLos.minClearanceM, 1) : null,
+      })),
+    },
+    toUnitId: linkedUnit?.id ?? null,
+    linkedUnit: linkedUnit ? {
+      contentId: buildPlanUnitContentId(linkedUnit.id),
+      id: linkedUnit.id,
+      label: linkedUnit.label,
+      designator: linkedUnit.designator,
+      affiliation: linkedUnit.affiliation,
+      type: linkedUnit.type,
+      size: linkedUnit.size,
+      mapContentId: linkedTactical ? buildTacticalContentId(linkedTactical.id) : null,
+      placedOnMap: Boolean(linkedTactical),
+    } : null,
+    workspaceVisible: true,
+    hidden: state.hiddenContentIds.has(`sensor:${sensor.id}`),
+    folderId: getMapContentFolderId(`sensor:${sensor.id}`),
+  };
+}
+
 function serializeViewshedForAi(viewshed) {
   if (!viewshed) {
     return null;
@@ -19113,6 +19398,10 @@ function serializeMapContentForAi(contentId) {
     return serializeAssetForAi(state.assets.find((asset) => `asset:${asset.id}` === contentId));
   }
 
+  if (contentId.startsWith("sensor:")) {
+    return serializeSensorForAi(state.sensors.find((sensor) => `sensor:${sensor.id}` === contentId));
+  }
+
   if (contentId.startsWith("viewshed:")) {
     return serializeViewshedForAi(state.viewsheds.find((viewshed) => `viewshed:${viewshed.id}` === contentId));
   }
@@ -19160,6 +19449,9 @@ function getMapContentName(contentId) {
   if (!contentId) return null;
   if (contentId.startsWith("asset:")) {
     return state.assets.find((a) => `asset:${a.id}` === contentId)?.name ?? null;
+  }
+  if (contentId.startsWith("sensor:")) {
+    return state.sensors.find((sensor) => `sensor:${sensor.id}` === contentId)?.name ?? null;
   }
   if (contentId.startsWith("imported:")) {
     return state.importedItems.find((i) => `imported:${i.id}` === contentId)?.name ?? null;
@@ -21359,7 +21651,7 @@ async function computeTerrainLosAsyncLegacy(lat1, lon1, h1m, lat2, lon2, h2m) {
 }
 
 // Async LOS matrix â€” uses Cesium terrain fallback when no DTED is loaded.
-async function computeTerrainLosAsync(lat1, lon1, h1m, lat2, lon2, h2m) {
+async function computeTerrainLosAsync(lat1, lon1, h1m, lat2, lon2, h2m, frequencyMHz = 0) {
   if (!state.terrains.length && !usesConfiguredCesiumTerrain()) {
     return { hasTerrain: false, terrainCompleteness: "none" };
   }
@@ -21367,11 +21659,18 @@ async function computeTerrainLosAsync(lat1, lon1, h1m, lat2, lon2, h2m) {
   const EARTH_R = 6371000;
   const Re = (4 / 3) * EARTH_R;
   const distM = state.map.distance({ lat: lat1, lng: lon1 }, { lat: lat2, lng: lon2 });
+  const fresnelFrequencyMHz = Number(frequencyMHz) || 0;
+  const wavelengthM = fresnelFrequencyMHz > 0 ? 300 / Math.max(fresnelFrequencyMHz, 0.1) : 0;
+  const requiredFresnelFraction = 0.6;
   if (distM < 10) {
     return {
       hasTerrain: true,
       blocked: false,
       minClearanceM: 9999,
+      minFresnelClearanceM: fresnelFrequencyMHz > 0 ? 9999 : null,
+      minRequiredFresnelClearanceM: fresnelFrequencyMHz > 0 ? 9999 : null,
+      fresnelClear: true,
+      fresnelPolicyClear: true,
       distanceM: distM,
       source: state.terrains.length ? "dted" : "cesium",
       terrainCompleteness: "full",
@@ -21400,6 +21699,8 @@ async function computeTerrainLosAsync(lat1, lon1, h1m, lat2, lon2, h2m) {
   let blocked = false;
   let sampledCount = 0;
   const sourcesUsed = new Set([sourceSample.source, targetSample.source].filter(Boolean));
+  let minFresnelClearanceM = Infinity;
+  let minRequiredFresnelClearanceM = Infinity;
 
   const CHUNK_SIZE = 12;
   for (let offset = 0; offset < sampleFractions.length; offset += CHUNK_SIZE) {
@@ -21422,6 +21723,16 @@ async function computeTerrainLosAsync(lat1, lon1, h1m, lat2, lon2, h2m) {
       const d = sample.frac * distM;
       const bulgeCorrectionM = (d * (distM - d)) / (2 * Re);
       const clearanceM = (losHeightM - bulgeCorrectionM) - sample.elevation;
+      if (wavelengthM > 0) {
+        const d1 = Math.max(d, 1);
+        const d2 = Math.max(distM - d, 1);
+        const fresnelRadiusM = Math.sqrt(Math.max((wavelengthM * d1 * d2) / Math.max(d1 + d2, 1), 0));
+        minFresnelClearanceM = Math.min(minFresnelClearanceM, clearanceM - fresnelRadiusM);
+        minRequiredFresnelClearanceM = Math.min(
+          minRequiredFresnelClearanceM,
+          clearanceM - (fresnelRadiusM * requiredFresnelFraction),
+        );
+      }
 
       if (clearanceM < minClearanceM) {
         minClearanceM = clearanceM;
@@ -21447,6 +21758,10 @@ async function computeTerrainLosAsync(lat1, lon1, h1m, lat2, lon2, h2m) {
     source: sourcesUsed.size > 1 ? "hybrid" : (sourcesUsed.has("cesium") ? "cesium" : "dted"),
     blocked,
     minClearanceM: Math.round(minClearanceM),
+    minFresnelClearanceM: Number.isFinite(minFresnelClearanceM) ? Math.round(minFresnelClearanceM * 10) / 10 : null,
+    minRequiredFresnelClearanceM: Number.isFinite(minRequiredFresnelClearanceM) ? Math.round(minRequiredFresnelClearanceM * 10) / 10 : null,
+    fresnelClear: Number.isFinite(minFresnelClearanceM) ? minFresnelClearanceM >= 0 : null,
+    fresnelPolicyClear: Number.isFinite(minRequiredFresnelClearanceM) ? minRequiredFresnelClearanceM >= 0 : null,
     distanceM: Math.round(distM),
     terrainCompleteness,
     obstructionFrac: blocked ? Math.round(worstFrac * 100) / 100 : null,
@@ -21495,6 +21810,7 @@ function buildAiScenarioSummary() {
     detail: serializeMapContentForAi(entry.id),
   }));
   const assets = state.assets.map((asset) => serializeAssetForAi(asset));
+  const sensors = state.sensors.map((sensor) => serializeSensorForAi(sensor));
   const viewsheds = state.viewsheds.map((viewshed) => serializeViewshedForAi(viewshed));
   const planning = state.planning.recommendations.map((recommendation, index) => ({
     index: index + 1,
@@ -21562,6 +21878,7 @@ function buildAiScenarioSummary() {
       resultCount: state.siteStudy.results.length,
     },
     assets,
+    sensors,
     planUnits,
     viewsheds,
     importedItems,
@@ -23890,6 +24207,23 @@ function buildPlacementReferenceGeometry(entry, importedItem = null) {
     };
   }
 
+  if (entry.id.startsWith("sensor:")) {
+    const sensor = state.sensors.find((item) => `sensor:${item.id}` === entry.id);
+    const position = sensor ? getSensorEffectiveMapPosition(sensor) : null;
+    if (!position) {
+      return null;
+    }
+    const point = { lat: position.lat, lng: position.lon };
+    return {
+      kind: "point",
+      point,
+      center: point,
+      bounds: L.latLngBounds([point]),
+      source: entry.name,
+      contentId: entry.id,
+    };
+  }
+
   if (entry.id.startsWith("plan-unit:")) {
     const planUnit = getPlanUnitById(entry.id.slice("plan-unit:".length));
     const tactical = planUnit ? getTacticalObjectByPlanUnitId(planUnit.id) : null;
@@ -24029,6 +24363,16 @@ function serializeSiteStudyGeometry(contentId) {
       type: "point",
       name: asset.name,
       points: [{ lat: asset.lat, lon: asset.lon }],
+    };
+  }
+  if (contentId.startsWith("sensor:")) {
+    const sensor = state.sensors.find((entry) => `sensor:${entry.id}` === contentId);
+    const position = sensor ? getSensorEffectiveMapPosition(sensor) : null;
+    if (!position) return null;
+    return {
+      type: "point",
+      name: sensor.name,
+      points: [{ lat: position.lat, lon: position.lon }],
     };
   }
   const importedItem = state.importedItems.find((entry) => `imported:${entry.id}` === contentId);
@@ -24242,6 +24586,10 @@ function onMapClick(event) {
     finishAssetRelocation(event.latlng);
     return;
   }
+  if (state.relocatingSensorId) {
+    finishSensorRelocation(event.latlng);
+    return;
+  }
   if (state.relocatingTacticalId) {
     finishTacticalRelocation(event.latlng);
     return;
@@ -24279,7 +24627,7 @@ function onMapClick(event) {
 }
 
 function isPlacementModeActive() {
-  return Boolean(state.placingAsset || state.placingTactical);
+  return Boolean(state.placingAsset || state.placingTactical || state.relocatingSensorId);
 }
 
 function setAssetPlacementMode(enabled) {
@@ -24698,6 +25046,937 @@ const EMITTER_ICONS = {
   sensor:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2" fill="currentColor"/><path d="M8.5 8.5a5 5 0 0 0 0 7"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M5.5 5.5a9 9 0 0 0 0 13"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>`,
 };
 
+function getSensorProfile(profileId) {
+  return SENSOR_LIBRARY.find((profile) => profile.id === profileId) || SENSOR_LIBRARY[0];
+}
+
+const SENSOR_GRAPHIC_FILES = Object.freeze({
+  "rtl-sdr-v4": "RTLSDR.png",
+  "hackrf-one": "HACK RF ONE.png",
+  "hackrf-pro": "HACK RF PRO.png",
+  "caci-beast-plus": "BEAST+.png",
+  "caci-kraken": "KRAKEN.png",
+  "limesdr-usb": "LIME SDR.png",
+  "limesdr-mini-2": "LIME SDR.png",
+  "airspy-r2": "AIRSPY R2.png",
+  "signal-hound-bb60c": "SH BB60C.png",
+  "rs-pr200": "R&S PR200.png",
+});
+
+const SENSOR_GRAPHIC_URLS = Object.freeze({
+  "AIRSPY R2.png": new URL("./images/sensor_graphics/AIRSPY R2.png", import.meta.url).href,
+  "BEAST+.png": new URL("./images/sensor_graphics/BEAST+.png", import.meta.url).href,
+  "HACK RF ONE.png": new URL("./images/sensor_graphics/HACK RF ONE.png", import.meta.url).href,
+  "HACK RF PRO.png": new URL("./images/sensor_graphics/HACK RF PRO.png", import.meta.url).href,
+  "KRAKEN.png": new URL("./images/sensor_graphics/KRAKEN.png", import.meta.url).href,
+  "LIME SDR.png": new URL("./images/sensor_graphics/LIME SDR.png", import.meta.url).href,
+  "R&S PR200.png": new URL("./images/sensor_graphics/R&S PR200.png", import.meta.url).href,
+  "RTLSDR.png": new URL("./images/sensor_graphics/RTLSDR.png", import.meta.url).href,
+  "SH BB60C.png": new URL("./images/sensor_graphics/SH BB60C.png", import.meta.url).href,
+});
+
+function normalizeSensorGraphicLookup(value = "") {
+  return String(value || "")
+    .toUpperCase()
+    .replace(/ROHDE\s*(?:&|AND)\s*SCHWARZ/g, "RS")
+    .replace(/RTL[-\s]*SDR(?:\s*BLOG)?(?:\s*V4)?/g, "RTLSDR")
+    .replace(/HACKRF/g, "HACK RF")
+    .replace(/CACI\s+/g, "")
+    .replace(/SIGNAL\s+HOUND/g, "SH")
+    .replace(/[^A-Z0-9+&]+/g, " ")
+    .trim();
+}
+
+function getSensorGraphicFile(sensorOrProfile) {
+  const profileId = sensorOrProfile?.profileId || sensorOrProfile?.id || "";
+  if (SENSOR_GRAPHIC_FILES[profileId]) {
+    return SENSOR_GRAPHIC_FILES[profileId];
+  }
+  const lookup = normalizeSensorGraphicLookup([
+    sensorOrProfile?.profileName,
+    sensorOrProfile?.name,
+    sensorOrProfile?.category,
+  ].filter(Boolean).join(" "));
+  const aliases = [
+    ["RTLSDR", "RTLSDR.png"],
+    ["BEAST+", "BEAST+.png"],
+    ["KRAKEN", "KRAKEN.png"],
+    ["HACK RF PRO", "HACK RF PRO.png"],
+    ["HACK RF ONE", "HACK RF ONE.png"],
+    ["LIME SDR", "LIME SDR.png"],
+    ["AIRSPY R2", "AIRSPY R2.png"],
+    ["SH BB60C", "SH BB60C.png"],
+    ["RS PR200", "R&S PR200.png"],
+  ];
+  const match = aliases.find(([needle]) => lookup.includes(needle));
+  return match?.[1] || "";
+}
+
+function getSensorGraphicSrc(sensorOrProfile) {
+  const fileName = getSensorGraphicFile(sensorOrProfile);
+  return fileName ? (SENSOR_GRAPHIC_URLS[fileName] || `images/sensor_graphics/${encodeURIComponent(fileName)}`) : "";
+}
+
+function renderSensorGraphic(sensorOrProfile, variant = "workspace") {
+  const src = getSensorGraphicSrc(sensorOrProfile);
+  if (!src) {
+    return `<div class="sensor-card-icon">${sensorIconSvg()}</div>`;
+  }
+  const name = sensorOrProfile?.profileName || sensorOrProfile?.name || "RF Sensor";
+  const variantClass = variant === "library" ? " sensor-card-graphic-wrap--library" : " sensor-card-graphic-wrap--workspace";
+  return `
+    <div class="sensor-card-graphic-wrap${variantClass}">
+      <img class="sensor-card-graphic" src="${escapeHtml(src)}" alt="${escapeHtml(`${name} receiver graphic`)}" loading="lazy">
+    </div>
+  `;
+}
+
+function sensorIconSvg() {
+  return `
+    <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <circle cx="24" cy="24" r="4" fill="currentColor" stroke="none"></circle>
+      <path d="M14 24a10 10 0 0 1 20 0"></path>
+      <path d="M8 24a16 16 0 0 1 32 0"></path>
+      <path d="M24 28v12"></path>
+      <path d="M17 40h14"></path>
+    </svg>
+  `;
+}
+
+function normalizeSensorRecord(raw = {}) {
+  const profile = getSensorProfile(raw.profileId || raw.id || "");
+  const source = { ...profile, ...(raw && typeof raw === "object" ? raw : {}) };
+  const name = String(source.name || profile?.name || "RF Sensor").trim();
+  const minMHz = Number(source.frequencyMinMHz);
+  const maxMHz = Number(source.frequencyMaxMHz);
+  const sensor = stampContentRecord({
+    id: String(source.id && !SENSOR_LIBRARY.some((entry) => entry.id === source.id) ? source.id : raw.id || generateId()),
+    kind: "sensor",
+    profileId: profile?.id || source.profileId || "",
+    profileName: profile?.name || source.profileName || name,
+    category: String(source.category || profile?.category || "RF Sensor"),
+    name,
+    unit: String(source.unit || "").trim(),
+    toUnitId: Number.isFinite(Number(source.toUnitId)) ? Number(source.toUnitId) : null,
+    lat: Number.isFinite(Number(source.lat)) ? Number(source.lat) : null,
+    lon: Number.isFinite(Number(source.lon)) ? Number(source.lon) : null,
+    frequencyMinMHz: Number.isFinite(minMHz) ? Math.max(0, minMHz) : 0,
+    frequencyMaxMHz: Number.isFinite(maxMHz) ? Math.max(0, maxMHz) : 6000,
+    instantaneousBandwidthMHz: Number.isFinite(Number(source.instantaneousBandwidthMHz)) ? Math.max(0, Number(source.instantaneousBandwidthMHz)) : 0,
+    channels: Number.isFinite(Number(source.channels)) ? Math.max(1, Math.round(Number(source.channels))) : 1,
+    demodulators: Number.isFinite(Number(source.demodulators)) ? Math.max(0, Math.round(Number(source.demodulators))) : null,
+    sensitivityDbm: Number.isFinite(Number(source.sensitivityDbm)) ? Number(source.sensitivityDbm) : -105,
+    antennaGainDbi: Number.isFinite(Number(source.antennaGainDbi)) ? Number(source.antennaGainDbi) : 0,
+    antennaHeightM: Number.isFinite(Number(source.antennaHeightM)) ? Math.max(0, Number(source.antennaHeightM)) : 2,
+    modes: String(source.modes || "").trim(),
+    notes: String(source.notes || "").trim(),
+    color: String(source.color || "#7dd3fc"),
+    workspaceLayout: source.workspaceLayout && Number.isFinite(Number(source.workspaceLayout.x)) && Number.isFinite(Number(source.workspaceLayout.y))
+      ? { x: Number(source.workspaceLayout.x), y: Number(source.workspaceLayout.y) }
+      : null,
+  });
+  if (sensor.frequencyMaxMHz < sensor.frequencyMinMHz) {
+    [sensor.frequencyMinMHz, sensor.frequencyMaxMHz] = [sensor.frequencyMaxMHz, sensor.frequencyMinMHz];
+  }
+  return sensor;
+}
+
+function buildSensorRecordFromProfile(profileId, overrides = {}) {
+  const profile = getSensorProfile(profileId);
+  const sensor = normalizeSensorRecord({
+    ...profile,
+    id: generateId(),
+    profileId: profile.id,
+    profileName: profile.name,
+    name: profile.name,
+    unit: "",
+    toUnitId: null,
+    lat: null,
+    lon: null,
+    workspaceLayout: reserveSensorWorkspaceSpawnLayout(),
+    ...overrides,
+  });
+  return sensor;
+}
+
+function hasSensorMapLocation(sensor) {
+  return Number.isFinite(Number(sensor?.lat)) && Number.isFinite(Number(sensor?.lon));
+}
+
+function getMappedTacticalAnchorForSensor(sensor) {
+  if (!Number.isFinite(Number(sensor?.toUnitId))) {
+    return null;
+  }
+  const object = getTacticalObjectByPlanUnitId(Number(sensor.toUnitId));
+  if (!object || !isTacticalPointGeometry(object.geometryType)) {
+    return null;
+  }
+  return object;
+}
+
+function getSensorEffectiveMapPosition(sensor) {
+  if (hasSensorMapLocation(sensor)) {
+    return {
+      lat: Number(sensor.lat),
+      lon: Number(sensor.lon),
+      tacticalObject: null,
+    };
+  }
+  const tacticalObject = getMappedTacticalAnchorForSensor(sensor);
+  if (!tacticalObject || !Array.isArray(tacticalObject.coordinates) || tacticalObject.coordinates.length < 2) {
+    return null;
+  }
+  return {
+    lat: Number(tacticalObject.coordinates[0]),
+    lon: Number(tacticalObject.coordinates[1]),
+    tacticalObject,
+  };
+}
+
+function createSensorIcon(sensor) {
+  const markerColor = sensor?.color || "#7dd3fc";
+  return L.divIcon({
+    className: "sensor-marker-wrapper",
+    html: `<div class="sensor-marker" style="color:${escapeHtml(markerColor)}; border-color:${escapeHtml(markerColor)}">${sensorIconSvg()}</div>`,
+    iconSize: [34, 34],
+    iconAnchor: [17, 17],
+    popupAnchor: [0, -17],
+  });
+}
+
+function renderSensorPopup(sensor) {
+  const linkedUnit = Number.isFinite(Number(sensor.toUnitId)) ? getPlanUnitById(sensor.toUnitId) : null;
+  const linkedLine = linkedUnit ? `<br>Linked ${escapeHtml(linkedUnit.label || linkedUnit.designator || String(linkedUnit.id))}` : "";
+  return `
+    <strong>${escapeHtml(sensor.name || "RF Sensor")}</strong><br>
+    ${escapeHtml(sensor.profileName || sensor.category || "Sensor")}<br>
+    ${escapeHtml(formatSensorFrequencyRange(sensor))} | BW ${escapeHtml(formatSensorBandwidth(sensor.instantaneousBandwidthMHz))}<br>
+    Sens ${escapeHtml(formatDbm(sensor.sensitivityDbm))} | ${escapeHtml(String(sensor.channels || 1))} RX${linkedLine}<br>
+    ${Number(sensor.lat).toFixed(5)}, ${Number(sensor.lon).toFixed(5)}
+  `;
+}
+
+function addOrUpdateSensorMarker(sensor) {
+  if (!state.map || !hasSensorMapLocation(sensor)) {
+    return null;
+  }
+  let marker = state.sensorMarkers.get(sensor.id);
+  if (!marker) {
+    marker = L.marker([sensor.lat, sensor.lon], {
+      icon: createSensorIcon(sensor),
+      pane: getMapContentPaneName(`sensor:${sensor.id}`),
+    }).addTo(state.map);
+    marker.on("contextmenu", (e) => openMapContentMenuForLeafletEvent(e, `sensor:${sensor.id}`));
+    state.sensorMarkers.set(sensor.id, marker);
+  }
+  marker.setLatLng([sensor.lat, sensor.lon]);
+  marker.setIcon(createSensorIcon(sensor));
+  marker.bindPopup(renderSensorPopup(sensor));
+  if (isContentEffectivelyHidden(`sensor:${sensor.id}`)) {
+    marker.remove();
+  } else if (!state.map.hasLayer(marker)) {
+    marker.addTo(state.map);
+  }
+  return marker;
+}
+
+function formatDbm(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? `${numeric.toFixed(1).replace(/\.0$/, "")} dBm` : "Unset";
+}
+
+function formatSensorFrequencyRange(sensor) {
+  const min = Number(sensor?.frequencyMinMHz);
+  const max = Number(sensor?.frequencyMaxMHz);
+  if (!Number.isFinite(min) || !Number.isFinite(max)) {
+    return "Range unset";
+  }
+  const fmt = (value) => value >= 100 ? value.toFixed(0) : value.toFixed(3).replace(/\.?0+$/, "");
+  return `${fmt(min)}-${fmt(max)} MHz`;
+}
+
+function formatSensorBandwidth(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return "Unset";
+  return `${numeric >= 10 ? numeric.toFixed(0) : numeric.toFixed(2).replace(/\.?0+$/, "")} MHz`;
+}
+
+function getEmitterEmissionEntries(asset) {
+  const netEntries = getEmitterNets(asset)
+    .map((net) => ({
+      id: net.id,
+      name: net.name || "Net",
+      frequencyMHz: Number(net.frequencyMHz),
+      waveform: net.waveform || asset.waveform || asset.ext?.waveform || "",
+    }))
+    .filter((entry) => Number.isFinite(entry.frequencyMHz) && entry.frequencyMHz > 0);
+  const primaryFrequency = Number(asset?.frequencyMHz);
+  const primary = Number.isFinite(primaryFrequency) && primaryFrequency > 0
+    ? [{
+        id: "primary",
+        name: asset.emitterLabel || asset.name || "Primary",
+        frequencyMHz: primaryFrequency,
+        waveform: asset.waveform || asset.ext?.waveform || "",
+      }]
+    : [];
+  const seen = new Set();
+  return [...primary, ...netEntries].filter((entry) => {
+    const key = `${entry.frequencyMHz}:${entry.waveform}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function estimateSensorReception(sensor, asset, emission) {
+  const sensorPosition = getSensorEffectiveMapPosition(sensor);
+  const emitterPosition = getAssetEffectiveMapPosition(asset);
+  const frequencyMHz = Number(emission.frequencyMHz);
+  if (!sensorPosition || !emitterPosition) {
+    return {
+      status: "not-placed",
+      label: "Needs map placement",
+      className: "not-detected",
+      marginDb: Number.NEGATIVE_INFINITY,
+      rxDbm: null,
+      distanceM: null,
+      asset,
+      emission,
+    };
+  }
+  if (frequencyMHz < Number(sensor.frequencyMinMHz) || frequencyMHz > Number(sensor.frequencyMaxMHz)) {
+    return {
+      status: "out-of-range",
+      label: "Outside receiver range",
+      className: "not-detected",
+      marginDb: Number.NEGATIVE_INFINITY,
+      rxDbm: null,
+      distanceM: null,
+      asset,
+      emission,
+    };
+  }
+  const distanceM = Math.max(1, haversineKm(sensorPosition.lat, sensorPosition.lon, emitterPosition.lat, emitterPosition.lon) * 1000);
+  const txPowerW = Number.isFinite(Number(asset.powerW)) && Number(asset.powerW) > 0 ? Number(asset.powerW) : 5;
+  const txGain = Number.isFinite(Number(asset.antennaGainDbi)) ? Number(asset.antennaGainDbi) : 2.15;
+  const rxGain = Number.isFinite(Number(sensor.antennaGainDbi)) ? Number(sensor.antennaGainDbi) : 0;
+  const txHeight = Number.isFinite(Number(asset.antennaHeightM)) ? Number(asset.antennaHeightM) : 2;
+  const rxHeight = Number.isFinite(Number(sensor.antennaHeightM)) ? Number(sensor.antennaHeightM) : 2;
+  const loss = Math.max(0, Number(asset.systemLossDb) || 0);
+  let terrainLossDb = 0;
+  let terrainLos = null;
+  const terrain = findBestLocalTerrainForCoordinate(
+    (sensorPosition.lat + emitterPosition.lat) / 2,
+    (sensorPosition.lon + emitterPosition.lon) / 2,
+  );
+  if (terrain) {
+    terrainLos = computeTerrainLos(
+      sensorPosition.lat,
+      sensorPosition.lon,
+      rxHeight,
+      emitterPosition.lat,
+      emitterPosition.lon,
+      txHeight,
+      terrain,
+    );
+    if (terrainLos?.hasTerrain) {
+      const clearance = Number(terrainLos.minClearanceM);
+      if (terrainLos.blocked) {
+        terrainLossDb = clamp(18 + Math.abs(Number.isFinite(clearance) ? clearance : 0) * 0.45, 18, 42);
+      } else if (Number.isFinite(clearance) && clearance < 8) {
+        terrainLossDb = clamp((8 - clearance) * 1.2, 0, 12);
+      }
+    }
+  }
+  const rxDbm = wattsToDbm(txPowerW) + txGain + rxGain - loss - fsplDb(frequencyMHz, distanceM) - terrainLossDb;
+  const sensitivity = Number.isFinite(Number(sensor.sensitivityDbm)) ? Number(sensor.sensitivityDbm) : -105;
+  const marginDb = rxDbm - sensitivity;
+  const className = marginDb >= 8 ? "detectable" : marginDb >= 0 ? "marginal" : "not-detected";
+  const label = marginDb >= 20 ? "Strong" : marginDb >= 8 ? "Detectable" : marginDb >= 0 ? "Marginal" : "Below sensitivity";
+  return {
+    status: className,
+    label,
+    className,
+    marginDb,
+    rxDbm,
+    distanceM,
+    terrainLossDb,
+    terrainLos,
+    asset,
+    emission,
+  };
+}
+
+function getSensorReceptionSummary(sensor) {
+  if (state.settings.sensorAutoEvaluate === false) {
+    return {
+      count: 0,
+      detections: [],
+      message: "Auto evaluation is off in Settings > Views.",
+    };
+  }
+  const detections = [];
+  (state.assets || []).forEach((asset) => {
+    getEmitterEmissionEntries(asset).forEach((emission) => {
+      detections.push(estimateSensorReception(sensor, asset, emission));
+    });
+  });
+  const ranked = detections
+    .sort((a, b) => (Number.isFinite(b.marginDb) ? b.marginDb : -9999) - (Number.isFinite(a.marginDb) ? a.marginDb : -9999));
+  const count = ranked.filter((entry) => entry.className === "detectable" || entry.className === "marginal").length;
+  return {
+    count,
+    detections: ranked.slice(0, 4),
+    message: ranked.length ? "" : "No emitter emissions to evaluate.",
+  };
+}
+
+function buildSensorWorkspaceDefaultLayout(index = 0) {
+  const columnCount = 3;
+  const column = index % columnCount;
+  const row = Math.floor(index / columnCount);
+  return {
+    x: 190 + (column * 320),
+    y: 180 + (row * 300),
+  };
+}
+
+function reserveSensorWorkspaceSpawnLayout() {
+  const canvas = dom.sensorsCanvas;
+  if (!canvas) {
+    return buildSensorWorkspaceDefaultLayout(state.sensors.length);
+  }
+  const zoom = Math.max(_sensorsWorkspaceState.zoom || 1, 0.2);
+  const centerX = (canvas.clientWidth / 2) - (_sensorsWorkspaceState.panX / zoom);
+  const centerY = (canvas.clientHeight / 2) - (_sensorsWorkspaceState.panY / zoom);
+  return {
+    x: Math.max(150, centerX + ((Math.random() - 0.5) * 80)),
+    y: Math.max(150, centerY + ((Math.random() - 0.5) * 80)),
+  };
+}
+
+function ensureSensorWorkspaceLayout(sensor, index = 0) {
+  if (sensor?.workspaceLayout && Number.isFinite(Number(sensor.workspaceLayout.x)) && Number.isFinite(Number(sensor.workspaceLayout.y))) {
+    return {
+      x: Number(sensor.workspaceLayout.x),
+      y: Number(sensor.workspaceLayout.y),
+    };
+  }
+  const pending = _sensorsWorkspaceState.pendingSpawnLayout;
+  const layout = pending && Number.isFinite(Number(pending.x)) && Number.isFinite(Number(pending.y))
+    ? { x: Number(pending.x), y: Number(pending.y) }
+    : buildSensorWorkspaceDefaultLayout(index);
+  sensor.workspaceLayout = layout;
+  _sensorsWorkspaceState.pendingSpawnLayout = null;
+  return layout;
+}
+
+function applySensorsWorkspaceTransform() {
+  if (!dom.sensorsWorld) return;
+  dom.sensorsWorld.style.transform = `translate(${_sensorsWorkspaceState.panX}px, ${_sensorsWorkspaceState.panY}px) scale(${_sensorsWorkspaceState.zoom})`;
+}
+
+function renderSensorsLibrary() {
+  if (!dom.sensorsLibraryList) return;
+  dom.sensorsLibraryList.innerHTML = "";
+  SENSOR_LIBRARY.forEach((profile) => {
+    const card = document.createElement("article");
+    card.className = "sensor-library-card";
+    card.innerHTML = `
+      <div class="sensor-library-card-top">
+        ${renderSensorGraphic(profile, "library")}
+        <div class="sensor-library-card-copy">
+          <strong>${escapeHtml(profile.name)}</strong>
+          <span>${escapeHtml(profile.category)} | ${escapeHtml(formatSensorFrequencyRange(profile))} | BW ${escapeHtml(formatSensorBandwidth(profile.instantaneousBandwidthMHz))}</span>
+        </div>
+      </div>
+      <p>${escapeHtml(profile.notes)}</p>
+      <button class="ghost-button small" type="button" data-sensor-profile="${escapeHtml(profile.id)}">Add</button>
+    `;
+    card.querySelector("button")?.addEventListener("click", () => openSensorEditor("", profile.id));
+    dom.sensorsLibraryList.appendChild(card);
+  });
+}
+
+function renderSensorsView() {
+  initSensorsViewIfNeeded();
+  renderSensorsLibrary();
+  renderSensorsWorkspace();
+}
+
+function syncSensorsWorkspaceSelectionUi() {
+  if (!dom.sensorsWorld) return;
+  dom.sensorsWorld.querySelectorAll(".sensor-card").forEach((card) => {
+    card.classList.toggle("is-selected", card.dataset.sensorId === _sensorsWorkspaceState.selectedSensorId);
+  });
+}
+
+function hideSensorsContextMenu() {
+  dom.sensorsContextMenu?.classList.add("hidden");
+}
+
+function showSensorsContextMenu(sensorId, x, y) {
+  if (!dom.sensorsContextMenu) return;
+  _sensorsWorkspaceState.contextSensorId = sensorId;
+  const sensor = state.sensors.find((entry) => entry.id === sensorId);
+  if (dom.sensorsCtxTitle) dom.sensorsCtxTitle.textContent = sensor?.name || "Sensor";
+  const menuW = 280;
+  const menuH = 190;
+  dom.sensorsContextMenu.style.left = `${Math.min(x, window.innerWidth - menuW - 8)}px`;
+  dom.sensorsContextMenu.style.top = `${Math.min(y, window.innerHeight - menuH - 8)}px`;
+  dom.sensorsContextMenu.classList.remove("hidden");
+}
+
+function renderSensorsWorkspace() {
+  if (!dom.sensorsWorld) return;
+  dom.sensorsWorld.innerHTML = "";
+  if (dom.sensorsEmptyState) {
+    dom.sensorsEmptyState.classList.toggle("hidden", state.sensors.length > 0);
+  }
+  if (!state.sensors.length) return;
+  state.sensors.forEach((sensor, index) => {
+    const layout = ensureSensorWorkspaceLayout(sensor, index);
+    const linkedUnit = Number.isFinite(Number(sensor.toUnitId)) ? getPlanUnitById(sensor.toUnitId) : null;
+    const linkedLabel = linkedUnit ? (linkedUnit.label || linkedUnit.designator || `Unit ${linkedUnit.id}`) : "Unlinked";
+    const visibilityLabel = hasSensorMapLocation(sensor)
+      ? (isContentEffectivelyHidden(`sensor:${sensor.id}`) ? "Hidden on map" : "Visible on map")
+      : (getMappedTacticalAnchorForSensor(sensor) ? "Linked unit map anchor" : "Not on map");
+    const summary = getSensorReceptionSummary(sensor);
+    const detectionMarkup = summary.detections.length
+      ? summary.detections.map((entry) => `
+          <div class="sensor-detection-row ${entry.className}">
+            <strong>${escapeHtml(entry.asset?.name || entry.asset?.emitterLabel || "Emitter")} | ${escapeHtml(entry.label)}</strong>
+            <span>${escapeHtml(formatEmitterWorkspaceFrequency(entry.emission.frequencyMHz))} | ${entry.rxDbm === null ? "RX --" : `RX ${entry.rxDbm.toFixed(1)} dBm`} | ${entry.distanceM ? formatDistance(entry.distanceM) : "No map position"}${entry.terrainLos?.hasTerrain ? ` | ${entry.terrainLos.blocked ? "Terrain masked" : "Terrain LOS"}` : ""}</span>
+          </div>
+        `).join("")
+      : `<div class="emitters-net-empty">${escapeHtml(summary.message || "No detectable emitters yet.")}</div>`;
+    const card = document.createElement("article");
+    card.className = `emitters-card sensor-card${_sensorsWorkspaceState.selectedSensorId === sensor.id ? " is-selected" : ""}`;
+    card.dataset.sensorId = sensor.id;
+    card.style.left = `${layout.x}px`;
+    card.style.top = `${layout.y}px`;
+    card.innerHTML = `
+      <div class="emitters-card-header">
+        <div class="emitters-card-title">
+          <strong>${escapeHtml(sensor.name || "RF Sensor")}</strong>
+          <span>${escapeHtml(sensor.profileName || sensor.category || "Sensor")}</span>
+        </div>
+        <span class="force-pill"><span class="force-dot" style="background:${escapeHtml(sensor.color || "#7dd3fc")}"></span>${summary.count} RX</span>
+      </div>
+      <div class="emitters-card-media">
+        ${renderSensorGraphic(sensor, "workspace")}
+      </div>
+      <dl class="emitters-card-meta">
+        <div class="emitters-card-kv"><dt>Range</dt><dd>${escapeHtml(formatSensorFrequencyRange(sensor))}</dd></div>
+        <div class="emitters-card-kv"><dt>Linked</dt><dd>${escapeHtml(linkedLabel)}</dd></div>
+        <div class="emitters-card-kv"><dt>Map</dt><dd>${escapeHtml(visibilityLabel)}</dd></div>
+        <div class="emitters-card-kv"><dt>Sens</dt><dd>${escapeHtml(formatDbm(sensor.sensitivityDbm))}</dd></div>
+      </dl>
+      <div class="emitters-card-net">
+        <div class="emitters-card-net-header">
+          <span class="emitters-card-net-title">Detected Emissions</span>
+          <span class="emitters-card-net-count">${summary.count}</span>
+        </div>
+        <div class="sensor-detection-list">${detectionMarkup}</div>
+      </div>
+    `;
+    card.addEventListener("click", (event) => {
+      event.stopPropagation();
+      _sensorsWorkspaceState.selectedSensorId = sensor.id;
+      syncSensorsWorkspaceSelectionUi();
+    });
+    card.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return;
+      event.stopPropagation();
+      hideSensorsContextMenu();
+      _sensorsWorkspaceState.selectedSensorId = sensor.id;
+      _sensorsWorkspaceState.dragging = {
+        sensorId: sensor.id,
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        origX: layout.x,
+        origY: layout.y,
+        sourceEl: card,
+      };
+      card.setPointerCapture?.(event.pointerId);
+      syncSensorsWorkspaceSelectionUi();
+    });
+    card.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      _sensorsWorkspaceState.selectedSensorId = sensor.id;
+      syncSensorsWorkspaceSelectionUi();
+      showSensorsContextMenu(sensor.id, event.clientX, event.clientY);
+    });
+    dom.sensorsWorld.appendChild(card);
+  });
+}
+
+function initSensorsViewIfNeeded() {
+  if (_sensorsWorkspaceState._initialized) return;
+  _sensorsWorkspaceState._initialized = true;
+  applySensorsWorkspaceTransform();
+
+  dom.sensorsCanvas?.addEventListener("wheel", (event) => {
+    event.preventDefault();
+    const factor = event.deltaY < 0 ? 1.08 : 0.92;
+    const rect = dom.sensorsCanvas.getBoundingClientRect();
+    const mx = event.clientX - rect.left;
+    const my = event.clientY - rect.top;
+    const nextZoom = clamp(_sensorsWorkspaceState.zoom * factor, 0.5, 1.8);
+    _sensorsWorkspaceState.panX = mx - (mx - _sensorsWorkspaceState.panX) * (nextZoom / _sensorsWorkspaceState.zoom);
+    _sensorsWorkspaceState.panY = my - (my - _sensorsWorkspaceState.panY) * (nextZoom / _sensorsWorkspaceState.zoom);
+    _sensorsWorkspaceState.zoom = nextZoom;
+    applySensorsWorkspaceTransform();
+  }, { passive: false });
+
+  dom.sensorsCanvas?.addEventListener("mousedown", (event) => {
+    if (event.button !== 0) return;
+    if (event.target === dom.sensorsCanvas || event.target === dom.sensorsWorld) {
+      hideSensorsContextMenu();
+      _sensorsWorkspaceState.selectedSensorId = "";
+      _sensorsWorkspaceState.panning = true;
+      _sensorsWorkspaceState.panStart = {
+        x: event.clientX - _sensorsWorkspaceState.panX,
+        y: event.clientY - _sensorsWorkspaceState.panY,
+      };
+      syncSensorsWorkspaceSelectionUi();
+    }
+  });
+
+  document.addEventListener("pointermove", (event) => {
+    if (_sensorsWorkspaceState.panning) {
+      _sensorsWorkspaceState.panX = event.clientX - _sensorsWorkspaceState.panStart.x;
+      _sensorsWorkspaceState.panY = event.clientY - _sensorsWorkspaceState.panStart.y;
+      applySensorsWorkspaceTransform();
+      return;
+    }
+    if (_sensorsWorkspaceState.dragging && event.pointerId === _sensorsWorkspaceState.dragging.pointerId) {
+      const { sensorId, startX, startY, origX, origY } = _sensorsWorkspaceState.dragging;
+      const sensor = state.sensors.find((entry) => entry.id === sensorId);
+      if (!sensor) return;
+      sensor.workspaceLayout = {
+        x: origX + ((event.clientX - startX) / _sensorsWorkspaceState.zoom),
+        y: origY + ((event.clientY - startY) / _sensorsWorkspaceState.zoom),
+      };
+      const card = dom.sensorsWorld.querySelector(`.sensor-card[data-sensor-id="${CSS.escape(sensorId)}"]`);
+      if (card) {
+        card.style.left = `${sensor.workspaceLayout.x}px`;
+        card.style.top = `${sensor.workspaceLayout.y}px`;
+      }
+    }
+  });
+
+  document.addEventListener("pointerup", (event) => {
+    if (_sensorsWorkspaceState.dragging?.pointerId === event.pointerId) {
+      _sensorsWorkspaceState.dragging.sourceEl?.releasePointerCapture?.(event.pointerId);
+      _sensorsWorkspaceState.dragging = null;
+      saveMapState();
+    }
+    _sensorsWorkspaceState.panning = false;
+  });
+
+  document.addEventListener("pointercancel", (event) => {
+    if (_sensorsWorkspaceState.dragging?.pointerId === event.pointerId) {
+      _sensorsWorkspaceState.dragging.sourceEl?.releasePointerCapture?.(event.pointerId);
+      _sensorsWorkspaceState.dragging = null;
+    }
+    _sensorsWorkspaceState.panning = false;
+  });
+
+  dom.sensorsCanvas?.addEventListener("click", (event) => {
+    if (event.target === dom.sensorsCanvas || event.target === dom.sensorsWorld) {
+      _sensorsWorkspaceState.selectedSensorId = "";
+      hideSensorsContextMenu();
+      syncSensorsWorkspaceSelectionUi();
+    }
+  });
+
+  dom.sensorsAddBtn?.addEventListener("click", () => openSensorEditor("", SENSOR_LIBRARY[0]?.id));
+  dom.sensorsRefreshBtn?.addEventListener("click", () => renderSensorsView());
+  dom.sensorsOpenMapBtn?.addEventListener("click", () => switchView("map"));
+  dom.sensorsCtxClose?.addEventListener("click", hideSensorsContextMenu);
+  dom.sensorsCtxEdit?.addEventListener("click", () => {
+    const sensorId = _sensorsWorkspaceState.contextSensorId;
+    hideSensorsContextMenu();
+    openSensorEditor(sensorId);
+  });
+  dom.sensorsCtxLinkUnit?.addEventListener("click", () => {
+    const sensorId = _sensorsWorkspaceState.contextSensorId;
+    hideSensorsContextMenu();
+    openSensorEditor(sensorId, "", { focusUnitLink: true });
+  });
+  dom.sensorsCtxPlaceMap?.addEventListener("click", () => {
+    const sensorId = _sensorsWorkspaceState.contextSensorId;
+    hideSensorsContextMenu();
+    startSensorRelocation(sensorId);
+  });
+  dom.sensorsCtxShowMap?.addEventListener("click", () => {
+    const sensorId = _sensorsWorkspaceState.contextSensorId;
+    hideSensorsContextMenu();
+    if (!sensorId) return;
+    const marker = state.sensorMarkers.get(sensorId);
+    if (!marker) {
+      setStatus("This sensor is not placed on the map yet. Use Place on Map first.");
+      return;
+    }
+    switchView("map");
+    focusMapContent(`sensor:${sensorId}`);
+  });
+  dom.sensorsCtxDuplicate?.addEventListener("click", () => {
+    const sensorId = _sensorsWorkspaceState.contextSensorId;
+    hideSensorsContextMenu();
+    duplicateSensorById(sensorId);
+  });
+  dom.sensorsCtxDelete?.addEventListener("click", () => {
+    const sensorId = _sensorsWorkspaceState.contextSensorId;
+    hideSensorsContextMenu();
+    deleteSensorById(sensorId);
+  });
+  dom.sensorEditorCloseBtn?.addEventListener("click", closeSensorEditor);
+  dom.sensorEditorCancelBtn?.addEventListener("click", closeSensorEditor);
+  dom.sensorEditorSaveBtn?.addEventListener("click", saveSensorEditor);
+  dom.sensorProfileSelect?.addEventListener("change", applySensorProfileToEditor);
+  addModalBackdropClose(dom.sensorEditorModal, closeSensorEditor);
+
+  document.addEventListener("click", (event) => {
+    if (!dom.sensorsContextMenu?.contains(event.target)) {
+      hideSensorsContextMenu();
+    }
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      hideSensorsContextMenu();
+      closeSensorEditor();
+    }
+  });
+}
+
+function populateSensorEditorSelects() {
+  if (dom.sensorProfileSelect) {
+    dom.sensorProfileSelect.innerHTML = SENSOR_LIBRARY.map((profile) => (
+      `<option value="${escapeHtml(profile.id)}">${escapeHtml(profile.name)}</option>`
+    )).join("");
+  }
+  if (dom.sensorToUnitSelect) {
+    const options = ['<option value="">Unlinked</option>'];
+    (_toState.units || []).forEach((unit) => {
+      const label = [unit.label, unit.designator].filter(Boolean).join(" | ") || `Unit ${unit.id}`;
+      options.push(`<option value="${escapeHtml(String(unit.id))}">${escapeHtml(label)}</option>`);
+    });
+    dom.sensorToUnitSelect.innerHTML = options.join("");
+  }
+}
+
+function openSensorEditor(sensorId = "", profileId = "", options = {}) {
+  initSensorsViewIfNeeded();
+  populateSensorEditorSelects();
+  const existing = sensorId ? state.sensors.find((entry) => entry.id === sensorId) : null;
+  const profile = getSensorProfile(profileId || existing?.profileId || SENSOR_LIBRARY[0]?.id);
+  _sensorsWorkspaceState.editingSensorId = existing?.id || "";
+  if (dom.sensorEditorTitle) dom.sensorEditorTitle.textContent = existing ? "Edit RF Sensor" : "Add RF Sensor";
+  if (dom.sensorEditorSubtitle) dom.sensorEditorSubtitle.textContent = existing ? "Update receiver configuration and T/O link." : "Configure receiver capability before adding it to the Sensors workspace.";
+  if (dom.sensorEditorSaveBtn) dom.sensorEditorSaveBtn.textContent = existing ? "Save Sensor" : "Add to Workspace";
+  if (dom.sensorEditorValidation) dom.sensorEditorValidation.textContent = "";
+  const source = existing || profile;
+  if (dom.sensorProfileSelect) dom.sensorProfileSelect.value = profile.id;
+  if (dom.sensorNameInput) dom.sensorNameInput.value = existing?.name || profile.name || "";
+  if (dom.sensorUnitInput) dom.sensorUnitInput.value = existing?.unit || "";
+  if (dom.sensorToUnitSelect) dom.sensorToUnitSelect.value = Number.isFinite(Number(existing?.toUnitId)) ? String(existing.toUnitId) : "";
+  if (dom.sensorFreqMinInput) dom.sensorFreqMinInput.value = source.frequencyMinMHz ?? "";
+  if (dom.sensorFreqMaxInput) dom.sensorFreqMaxInput.value = source.frequencyMaxMHz ?? "";
+  if (dom.sensorBandwidthInput) dom.sensorBandwidthInput.value = source.instantaneousBandwidthMHz ?? "";
+  if (dom.sensorChannelsInput) dom.sensorChannelsInput.value = source.channels ?? "";
+  if (dom.sensorSensitivityInput) dom.sensorSensitivityInput.value = source.sensitivityDbm ?? "";
+  if (dom.sensorAntennaGainInput) dom.sensorAntennaGainInput.value = source.antennaGainDbi ?? "";
+  if (dom.sensorAntennaHeightInput) dom.sensorAntennaHeightInput.value = source.antennaHeightM ?? "";
+  if (dom.sensorModesInput) dom.sensorModesInput.value = source.modes || "";
+  if (dom.sensorNotesInput) dom.sensorNotesInput.value = source.notes || "";
+  dom.sensorEditorModal?.classList.remove("hidden");
+  updateModalBodyState();
+  requestAnimationFrame(() => {
+    (options.focusUnitLink ? dom.sensorToUnitSelect : dom.sensorNameInput)?.focus?.();
+  });
+}
+
+function applySensorProfileToEditor() {
+  const profile = getSensorProfile(dom.sensorProfileSelect?.value);
+  if (!profile) return;
+  if (!dom.sensorNameInput?.value || !_sensorsWorkspaceState.editingSensorId) {
+    dom.sensorNameInput.value = profile.name;
+  }
+  if (dom.sensorFreqMinInput) dom.sensorFreqMinInput.value = profile.frequencyMinMHz;
+  if (dom.sensorFreqMaxInput) dom.sensorFreqMaxInput.value = profile.frequencyMaxMHz;
+  if (dom.sensorBandwidthInput) dom.sensorBandwidthInput.value = profile.instantaneousBandwidthMHz;
+  if (dom.sensorChannelsInput) dom.sensorChannelsInput.value = profile.channels;
+  if (dom.sensorSensitivityInput) dom.sensorSensitivityInput.value = profile.sensitivityDbm;
+  if (dom.sensorAntennaGainInput) dom.sensorAntennaGainInput.value = profile.antennaGainDbi;
+  if (dom.sensorAntennaHeightInput) dom.sensorAntennaHeightInput.value = profile.antennaHeightM;
+  if (dom.sensorModesInput) dom.sensorModesInput.value = profile.modes || "";
+  if (dom.sensorNotesInput) dom.sensorNotesInput.value = profile.notes || "";
+}
+
+function getSensorEditorData() {
+  const profile = getSensorProfile(dom.sensorProfileSelect?.value);
+  return normalizeSensorRecord({
+    ...(profile || {}),
+    id: _sensorsWorkspaceState.editingSensorId || generateId(),
+    profileId: profile?.id || "",
+    profileName: profile?.name || "",
+    name: dom.sensorNameInput?.value || profile?.name || "RF Sensor",
+    unit: dom.sensorUnitInput?.value || "",
+    toUnitId: dom.sensorToUnitSelect?.value ? Number(dom.sensorToUnitSelect.value) : null,
+    frequencyMinMHz: Number(dom.sensorFreqMinInput?.value),
+    frequencyMaxMHz: Number(dom.sensorFreqMaxInput?.value),
+    instantaneousBandwidthMHz: Number(dom.sensorBandwidthInput?.value),
+    channels: Number(dom.sensorChannelsInput?.value),
+    sensitivityDbm: Number(dom.sensorSensitivityInput?.value),
+    antennaGainDbi: Number(dom.sensorAntennaGainInput?.value),
+    antennaHeightM: Number(dom.sensorAntennaHeightInput?.value),
+    modes: dom.sensorModesInput?.value || "",
+    notes: dom.sensorNotesInput?.value || "",
+  });
+}
+
+function saveSensorEditor() {
+  const sensor = getSensorEditorData();
+  if (!sensor.name) {
+    if (dom.sensorEditorValidation) dom.sensorEditorValidation.textContent = "Enter a sensor name.";
+    dom.sensorNameInput?.focus();
+    return;
+  }
+  if (!Number.isFinite(Number(sensor.frequencyMinMHz)) || !Number.isFinite(Number(sensor.frequencyMaxMHz)) || sensor.frequencyMaxMHz <= 0) {
+    if (dom.sensorEditorValidation) dom.sensorEditorValidation.textContent = "Enter a valid receive frequency range.";
+    dom.sensorFreqMinInput?.focus();
+    return;
+  }
+  const existingIndex = state.sensors.findIndex((entry) => entry.id === sensor.id);
+  if (existingIndex >= 0) {
+    const existing = state.sensors[existingIndex];
+    state.sensors[existingIndex] = {
+      ...existing,
+      ...sensor,
+      lat: existing.lat,
+      lon: existing.lon,
+      workspaceLayout: existing.workspaceLayout || sensor.workspaceLayout,
+      version: (existing.version ?? 1) + 1,
+      lastModified: nowIso(),
+    };
+    addOrUpdateSensorMarker(state.sensors[existingIndex]);
+    setStatus(`Updated ${sensor.name}.`);
+  } else {
+    sensor.workspaceLayout = sensor.workspaceLayout || reserveSensorWorkspaceSpawnLayout();
+    state.sensors.push(sensor);
+    _sensorsWorkspaceState.selectedSensorId = sensor.id;
+    setStatus(`Added ${sensor.name} to Sensors.`);
+  }
+  closeSensorEditor();
+  renderSensorsView();
+  renderMapContents();
+  syncCesiumEntities();
+  saveMapState();
+}
+
+function closeSensorEditor() {
+  _sensorsWorkspaceState.editingSensorId = "";
+  dom.sensorEditorModal?.classList.add("hidden");
+  updateModalBodyState();
+}
+
+function duplicateSensorById(sensorId) {
+  const original = state.sensors.find((entry) => entry.id === sensorId);
+  if (!original) return null;
+  const layout = ensureSensorWorkspaceLayout(original);
+  const dupe = normalizeSensorRecord({
+    ...JSON.parse(JSON.stringify(original)),
+    id: generateId(),
+    name: `${original.name || "Sensor"} (copy)`,
+    lat: null,
+    lon: null,
+    workspaceLayout: { x: layout.x + 42, y: layout.y + 42 },
+  });
+  state.sensors.push(dupe);
+  _sensorsWorkspaceState.selectedSensorId = dupe.id;
+  renderSensorsView();
+  renderMapContents();
+  saveMapState();
+  setStatus(`Duplicated ${original.name || "Sensor"}.`);
+  return dupe;
+}
+
+function deleteSensorById(sensorId, options = {}) {
+  const sensor = state.sensors.find((entry) => entry.id === sensorId);
+  if (!sensor) return false;
+  state.sensorMarkers.get(sensorId)?.remove();
+  state.sensorMarkers.delete(sensorId);
+  state.sensors = state.sensors.filter((entry) => entry.id !== sensorId);
+  state.mapContentAssignments.delete(`sensor:${sensorId}`);
+  state.hiddenContentIds.delete(`sensor:${sensorId}`);
+  state.hiddenLabelContentIds.delete(`sensor:${sensorId}`);
+  state.mapContentOrder = state.mapContentOrder.filter((entryId) => entryId !== `sensor:${sensorId}`);
+  if (_sensorsWorkspaceState.selectedSensorId === sensorId) _sensorsWorkspaceState.selectedSensorId = "";
+  if (!options.deferFinalize) {
+    renderSensorsView();
+    renderMapContents();
+    syncCesiumEntities();
+    saveMapState();
+  }
+  if (!options.silent) setStatus(`Removed ${sensor.name || "sensor"}.`);
+  return true;
+}
+
+function startSensorRelocation(sensorId) {
+  const sensor = state.sensors.find((entry) => entry.id === sensorId);
+  if (!sensor) return;
+  finishAssetRelocation(null);
+  finishTacticalRelocation(null);
+  finishImportedPointRelocation(null);
+  state.relocatingSensorId = sensorId;
+  switchView("map");
+  dom.map?.classList.add("asset-placement-active");
+  dom.cesiumContainer?.classList.add("asset-placement-active");
+  dom.mapStage?.classList.add("asset-placement-active");
+  if (state.map) {
+    state.map.dragging?.disable();
+    state.map.doubleClickZoom?.disable();
+    state.map.boxZoom?.disable();
+    state.map.keyboard?.disable();
+    state.map.getContainer().style.cursor = "crosshair";
+  }
+  updateCenterCrosshairVisibility();
+  setStatus(`Click map to ${hasSensorMapLocation(sensor) ? "relocate" : "place"} ${sensor.name}. Press Esc to cancel.`);
+}
+
+function finishSensorRelocation(latlng) {
+  const sensorId = state.relocatingSensorId;
+  state.relocatingSensorId = null;
+  dom.map?.classList.remove("asset-placement-active");
+  dom.cesiumContainer?.classList.remove("asset-placement-active");
+  dom.mapStage?.classList.remove("asset-placement-active");
+  if (state.map) {
+    state.map.dragging?.enable();
+    state.map.doubleClickZoom?.enable();
+    state.map.boxZoom?.enable();
+    state.map.keyboard?.enable();
+    state.map.getContainer().style.cursor = "";
+  }
+  updateCenterCrosshairVisibility();
+  if (!latlng || !sensorId) return;
+  const sensor = state.sensors.find((entry) => entry.id === sensorId);
+  if (!sensor) return;
+  sensor.lat = latlng.lat;
+  sensor.lon = latlng.lng;
+  sensor.version = (sensor.version ?? 1) + 1;
+  sensor.lastModified = nowIso();
+  addOrUpdateSensorMarker(sensor);
+  renderSensorsWorkspace();
+  renderMapContents();
+  syncCesiumEntities();
+  saveMapState();
+  setStatus(`${sensor.name} placed on map.`);
+}
+
 function getAssetIconSvg(type) {
   return EMITTER_ICONS[type] ?? EMITTER_ICONS.radio;
 }
@@ -24847,7 +26126,7 @@ function beginMapPlacementForEmitterAsset(assetId) {
   if (!asset) return;
   closeMapEmitterPickerModal();
   closeMapEmitterAddMenu();
-  setCurrentView("map");
+  switchView("map");
   state.editingAssetId = null;
   startAssetRelocation(`asset:${asset.id}`);
 }
@@ -27012,6 +28291,21 @@ async function parseGeoTiffTerrain(buffer, fileName) {
 }
 
 function cacheTerrainInWorker(terrain) {
+  if (!terrain?.id) {
+    return Promise.resolve();
+  }
+  if (state.terrainReadyIds.has(terrain.id)) {
+    return Promise.resolve();
+  }
+  if (state.terrainCacheResolvers.has(terrain.id)) {
+    return new Promise((resolve) => {
+      const previousResolve = state.terrainCacheResolvers.get(terrain.id);
+      state.terrainCacheResolvers.set(terrain.id, () => {
+        previousResolve?.();
+        resolve();
+      });
+    });
+  }
   const buildingPropagationMode = terrain.buildingPropagationMode ?? getBuildingPropagationMode();
   const elevations = terrain.elevations.slice(0);
   const baseElevations = terrain.baseElevations?.slice?.(0) ?? null;
@@ -27079,6 +28373,7 @@ function cacheTerrainInWorker(terrain) {
 }
 
 function clearTerrain() {
+  clearTopologyLinkProfileCache();
   state.terrains.forEach((terrain) => hideTerrainCoverage(terrain.id));
   state.terrains = [];
   state.activeTerrainId = null;
@@ -27371,6 +28666,7 @@ function buildLoadedTerrainCacheKey() {
 }
 
 function invalidateDerivedTerrainCaches() {
+  clearTopologyLinkProfileCache();
   state.ionTerrainCache.forEach((terrain) => {
     state.worker.postMessage({
       type: "terrain:remove",
@@ -29039,6 +30335,7 @@ function refreshActionButtons() {
 // which was the root cause of pan jitter and marker misalignment.
 const PANE_DEFS = [
   { name: "pane-assets",   zIndex: "620", pointerEvents: "auto"  },
+  { name: "pane-sensors",  zIndex: "622", pointerEvents: "auto"  },
   { name: "pane-imported", zIndex: "415", pointerEvents: "auto"  },
   { name: "pane-viewshed", zIndex: "410", pointerEvents: "none"  },
   { name: "pane-planning", zIndex: "408", pointerEvents: "none"  },
@@ -29058,6 +30355,7 @@ function ensureSharedPanes() {
 function getMapContentPaneName(contentId) {
   ensureSharedPanes();
   if (contentId.startsWith("asset:"))    return "pane-assets";
+  if (contentId.startsWith("sensor:"))   return "pane-sensors";
   if (contentId.startsWith("imported:")) return "pane-imported";
   if (contentId.startsWith("viewshed:")) return "pane-viewshed";
   if (contentId.startsWith("planning"))  return "pane-planning";
@@ -29106,6 +30404,25 @@ function getMapContentEntries() {
       subtitle: hasAssetMapLocation(asset)
         ? `${asset.type} | ${asset.unit}`
         : `${asset.type} | ${asset.unit} | Linked to mapped unit`,
+      anchoredToUnit: Boolean(effectivePosition?.tacticalObject),
+    });
+  });
+
+  state.sensors.filter((sensor) => Boolean(getSensorEffectiveMapPosition(sensor))).forEach((sensor) => {
+    const effectivePosition = getSensorEffectiveMapPosition(sensor);
+    const linkedUnit = Number.isFinite(Number(sensor.toUnitId)) ? getPlanUnitById(sensor.toUnitId) : null;
+    const linkedLabel = linkedUnit ? (linkedUnit.label || linkedUnit.designator || "") : "";
+    const displayName = linkedLabel ? `${linkedLabel}: ${sensor.name || "RF Sensor"}` : (sensor.name || "RF Sensor");
+    const statusParts = [
+      "sensor",
+      formatSensorFrequencyRange(sensor),
+      hasSensorMapLocation(sensor) ? "placed" : "linked unit position",
+    ];
+    entries.push({
+      id: `sensor:${sensor.id}`,
+      kind: "sensor",
+      name: displayName,
+      subtitle: statusParts.filter(Boolean).join(" | "),
       anchoredToUnit: Boolean(effectivePosition?.tacticalObject),
     });
   });
@@ -29962,6 +31279,9 @@ function getMapContentTypeIcon(entry) {
     const inner = EMITTER_ICONS[t].replace(/^<svg[^>]*>/, "").replace(/<\/svg>$/, "");
     return s(inner);
   }
+  if (entry.kind === "sensor") {
+    return s(`<circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none"/><path d="M7 12a5 5 0 0 1 10 0"/><path d="M4 12a8 8 0 0 1 16 0"/><path d="M12 15v6"/><path d="M8 21h8"/>`);
+  }
   if (entry.kind === "viewshed") {
     return s(`<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>`);
   }
@@ -30372,6 +31692,27 @@ function focusMapContent(contentId) {
     return;
   }
 
+  if (contentId.startsWith("sensor:")) {
+    const sensorId = contentId.slice("sensor:".length);
+    const sensor = state.sensors.find((entry) => entry.id === sensorId);
+    const marker = state.sensorMarkers.get(sensorId);
+    if (marker) {
+      state.map.setView(marker.getLatLng(), Math.max(state.map.getZoom(), 15));
+      marker.openPopup();
+      return;
+    }
+    const effectivePosition = sensor ? getSensorEffectiveMapPosition(sensor) : null;
+    if (!effectivePosition) {
+      return;
+    }
+    state.map.setView([effectivePosition.lat, effectivePosition.lon], Math.max(state.map.getZoom(), 15));
+    if (effectivePosition.tacticalObject) {
+      const layer = state.tacticalLayers.get(effectivePosition.tacticalObject.id);
+      layer?.openPopup?.();
+    }
+    return;
+  }
+
   if (contentId.startsWith("viewshed:")) {
     const viewshedId = contentId.slice("viewshed:".length);
     const viewshed = state.viewsheds.find((entry) => entry.id === viewshedId);
@@ -30473,6 +31814,7 @@ function openMapContentsMenu(event, contentId) {
   const isFolder = contentId.startsWith("folder:");
   const isTakLive = contentId.startsWith("taklive:");
   const isAsset = contentId.startsWith("asset:");
+  const isSensor = contentId.startsWith("sensor:");
   const isTactical = contentId.startsWith("tactical:");
   const editButton = dom.mapContentsMenu.querySelector('[data-map-content-action="edit"]');
   if (editButton) {
@@ -30488,7 +31830,7 @@ function openMapContentsMenu(event, contentId) {
   }
   const relocateButton = dom.mapContentsMenu.querySelector('[data-map-content-action="relocate"]');
   if (relocateButton) {
-    let canRelocate = isAsset;
+    let canRelocate = isAsset || isSensor;
     if (isTactical) {
       const object = getTacticalObjectById(contentId.slice("tactical:".length));
       canRelocate = Boolean(object && object.geometryType === "Point" && !object.readOnly);
@@ -30589,6 +31931,10 @@ function onMapContentsMenuAction(event) {
   if (action === "relocate") {
     if (contentId.startsWith("asset:")) {
       startAssetRelocation(contentId);
+      return;
+    }
+    if (contentId.startsWith("sensor:")) {
+      startSensorRelocation(contentId.slice("sensor:".length));
       return;
     }
     if (contentId.startsWith("tactical:")) {
@@ -30781,6 +32127,13 @@ function commitRenameMapContent() {
       updateAssetMarker(asset);
       renderAssets();
     }
+  } else if (contentId.startsWith("sensor:")) {
+    const sensor = state.sensors.find((entry) => entry.id === contentId.slice("sensor:".length));
+    if (sensor) {
+      sensor.name = nextName;
+      addOrUpdateSensorMarker(sensor);
+      renderSensorsWorkspace();
+    }
   } else if (contentId.startsWith("viewshed:")) {
     const viewshed = state.viewsheds.find((entry) => entry.id === contentId.slice("viewshed:".length));
     if (viewshed) {
@@ -30842,6 +32195,17 @@ function editMapContent(contentId) {
     openEmitterModal(asset);
     refreshActionButtons();
     setStatus(`Editing ${asset.name}.`);
+    return;
+  }
+
+  if (contentId.startsWith("sensor:")) {
+    const sensor = state.sensors.find((entry) => entry.id === contentId.slice("sensor:".length));
+    if (!sensor) {
+      return;
+    }
+    closeMapContentsMenu();
+    openSensorEditor(sensor.id);
+    setStatus(`Editing ${sensor.name}.`);
     return;
   }
 
@@ -31823,6 +33187,11 @@ function deleteMapContent(contentId, options = {}) {
 
   if (contentId.startsWith("asset:")) {
     removeAsset(contentId.slice("asset:".length), options);
+    return;
+  }
+
+  if (contentId.startsWith("sensor:")) {
+    deleteSensorById(contentId.slice("sensor:".length), options);
     return;
   }
 
@@ -34369,6 +35738,36 @@ function _syncCesiumEntitiesImmediate() {
       } : {}),
     });
   });
+
+  // --- SENSORS ---
+  state.sensors
+    .filter((sensor) => isVisible(`sensor:${sensor.id}`) && Boolean(getSensorEffectiveMapPosition(sensor)))
+    .forEach((sensor) => {
+      const position = getSensorEffectiveMapPosition(sensor);
+      const color = sensor.color || "#7dd3fc";
+      safeAddEntity({
+        id: `managed:sensor:${sensor.id}`,
+        position: C.Cartesian3.fromDegrees(position.lon, position.lat, 0),
+        point: {
+          pixelSize: 12,
+          color: C.Color.fromCssColorString(color),
+          outlineColor: C.Color.fromCssColorString("#0b1220"),
+          outlineWidth: 2,
+          heightReference: C.HeightReference.CLAMP_TO_GROUND,
+          disableDepthTestDistance: 0,
+        },
+        label: buildCesiumLabelOptions({
+          lat: position.lat,
+          lon: position.lon,
+          text: sensor.name || "RF Sensor",
+          font: "13px Bahnschrift",
+          fillColor: C.Color.fromCssColorString("#dbeafe"),
+          heightReference: C.HeightReference.CLAMP_TO_GROUND,
+          anchorMode: "above",
+          markerPixelSize: 12,
+        }),
+      });
+    });
 
   // --- GPS LOCATION ---
   if (state.gps.location) {
@@ -39086,6 +40485,193 @@ const _emittersWorkspaceState = {
   pendingSpawnLayout: null,
 };
 
+const _sensorsWorkspaceState = {
+  _initialized: false,
+  panX: 0,
+  panY: 0,
+  zoom: 1,
+  panning: false,
+  panStart: null,
+  dragging: null,
+  selectedSensorId: "",
+  contextSensorId: "",
+  editingSensorId: "",
+  pendingSpawnLayout: null,
+};
+
+const SENSOR_LIBRARY = Object.freeze([
+  {
+    id: "rtl-sdr-v4",
+    name: "RTL-SDR Blog V4",
+    category: "Commercial SDR",
+    frequencyMinMHz: 0.5,
+    frequencyMaxMHz: 1766,
+    instantaneousBandwidthMHz: 2.4,
+    channels: 1,
+    sensitivityDbm: -105,
+    antennaGainDbi: 0,
+    antennaHeightM: 2,
+    modes: "IQ, AM, FM, USB, LSB, CW",
+    notes: "Low-cost single-channel SDR receiver. Useful for monitoring narrow slices, training, and lightweight ground collection.",
+  },
+  {
+    id: "hackrf-one",
+    name: "HackRF One",
+    category: "Commercial SDR",
+    frequencyMinMHz: 1,
+    frequencyMaxMHz: 6000,
+    instantaneousBandwidthMHz: 20,
+    channels: 1,
+    sensitivityDbm: -100,
+    antennaGainDbi: 0,
+    antennaHeightM: 2,
+    modes: "Wideband IQ, AM, FM, USB, LSB, CW, digital demod via software",
+    notes: "Half-duplex SDR with broad coverage and useful instantaneous bandwidth for survey and analysis.",
+  },
+  {
+    id: "hackrf-pro",
+    name: "HackRF Pro",
+    category: "Commercial SDR",
+    frequencyMinMHz: 0.1,
+    frequencyMaxMHz: 6000,
+    instantaneousBandwidthMHz: 20,
+    channels: 1,
+    sensitivityDbm: -100,
+    antennaGainDbi: 0,
+    antennaHeightM: 2,
+    modes: "Wideband IQ, AM, FM, USB, LSB, CW, digital demod via software",
+    notes: "Wideband HackRF-class receiver with 100 kHz to 6 GHz operating coverage for spectrum awareness and survey planning.",
+  },
+  {
+    id: "caci-beast-plus",
+    name: "CACI Beast+",
+    category: "Military EW / SIGINT",
+    frequencyMinMHz: 0.5,
+    frequencyMaxMHz: 6000,
+    instantaneousBandwidthMHz: 80,
+    channels: 3,
+    demodulators: 16,
+    sensitivityDbm: -112,
+    antennaGainDbi: 2,
+    antennaHeightM: 2,
+    modes: "WFM, NFM, SFM, WAM, AM, NAM, USB, LSB, CW, DMR, P25, NXDN, TETRA, CUAS, near-peer waveforms",
+    notes: "Three-receiver tactical system with multiple simultaneous demodulators and broad 500 kHz to 6 GHz receive coverage.",
+  },
+  {
+    id: "caci-kraken",
+    name: "CACI Kraken",
+    category: "Military EW / SIGINT",
+    frequencyMinMHz: 2,
+    frequencyMaxMHz: 6000,
+    instantaneousBandwidthMHz: 160,
+    channels: 8,
+    demodulators: 8,
+    sensitivityDbm: -113,
+    antennaGainDbi: 2,
+    antennaHeightM: 2,
+    modes: "WFM, NFM, SFM, WAM, AM, NAM, USB, LSB, CW, DMR, APCO P25, NXDN, LTE, CDMA, WCDMA, GSM, WiFi, CUAS",
+    notes: "Eight-receiver tactical collection platform with wide 2 MHz to 6 GHz receive coverage and multi-demod support.",
+  },
+  {
+    id: "limesdr-usb",
+    name: "LimeSDR USB",
+    category: "Commercial SDR",
+    frequencyMinMHz: 0.1,
+    frequencyMaxMHz: 3800,
+    instantaneousBandwidthMHz: 61.44,
+    channels: 2,
+    sensitivityDbm: -104,
+    antennaGainDbi: 0,
+    antennaHeightM: 2,
+    modes: "2x2 MIMO IQ, AM, FM, digital demod via software",
+    notes: "Flexible 2x2 MIMO SDR for commercial experimentation, signals monitoring, and custom receive chains.",
+  },
+  {
+    id: "limesdr-mini-2",
+    name: "LimeSDR Mini 2.0",
+    category: "Commercial SDR",
+    frequencyMinMHz: 10,
+    frequencyMaxMHz: 3500,
+    instantaneousBandwidthMHz: 40,
+    channels: 1,
+    sensitivityDbm: -102,
+    antennaGainDbi: 0,
+    antennaHeightM: 2,
+    modes: "IQ, AM, FM, digital demod via software",
+    notes: "Compact SDR receiver useful for deployable monitoring and prototyping.",
+  },
+  {
+    id: "usrp-b200-b210",
+    name: "USRP B200 / B210",
+    category: "Commercial SDR",
+    frequencyMinMHz: 70,
+    frequencyMaxMHz: 6000,
+    instantaneousBandwidthMHz: 56,
+    channels: 2,
+    sensitivityDbm: -106,
+    antennaGainDbi: 0,
+    antennaHeightM: 2,
+    modes: "IQ, AM, FM, digital demod via GNU Radio / UHD",
+    notes: "Common lab and field SDR family with broad VHF through C-band coverage.",
+  },
+  {
+    id: "airspy-r2",
+    name: "Airspy R2",
+    category: "Commercial SDR",
+    frequencyMinMHz: 24,
+    frequencyMaxMHz: 1700,
+    instantaneousBandwidthMHz: 10,
+    channels: 1,
+    sensitivityDbm: -108,
+    antennaGainDbi: 0,
+    antennaHeightM: 2,
+    modes: "IQ, AM, FM, USB, LSB, CW",
+    notes: "High dynamic range VHF/UHF SDR receiver for monitoring and spectrum survey.",
+  },
+  {
+    id: "sdrplay-rspdx-r2",
+    name: "SDRplay RSPdx R2",
+    category: "Commercial SDR",
+    frequencyMinMHz: 0.001,
+    frequencyMaxMHz: 2000,
+    instantaneousBandwidthMHz: 10,
+    channels: 1,
+    sensitivityDbm: -108,
+    antennaGainDbi: 0,
+    antennaHeightM: 2,
+    modes: "AM, FM, USB, LSB, CW, digital demod via software",
+    notes: "HF through L-band monitoring receiver with multiple antenna inputs.",
+  },
+  {
+    id: "signal-hound-bb60c",
+    name: "Signal Hound BB60C",
+    category: "Commercial monitoring receiver",
+    frequencyMinMHz: 0.009,
+    frequencyMaxMHz: 6000,
+    instantaneousBandwidthMHz: 27,
+    channels: 1,
+    sensitivityDbm: -111,
+    antennaGainDbi: 0,
+    antennaHeightM: 2,
+    modes: "Real-time spectrum, IQ capture, AM, FM, digital demod via software",
+    notes: "Portable real-time spectrum analyzer and monitoring receiver.",
+  },
+  {
+    id: "rs-pr200",
+    name: "Rohde & Schwarz PR200",
+    category: "Military / professional monitoring receiver",
+    frequencyMinMHz: 0.008,
+    frequencyMaxMHz: 8000,
+    instantaneousBandwidthMHz: 40,
+    channels: 1,
+    sensitivityDbm: -114,
+    antennaGainDbi: 0,
+    antennaHeightM: 2,
+    modes: "AM, FM, USB, LSB, CW, I/Q, spectrum monitoring, direction-finding capable with DF antenna",
+    notes: "Rugged portable monitoring receiver for spectrum operations and direction finding workflows.",
+  },
+]);
+
 
 const UNIT_TYPE_SYMBOLS = {
   infantry:            "X",
@@ -41653,6 +43239,263 @@ function resolvedLinkQualityColor(quality) {
   return linkQualityColor(quality?.score);
 }
 
+function pruneTopologyLinkProfileCache(maxEntries = 300) {
+  while (state.topologyLinkProfileCache.size > maxEntries) {
+    const firstKey = state.topologyLinkProfileCache.keys().next().value;
+    if (firstKey === undefined) break;
+    state.topologyLinkProfileCache.delete(firstKey);
+  }
+}
+
+function consumeTopologyLinkProfileResult(payload = {}) {
+  const requestId = payload.requestId;
+  const entry = requestId ? state.topologyLinkProfileRequests.get(requestId) : null;
+  if (!entry) return;
+  clearTimeout(entry.timeoutId);
+  state.topologyLinkProfileRequests.delete(requestId);
+  state.topologyLinkProfilePendingKeys.delete(entry.cacheKey);
+  if (payload.error) {
+    entry.resolve(null);
+    return;
+  }
+  const result = { ...payload, receivedAt: Date.now() };
+  state.topologyLinkProfileCache.set(entry.cacheKey, result);
+  pruneTopologyLinkProfileCache();
+  entry.resolve(result);
+}
+
+function normalizeTopologyCacheNumber(value, digits = 5) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number.toFixed(digits) : "";
+}
+
+function buildTopologyWeatherCacheKey(weather = state.weather) {
+  return [
+    normalizeTopologyCacheNumber(weather.temperatureC, 1),
+    normalizeTopologyCacheNumber(weather.humidity, 0),
+    normalizeTopologyCacheNumber(weather.pressureHpa, 1),
+    normalizeTopologyCacheNumber(weather.windSpeedMps, 1),
+    weather.source || "",
+  ].join(",");
+}
+
+function buildTopologyEndpointCacheKey(endpoint = {}) {
+  return [
+    endpoint.id || endpoint.name || "",
+    normalizeTopologyCacheNumber(endpoint.lat, 6),
+    normalizeTopologyCacheNumber(endpoint.lon, 6),
+    normalizeTopologyCacheNumber(endpoint.antennaHeightM, 2),
+    normalizeTopologyCacheNumber(endpoint.frequencyMHz, 3),
+    normalizeTopologyCacheNumber(endpoint.powerW, 2),
+    normalizeTopologyCacheNumber(endpoint.antennaGainDbi, 2),
+    normalizeTopologyCacheNumber(endpoint.receiverSensitivityDbm, 1),
+    normalizeTopologyCacheNumber(endpoint.systemLossDb, 2),
+    endpoint.waveform || endpoint.ext?.waveform || "",
+    endpoint.netId || endpoint.net_id || "",
+    endpoint.version ?? "",
+  ].join(",");
+}
+
+function getTopologyPropagationModel() {
+  if (state.settings.cesiumOsmBuildingsEnabled || state.terrains.some((terrain) => terrain.osmBuildingsEnabled)) {
+    return "itu-buildings-weather";
+  }
+  return "itu-hybrid";
+}
+
+function getTopologyTerrainForPath(latA, lonA, latB, lonB) {
+  const midLat = (latA + latB) / 2;
+  const midLon = (lonA + lonB) / 2;
+  const midpointTerrain = findBestLocalTerrainForCoordinate(midLat, midLon);
+  if (midpointTerrain) return midpointTerrain;
+  const activeTerrain = getActiveTerrain();
+  if (activeTerrain && terrainContainsCoordinate(activeTerrain, midLat, midLon)) return activeTerrain;
+  return findBestLocalTerrainForCoordinate(latA, lonA)
+    || findBestLocalTerrainForCoordinate(latB, lonB)
+    || activeTerrain
+    || null;
+}
+
+function buildTopologyWorkerEndpoint(asset, position, frequencyMHz) {
+  const antennaGainDbi = Number.isFinite(Number(asset?.antennaGainDbi)) ? Number(asset.antennaGainDbi) : 2.15;
+  return {
+    id: asset?.id || asset?.name || "",
+    name: asset?.emitterLabel || asset?.name || "",
+    type: asset?.type || asset?.emitterType || "radio",
+    lat: Number(position.lat),
+    lon: Number(position.lon),
+    frequencyMHz,
+    powerW: Number.isFinite(Number(asset?.powerW)) ? Number(asset.powerW) : 5,
+    antennaHeightM: Number.isFinite(Number(asset?.antennaHeightM)) ? Number(asset.antennaHeightM) : 2,
+    antennaGainDbi,
+    receiverGainDbi: antennaGainDbi,
+    receiverSensitivityDbm: Number.isFinite(Number(asset?.receiverSensitivityDbm)) ? Number(asset.receiverSensitivityDbm) : -107,
+    systemLossDb: Number.isFinite(Number(asset?.systemLossDb)) ? Number(asset.systemLossDb) : 3,
+    waveform: asset?.ext?.waveform || asset?.waveform || "",
+    netId: asset?.netId || asset?.net_id || "",
+    version: asset?.version ?? "",
+  };
+}
+
+function buildTopologyPathProfileCacheKey({ terrain, propagationModel, clearancePolicy, endpointA, endpointB }) {
+  return [
+    propagationModel,
+    clearancePolicy,
+    terrain?.id || "no-terrain",
+    terrain?.rows || "",
+    terrain?.cols || "",
+    terrain?.sourceType || "",
+    terrain?.terrainCompleteness || "",
+    state.activeTerrainId || "",
+    buildLoadedTerrainCacheKey(),
+    buildCesiumTerrainProviderKey(),
+    usesCesiumOsmBuildings() ? "buildings-on" : "buildings-off",
+    getBuildingPropagationMode(),
+    state.settings.buildingMaterialPreset,
+    buildTopologyWeatherCacheKey(),
+    buildTopologyEndpointCacheKey(endpointA),
+    buildTopologyEndpointCacheKey(endpointB),
+  ].join("|");
+}
+
+function requestTopologyWorkerLinkProfile(payload, cacheKey) {
+  if (!state.worker || !cacheKey) return Promise.resolve(null);
+  const cached = state.topologyLinkProfileCache.get(cacheKey);
+  if (cached) {
+    return Promise.resolve({ ...cached, cached: true });
+  }
+  const pending = state.topologyLinkProfilePendingKeys.get(cacheKey);
+  if (pending) return pending;
+
+  const requestId = `topo-link-${++state.topologyLinkProfileRequestSeq}`;
+  const promise = new Promise((resolve) => {
+    const timeoutId = window.setTimeout(() => {
+      state.topologyLinkProfileRequests.delete(requestId);
+      state.topologyLinkProfilePendingKeys.delete(cacheKey);
+      resolve(null);
+    }, 1400);
+    state.topologyLinkProfileRequests.set(requestId, { cacheKey, resolve, timeoutId });
+    state.worker.postMessage({
+      type: "link-profile:start",
+      payload: { ...payload, requestId },
+    });
+  });
+  state.topologyLinkProfilePendingKeys.set(cacheKey, promise);
+  return promise;
+}
+
+async function getTopologyPathProfileForLink(a, b, context) {
+  const { latA, lonA, latB, lonB, fMhz } = context;
+  const endpointA = buildTopologyWorkerEndpoint(a, { lat: latA, lon: lonA }, fMhz);
+  const endpointB = buildTopologyWorkerEndpoint(b, { lat: latB, lon: lonB }, fMhz);
+  const terrain = getTopologyTerrainForPath(latA, lonA, latB, lonB);
+  if (terrain && !state.terrainReadyIds.has(terrain.id)) {
+    try {
+      await cacheTerrainInWorker(terrain);
+    } catch {}
+  }
+  const propagationModel = getTopologyPropagationModel();
+  const clearancePolicy = propagationModel === "itu-buildings-weather" ? "fresnel-60-buildings" : "fresnel-60";
+  const cacheKey = buildTopologyPathProfileCacheKey({
+    terrain,
+    propagationModel,
+    clearancePolicy,
+    endpointA,
+    endpointB,
+  });
+  return requestTopologyWorkerLinkProfile({
+    terrainId: terrain?.id || "",
+    txAsset: endpointA,
+    rxTarget: endpointB,
+    weather: state.weather,
+    propagationModel,
+    clearancePolicy,
+  }, cacheKey);
+}
+
+function terrainSourceLabel(source) {
+  switch (source) {
+    case "hybrid": return "Hybrid";
+    case "cesium": return "Cesium";
+    case "cesium-world": return "Cesium";
+    case "cesium-custom": return "Cesium";
+    case "geotiff": return "GeoTIFF";
+    case "dted": return "DTED";
+    default: return "No terrain";
+  }
+}
+
+function terrainSourceLabelFromLos(los, workerProfile) {
+  if (workerProfile?.terrainSourceLabel) return workerProfile.terrainSourceLabel;
+  if (workerProfile?.terrainSource) return terrainSourceLabel(workerProfile.terrainSource);
+  if (los?.hasTerrain) return terrainSourceLabel(los.source || "dted");
+  return "No terrain";
+}
+
+function confidenceLabelForTerrainSource(los, workerProfile) {
+  if (!los?.hasTerrain && !workerProfile?.terrainId) return "Low";
+  const completeness = los?.terrainCompleteness || workerProfile?.terrainCompleteness || "full";
+  if (completeness === "partial") return "Medium";
+  if (terrainSourceLabelFromLos(los, workerProfile) === "Cesium") return "Medium";
+  return "High";
+}
+
+function buildTopologyTerrainFromWorkerProfile(workerProfile, fallbackDistanceM) {
+  const profile = workerProfile?.forwardProfile || workerProfile?.reverseProfile;
+  if (!profile) return null;
+  return {
+    hasTerrain: true,
+    source: workerProfile.terrainSource || "dted",
+    blocked: profile.geometricLosClear === false,
+    minClearanceM: Number.isFinite(Number(profile.minClearanceM)) ? Number(profile.minClearanceM) : null,
+    minFresnelClearanceM: Number.isFinite(Number(profile.minFresnelClearanceM)) ? Number(profile.minFresnelClearanceM) : null,
+    minRequiredFresnelClearanceM: Number.isFinite(Number(profile.minRequiredFresnelClearanceM)) ? Number(profile.minRequiredFresnelClearanceM) : null,
+    fresnelClear: profile.fresnelClear ?? null,
+    fresnelPolicyClear: profile.passesPolicy ?? null,
+    buildingBlocked: Boolean(profile.buildingBlocked),
+    distanceM: Number.isFinite(Number(profile.distanceKm)) ? Number(profile.distanceKm) * 1000 : fallbackDistanceM,
+    terrainCompleteness: workerProfile.terrainCompleteness || "full",
+  };
+}
+
+function computeTopologyFresnelImpact(los, flags = {}) {
+  if (!los?.hasTerrain) {
+    return { penaltyDb: 0, scorePenalty: 0, deficitM: 0, message: "" };
+  }
+  const minRequired = Number(los.minRequiredFresnelClearanceM);
+  if (!Number.isFinite(minRequired) || minRequired >= 0) {
+    return { penaltyDb: 0, scorePenalty: 0, deficitM: 0, message: "" };
+  }
+  const deficitM = Math.abs(minRequired);
+  const isMesh = Boolean(flags.isMesh);
+  const isUhfLike = Boolean(flags.isUhfLike);
+  const isVhfLike = Boolean(flags.isVhfLike);
+  const isHfLike = Boolean(flags.isHfLike);
+  const dbScale = isMesh ? 0.65 : isUhfLike ? 0.52 : isVhfLike ? 0.35 : isHfLike ? 0.08 : 0.25;
+  const dbBase = isMesh ? 6 : isUhfLike ? 5 : isVhfLike ? 3 : isHfLike ? 1 : 2;
+  const dbCap = isMesh ? 30 : isUhfLike ? 24 : isVhfLike ? 16 : isHfLike ? 5 : 12;
+  const penaltyDb = Math.min(dbCap, dbBase + deficitM * dbScale);
+  const scorePenalty = Math.min(isMesh || isUhfLike ? 18 : 12, 4 + deficitM * (isHfLike ? 0.2 : 0.55));
+  return {
+    penaltyDb,
+    scorePenalty,
+    deficitM,
+    message: `Fresnel clearance is tight despite geometric LOS: 60% zone is short by ${deficitM.toFixed(1)} m, adding ~${penaltyDb.toFixed(1)} dB excess loss.`,
+  };
+}
+
+function formatTopologyLinkSourceLine(quality) {
+  if (isUnplacedLinkQuality(quality)) {
+    return "Terrain: Not assessed until placed";
+  }
+  const parts = [`Terrain: ${quality?.terrainSourceLabel || "No terrain"}`];
+  if (quality?.buildingAware) parts.push("Building-aware");
+  if (quality?.engineSource) parts.push(`Model: ${String(quality.engineSource).startsWith("wasm") ? "WASM" : "JS"}`);
+  if (quality?.confidenceLabel) parts.push(`Confidence: ${quality.confidenceLabel}`);
+  if (quality?.pathProfileCached) parts.push("cached");
+  return parts.join(" | ");
+}
+
 function buildUnplacedLinkQuality(a, b) {
   const reasons = [];
   const missing = [];
@@ -41678,6 +43521,10 @@ function buildUnplacedLinkQuality(a, b) {
     forwardMarginDb: null,
     reverseMarginDb: null,
     notPlaced: true,
+    terrainSourceLabel: "No terrain",
+    confidenceLabel: "Low",
+    engineSource: null,
+    pathProfileCached: false,
   };
 }
 
@@ -41779,6 +43626,10 @@ async function assessLinkQuality(a, b) {
       reverseRssiDbm: null,
       forwardMarginDb: null,
       reverseMarginDb: null,
+      terrainSourceLabel: "No terrain",
+      confidenceLabel: "Low",
+      engineSource: "inline",
+      pathProfileCached: false,
     };
   }
 
@@ -41787,6 +43638,12 @@ async function assessLinkQuality(a, b) {
   const fspl = fsplDb(fMhz, distM);
   const radioHorizonKm = 3.57 * (Math.sqrt(Math.max(h1, 0)) + Math.sqrt(Math.max(h2, 0)));
   let los = { hasTerrain: false };
+  let workerProfile = null;
+  let topologyModelUsed = "inline";
+  let terrainSourceForDetail = "No terrain";
+  let terrainConfidence = "Low";
+  let buildingAwareProfile = false;
+  let fresnelImpact = { penaltyDb: 0, scorePenalty: 0, deficitM: 0, message: "" };
   let terrainPenaltyDb = 0;
   let horizonPenaltyDb = 0;
   let severeBlockedLos = false;
@@ -41794,7 +43651,13 @@ async function assessLinkQuality(a, b) {
   const weatherLossDb = topologyAtmosphericAttenuation(fMhz, state.weather, weatherDistanceKm);
 
   if (!isSatcom) {
-    los = await computeTerrainLosAsync(latA, lonA, h1, latB, lonB, h2);
+    workerProfile = await getTopologyPathProfileForLink(a, b, { latA, lonA, latB, lonB, fMhz });
+    topologyModelUsed = workerProfile?.engine || topologyModelUsed;
+    const workerTerrain = buildTopologyTerrainFromWorkerProfile(workerProfile, distM);
+    los = workerTerrain || await computeTerrainLosAsync(latA, lonA, h1, latB, lonB, h2, fMhz);
+    terrainSourceForDetail = terrainSourceLabelFromLos(los, workerProfile);
+    terrainConfidence = confidenceLabelForTerrainSource(los, workerProfile);
+    buildingAwareProfile = Boolean(workerProfile?.buildingAware || los?.buildingBlocked);
     if (los.hasTerrain) {
       if (los.blocked && los.minClearanceM < 0) {
         const obstructionM = Math.abs(los.minClearanceM);
@@ -41834,10 +43697,22 @@ async function assessLinkQuality(a, b) {
           score = Math.min(score, 6);
           reasons.push("Terrain blockage is severe enough that this ground link should be treated as effectively non-viable, not merely degraded.");
         }
-        reasons.push(`Terrain blocked (${los.source === "hybrid" ? "local terrain + Cesium" : los.source === "cesium" ? "Cesium terrain" : "DTED"}): ${obstructionM.toFixed(0)} m obstruction, ${fresnelRadiusM.toFixed(1)} m Fresnel radius, ~${terrainPenaltyDb.toFixed(1)} dB excess loss.`);
+        reasons.push(`Terrain blocked (${terrainSourceForDetail}): ${obstructionM.toFixed(0)} m obstruction, ${fresnelRadiusM.toFixed(1)} m Fresnel radius, ~${terrainPenaltyDb.toFixed(1)} dB excess loss.`);
       } else {
         const clr = Number.isFinite(los.minClearanceM) ? `${los.minClearanceM.toFixed(0)} m clearance` : "clear";
-        reasons.push(`Terrain LOS clear (${los.source === "hybrid" ? "local terrain + Cesium" : los.source === "cesium" ? "Cesium terrain" : "DTED"}): ${clr}.`);
+        reasons.push(`Terrain LOS clear (${terrainSourceForDetail}): ${clr}.`);
+        fresnelImpact = computeTopologyFresnelImpact(los, { isMesh, isUhfLike, isVhfLike, isHfLike });
+        if (fresnelImpact.penaltyDb > 0) {
+          terrainPenaltyDb += fresnelImpact.penaltyDb;
+          score -= fresnelImpact.scorePenalty;
+          reasons.push(fresnelImpact.message);
+        } else if (Number.isFinite(Number(los.minRequiredFresnelClearanceM))) {
+          reasons.push(`Fresnel clearance meets the 60% planning check (${Number(los.minRequiredFresnelClearanceM).toFixed(1)} m reserve).`);
+        }
+      }
+      if (buildingAwareProfile && los.buildingBlocked) {
+        score -= 12;
+        reasons.push("Building-aware profile reports structure obstruction along the path.");
       }
     } else {
       reasons.push("No terrain data available â€” terrain effects omitted from the estimate.");
@@ -41863,7 +43738,7 @@ async function assessLinkQuality(a, b) {
     reasons.push(`Weather profile (${state.weather.source === "open-meteo" ? "live stream" : "manual"}) adds negligible atmospheric loss.`);
   }
 
-  function estimateOneWayBudget(tx, rx) {
+  function estimateOneWayBudget(tx, rx, workerSimulation = null) {
     const txPowerW = Math.max(Number(tx.powerW) || 0, 0.1);
     const txGainDbi = Number.isFinite(tx.antennaGainDbi) ? tx.antennaGainDbi : 2.15;
     const rxGainDbi = Number.isFinite(rx.antennaGainDbi) ? rx.antennaGainDbi : 2.15;
@@ -41871,14 +43746,23 @@ async function assessLinkQuality(a, b) {
     const rxLossDb = Number.isFinite(rx.systemLossDb) ? rx.systemLossDb : 3;
     const rxSensDbm = Number.isFinite(rx.receiverSensitivityDbm) ? rx.receiverSensitivityDbm : -107;
     const eirpDbm = wattsToDbm(txPowerW) + txGainDbi - txLossDb;
+    if (workerSimulation && Number.isFinite(Number(workerSimulation.rssiDbm))) {
+      const extraLossDb = Math.max(0, Number(fresnelImpact.penaltyDb) || 0);
+      const rssiDbm = Number(workerSimulation.rssiDbm) - extraLossDb;
+      const pathLossDb = Number.isFinite(Number(workerSimulation.pathLossDb))
+        ? Number(workerSimulation.pathLossDb) + extraLossDb
+        : null;
+      const marginDb = rssiDbm - rxSensDbm;
+      return { eirpDbm, rssiDbm, marginDb, rxSensDbm, pathLossDb };
+    }
     const pathLossDb = (isSatcom ? 0 : fspl + terrainPenaltyDb + horizonPenaltyDb) + weatherLossDb;
     const rssiDbm = eirpDbm + rxGainDbi - pathLossDb - rxLossDb;
     const marginDb = rssiDbm - rxSensDbm;
     return { eirpDbm, rssiDbm, marginDb, rxSensDbm, pathLossDb };
   }
 
-  const ab = estimateOneWayBudget(a, b);
-  const ba = estimateOneWayBudget(b, a);
+  const ab = estimateOneWayBudget(a, b, workerProfile?.forwardSimulation || workerProfile?.forwardProfile);
+  const ba = estimateOneWayBudget(b, a, workerProfile?.reverseSimulation || workerProfile?.reverseProfile);
   const worst = ab.marginDb <= ba.marginDb ? ab : ba;
   const asymmetryDb = Math.abs(ab.marginDb - ba.marginDb);
 
@@ -41919,6 +43803,16 @@ async function assessLinkQuality(a, b) {
     forwardMarginDb: ab.marginDb,
     reverseMarginDb: ba.marginDb,
     isSatcom,
+    terrainSourceLabel: isSatcom ? "SATCOM/BLOS" : terrainSourceForDetail,
+    confidenceLabel: isSatcom ? "Medium" : terrainConfidence,
+    engineSource: topologyModelUsed,
+    pathProfileCached: Boolean(workerProfile?.cached),
+    propagationModel: workerProfile?.propagationModel || (isSatcom ? "satcom" : getTopologyPropagationModel()),
+    buildingAware: buildingAwareProfile,
+    fresnelPenaltyDb: fresnelImpact.penaltyDb,
+    fresnelDeficitM: fresnelImpact.deficitM,
+    minFresnelClearanceM: los?.minFresnelClearanceM ?? null,
+    minRequiredFresnelClearanceM: los?.minRequiredFresnelClearanceM ?? null,
   };
 }
 
@@ -41950,6 +43844,7 @@ function showTopoLinkDetail(a, b, quality, nameA, nameB) {
   if (title) title.textContent = `${nameA} â†” ${nameB}`;
   const scoreColor = linkQualityColor(quality.score);
   const t = quality.terrain;
+  const sourceLine = formatTopologyLinkSourceLine(quality);
   const terrainBadge = !t ? `<span style="color:var(--muted);font-size:0.65rem">â›° No terrain data</span>`
     : t.blocked
       ? `<span style="color:#ef4444;font-size:0.65rem">â›° LOS BLOCKED Â· ${Math.abs(t.minClearanceM).toFixed(0)} m obstruction${t.source === "hybrid" ? " Â· Hybrid" : t.source === "cesium" ? " Â· Cesium" : " Â· DTED"}</span>`
@@ -41968,7 +43863,8 @@ function showTopoLinkDetail(a, b, quality, nameA, nameB) {
       <div>
         <strong style="color:${scoreColor}">${quality.label}</strong><br>
         <span style="color:var(--muted);font-size:0.7rem">Link Quality Score (0â€“100)</span><br>
-        ${terrainBadge}
+        ${terrainBadge}<br>
+        <span style="color:var(--muted);font-size:0.64rem">${esc(sourceLine)}</span>
       </div>
     </div>
     ${statsRow}
@@ -41991,6 +43887,7 @@ function showEmitterWorkspaceLinkDetail(a, b, quality, nameA, nameB) {
   const isUnplaced = isUnplacedLinkQuality(quality);
   const scoreColor = resolvedLinkQualityColor(quality);
   const terrain = quality?.terrain;
+  const sourceLine = formatTopologyLinkSourceLine(quality);
   let terrainBadge = `<span style="color:var(--muted);font-size:0.65rem">No terrain data</span>`;
   if (isUnplaced) {
     terrainBadge = `<span style="color:#94a3b8;font-size:0.65rem">Placement status: Not placed on map</span>`;
@@ -42013,7 +43910,8 @@ function showEmitterWorkspaceLinkDetail(a, b, quality, nameA, nameB) {
       <div>
         <strong style="color:${scoreColor}">${esc(quality?.label || "Unknown")}</strong><br>
         <span style="color:var(--muted);font-size:0.7rem">${isUnplaced ? "Compatible RF settings, but not placed on map" : "Link Quality Score (0-100)"}</span><br>
-        ${terrainBadge}
+        ${terrainBadge}<br>
+        <span style="color:var(--muted);font-size:0.64rem">${esc(sourceLine)}</span>
       </div>
     </div>
     ${statsRow}
@@ -42056,6 +43954,96 @@ function getRectRayExitPoint(cx, cy, width, height, angleRad, extra = 0) {
     x: cx + dx * (scale + extra),
     y: cy + dy * (scale + extra),
   };
+}
+
+function getEmitterWorkspaceLinkTooltipHtml(lnk) {
+  if (!lnk) return "";
+  if (isUnplacedLinkQuality(lnk.quality)) {
+    return `<strong>${esc(lnk.nameA)} &#8594; ${esc(lnk.nameB)}</strong><br>` +
+      `Status: <strong>${esc(lnk.quality?.label || "Not Placed")}</strong><br>` +
+      `Place the emitters on the map to assess this link.`;
+  }
+  const rxA = Number.isFinite(lnk.quality?.reverseRssiDbm) ? `${lnk.quality.reverseRssiDbm.toFixed(1)} dBm` : "N/A";
+  const rxB = Number.isFinite(lnk.quality?.forwardRssiDbm) ? `${lnk.quality.forwardRssiDbm.toFixed(1)} dBm` : "N/A";
+  const sourceLine = formatTopologyLinkSourceLine(lnk.quality);
+  return `<strong>${esc(lnk.nameA)} &#8596; ${esc(lnk.nameB)}</strong><br>` +
+    `Quality: <strong>${esc(lnk.quality?.label || "Unknown")}</strong> (${Math.round(Number(lnk.quality?.score) || 0)})<br>` +
+    `${esc(lnk.nameA)} RX: ${rxA}<br>` +
+    `${esc(lnk.nameB)} RX: ${rxB}<br>` +
+    `<span style="color:var(--muted)">${esc(sourceLine)}</span>`;
+}
+
+function positionTopoLinkTooltip(tooltip, event) {
+  if (!tooltip || !event) return;
+  tooltip.style.display = "block";
+  tooltip.style.left = `${event.clientX + 12}px`;
+  tooltip.style.top = `${event.clientY - 8}px`;
+}
+
+function openEmitterWorkspaceLinkDetailFromDescriptor(lnk) {
+  if (!lnk) return;
+  showEmitterWorkspaceLinkDetail(lnk.emA, lnk.emB, lnk.quality, lnk.nameA, lnk.nameB);
+}
+
+function appendInteractiveTopoLink(svg, lnk, coords, tooltip) {
+  if (!svg || !lnk || !coords) return;
+  const cls = resolvedLinkQualityClass(lnk.quality);
+  const hitLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
+  hitLine.setAttribute("x1", coords.x1);
+  hitLine.setAttribute("y1", coords.y1);
+  hitLine.setAttribute("x2", coords.x2);
+  hitLine.setAttribute("y2", coords.y2);
+  hitLine.setAttribute("stroke-width", String(TOPO_LINK_HIT_STROKE_WIDTH));
+  hitLine.setAttribute("vector-effect", "non-scaling-stroke");
+  hitLine.setAttribute("class", "topo-link-hit");
+  hitLine.setAttribute("role", "button");
+  hitLine.setAttribute("tabindex", "0");
+  hitLine.setAttribute("aria-label", `Open RF link details for ${lnk.nameA} to ${lnk.nameB}`);
+
+  const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+  line.setAttribute("x1", coords.x1);
+  line.setAttribute("y1", coords.y1);
+  line.setAttribute("x2", coords.x2);
+  line.setAttribute("y2", coords.y2);
+  line.setAttribute("stroke-width", "2.5");
+  line.setAttribute("class", `topo-link ${cls} ${lnk.typeClass || ""}`);
+  line.setAttribute("aria-hidden", "true");
+  line.style.stroke = resolvedLinkQualityColor(lnk.quality);
+  line.style.pointerEvents = "none";
+
+  const showTooltip = (event) => {
+    line.classList.add("is-hovered");
+    positionTopoLinkTooltip(tooltip, event);
+    if (tooltip) tooltip.innerHTML = getEmitterWorkspaceLinkTooltipHtml(lnk);
+  };
+  const hideTooltip = () => {
+    line.classList.remove("is-hovered");
+    if (tooltip) tooltip.style.display = "none";
+  };
+  const openDetail = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    openEmitterWorkspaceLinkDetailFromDescriptor(lnk);
+  };
+
+  hitLine.addEventListener("mousemove", showTooltip);
+  hitLine.addEventListener("mouseenter", showTooltip);
+  hitLine.addEventListener("mouseleave", hideTooltip);
+  hitLine.addEventListener("mousedown", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  });
+  hitLine.addEventListener("pointerdown", (event) => {
+    event.stopPropagation();
+  });
+  hitLine.addEventListener("click", openDetail);
+  hitLine.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    openDetail(event);
+  });
+
+  svg.appendChild(hitLine);
+  svg.appendChild(line);
 }
 
 let _mapTakDebugCollapsed = true;
@@ -42512,6 +44500,7 @@ const _topoNodePositions = new Map();
 const _topoManualPositions = new Map();
 // Link descriptors for live redraw during drag
 let _topoLinkDescriptors = [];
+const TOPO_LINK_HIT_STROKE_WIDTH = 28;
 
 function getTopoManualPositionKey(mode, key) {
   return `${mode}:${key}`;
@@ -42723,7 +44712,12 @@ function redrawTopoLinks() {
         e.stopPropagation();
         showEmitterWorkspaceLinkDetail(lnk.emA, lnk.emB, lnk.quality, lnk.nameA, lnk.nameB);
       });
-      svg.appendChild(line);
+      appendInteractiveTopoLink(svg, lnk, {
+        x1: start.x,
+        y1: start.y,
+        x2: end.x,
+        y2: end.y,
+      }, tooltip);
     });
   }
 }
