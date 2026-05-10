@@ -10,9 +10,11 @@ self.addEventListener("message", async (event) => {
     if (type === "terrain:cache") {
       terrainCache.set(payload.id, payload);
       clearComputationCaches();
-      try {
-        getComputeEngine()?.cacheTerrain?.(payload);
-      } catch {}
+      if (!isTerrainCollection(payload)) {
+        try {
+          getComputeEngine()?.cacheTerrain?.(payload);
+        } catch {}
+      }
       self.postMessage({
         type: "terrain:cached",
         payload: { id: payload.id },
@@ -152,6 +154,9 @@ function primeComputeEngineLoad() {
       computeEngineState.error = engine?.kind === "wasm" ? "" : (engine?.error || "");
       if (computeEngineState.active?.cacheTerrain) {
         terrainCache.forEach((terrain) => {
+          if (isTerrainCollection(terrain)) {
+            return;
+          }
           try {
             computeEngineState.active.cacheTerrain(terrain);
           } catch {}
@@ -182,6 +187,69 @@ function getComputeEngineLabel() {
   return computeEngineState.mode === "wasm"
     ? `wasm:${computeEngineState.version || "unknown"}`
     : "js";
+}
+
+function isTerrainCollection(terrain) {
+  return Array.isArray(terrain?.tileIds);
+}
+
+function terrainContainsCoordinate(terrain, lat, lon) {
+  if (isTerrainCollection(terrain)) {
+    return getTerrainCollectionTiles(terrain).some((tile) => terrainContainsCoordinate(tile, lat, lon));
+  }
+  if (!terrain?.bounds) {
+    return false;
+  }
+  return (
+    lat >= terrain.bounds.sw.lat
+    && lat <= terrain.bounds.ne.lat
+    && lon >= terrain.bounds.sw.lon
+    && lon <= terrain.bounds.ne.lon
+  );
+}
+
+function getTerrainCellResolutionMeters(terrain, latitude = terrain?.origin?.lat ?? 0) {
+  if (!terrain) {
+    return Number.POSITIVE_INFINITY;
+  }
+  if (isTerrainCollection(terrain)) {
+    const tiles = getTerrainCollectionTiles(terrain);
+    if (!tiles.length) {
+      return Number.POSITIVE_INFINITY;
+    }
+    return Math.min(...tiles.map((tile) => getTerrainCellResolutionMeters(tile, latitude)));
+  }
+  const latMeters = Math.abs(terrain.latStepDeg ?? 0) * 111320;
+  const lonMeters = Math.abs(terrain.lonStepDeg ?? 0) * 111320 * Math.max(Math.cos((latitude * Math.PI) / 180), 1e-6);
+  return Math.max(1, Math.min(latMeters || Number.POSITIVE_INFINITY, lonMeters || Number.POSITIVE_INFINITY));
+}
+
+function getTerrainCollectionTiles(terrain) {
+  if (!isTerrainCollection(terrain)) {
+    return [];
+  }
+  if (Array.isArray(terrain.tiles)) {
+    return terrain.tiles.filter((tile) => tile && !isTerrainCollection(tile));
+  }
+  return terrain.tileIds
+    .map((id) => terrainCache.get(id))
+    .filter((tile) => tile && !isTerrainCollection(tile))
+    .sort((left, right) => getTerrainCellResolutionMeters(left) - getTerrainCellResolutionMeters(right));
+}
+
+function hydrateTerrainCollection(terrain) {
+  if (!isTerrainCollection(terrain)) {
+    return terrain;
+  }
+  const tiles = getTerrainCollectionTiles(terrain);
+  return {
+    ...terrain,
+    tiles,
+    activeTileCount: tiles.length,
+    sourceType: terrain.sourceType || "terrain-set",
+    sourceLabel: terrain.sourceLabel || `${tiles.length} local terrain tiles`,
+    terrainCompleteness: terrain.terrainCompleteness || "mosaic",
+  };
 }
 
 function memoize(map, key, factory, maxEntries = 6000) {
@@ -835,7 +903,7 @@ function serializeLeg(label, from, to, profile) {
 
 function buildPathProfile(source, target, terrain, weather, propagationModel, clearancePolicy = "geometric-los") {
   const engine = getComputeEngine();
-  if (engine?.buildPathProfile && terrain?.id) {
+  if (engine?.buildPathProfile && terrain?.id && !isTerrainCollection(terrain)) {
     try {
       return engine.buildPathProfile(terrain.id, source, target, weather, propagationModel, clearancePolicy);
     } catch {}
@@ -986,7 +1054,7 @@ function runPointToPointLinkProfile(payload = {}) {
 
 function simulateLink(txAsset, rxTarget, terrain, weather, propagationModel) {
   const engine = getComputeEngine();
-  if (engine?.simulateLink) {
+  if (engine?.simulateLink && !isTerrainCollection(terrain)) {
     try {
       return engine.simulateLink(terrain?.id || "", txAsset, rxTarget, weather, propagationModel);
     } catch {}
@@ -1081,7 +1149,7 @@ function traceTerrain(source, target, txHeightM, rxHeightM, terrain) {
     };
   }
   const engine = getComputeEngine();
-  if (engine?.traceTerrain && terrain?.id) {
+  if (engine?.traceTerrain && terrain?.id && !isTerrainCollection(terrain)) {
     try {
       return engine.traceTerrain(terrain.id, source, target, txHeightM, rxHeightM);
     } catch {}
@@ -1160,6 +1228,13 @@ function traceTerrain(source, target, txHeightM, rxHeightM, terrain) {
 }
 
 function estimateTraceSampleMeters(terrain, latitude) {
+  if (isTerrainCollection(terrain)) {
+    const tiles = getTerrainCollectionTiles(terrain);
+    if (!tiles.length) {
+      return 30;
+    }
+    return Math.min(...tiles.map((tile) => estimateTraceSampleMeters(tile, latitude)));
+  }
   const latMeters = Math.abs(terrain.latStepDeg ?? 0) * 111320;
   const lonMeters = Math.abs(terrain.lonStepDeg ?? 0) * 111320 * Math.max(Math.cos((latitude * Math.PI) / 180), 1e-6);
   const cellMeters = Math.max(1, Math.min(latMeters || Number.POSITIVE_INFINITY, lonMeters || Number.POSITIVE_INFINITY));
@@ -1189,6 +1264,19 @@ function sampleTerrainBase(lat, lon, terrain) {
 }
 
 function sampleObstructionComponents(lat, lon, terrain, losReferenceHeight = null) {
+  if (isTerrainCollection(terrain)) {
+    const tiles = getTerrainCollectionTiles(terrain)
+      .filter((tile) => terrainContainsCoordinate(tile, lat, lon))
+      .sort((left, right) => getTerrainCellResolutionMeters(left, lat) - getTerrainCellResolutionMeters(right, lat));
+    for (const tile of tiles) {
+      const obstruction = sampleObstructionComponents(lat, lon, tile, losReferenceHeight);
+      if (obstruction) {
+        return obstruction;
+      }
+    }
+    return null;
+  }
+
   const terrainHeight = sampleTerrain(lat, lon, terrain);
   if (!Number.isFinite(terrainHeight)) {
     return null;
@@ -1371,6 +1459,18 @@ function sampleTerrainField(lat, lon, terrain, fieldName) {
   if (!terrain) {
     return null;
   }
+  if (isTerrainCollection(terrain)) {
+    const tiles = getTerrainCollectionTiles(terrain)
+      .filter((tile) => terrainContainsCoordinate(tile, lat, lon))
+      .sort((left, right) => getTerrainCellResolutionMeters(left, lat) - getTerrainCellResolutionMeters(right, lat));
+    for (const tile of tiles) {
+      const result = sampleTerrainField(lat, lon, tile, fieldName);
+      if (result !== null) {
+        return result;
+      }
+    }
+    return null;
+  }
   const engine = getComputeEngine();
   if (engine?.sampleTerrainField && terrain?.id) {
     try {
@@ -1533,7 +1633,8 @@ function resolveTerrain(terrainId) {
   if (!terrainId) {
     return null;
   }
-  return terrainCache.get(terrainId) ?? null;
+  const terrain = terrainCache.get(terrainId) ?? null;
+  return terrain ? hydrateTerrainCollection(terrain) : null;
 }
 
 function polygonBounds(polygon) {

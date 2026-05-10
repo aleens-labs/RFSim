@@ -697,6 +697,35 @@ body[data-current-view="analyze"] .top-bar-left {
   max-height: 180px;
   overflow: auto;
 }
+
+.terrain-list-shell {
+  margin-top: 12px;
+  min-height: 320px;
+}
+
+.terrain-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.terrain-bulk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.terrain-tile-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+  max-height: min(58vh, 720px);
+  overflow: auto;
+  padding-right: 4px;
+}
 .menu-title-row {
   display: flex;
   align-items: center;
@@ -4839,8 +4868,27 @@ button:focus {
   gap: 10px;
 }
 
+.terrain-tile-list .terrain-item {
+  align-items: stretch;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-card-alt);
+}
+
 .terrain-item.is-active {
   border-color: var(--accent);
+}
+
+.terrain-tile-list .terrain-item.is-disabled {
+  opacity: 0.58;
+}
+
+.terrain-status-pill {
+  color: var(--muted);
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 
 .terrain-actions {
@@ -10456,6 +10504,50 @@ body.emitter-modal-open {
   width: 100%;
   height: 100%;
   min-height: 420px;
+}
+
+.sensor-emitter-detail-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 520;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 10px;
+  padding: 24px;
+  background: rgba(7, 12, 20, 0.42);
+  color: var(--text);
+  text-align: center;
+  pointer-events: none;
+  backdrop-filter: blur(1.5px);
+}
+
+.sensor-emitter-detail-loading strong {
+  font-size: 0.9rem;
+  letter-spacing: 0.04em;
+}
+
+.sensor-emitter-detail-loading span {
+  max-width: 320px;
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+.sensor-emitter-detail-spinner {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 3px solid rgba(148, 163, 184, 0.28);
+  border-top-color: var(--accent);
+  box-shadow: 0 0 24px rgba(var(--accent-rgb), 0.24);
+  animation: sensorEmitterDetailSpin 900ms linear infinite;
+}
+
+@keyframes sensorEmitterDetailSpin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .sensor-emitter-detail-legend {

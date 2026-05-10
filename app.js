@@ -2211,6 +2211,7 @@ const dom = {
   sensorEmitterDetailStatus: document.querySelector("#sensorEmitterDetailStatus"),
   sensorEmitterDetailBody: document.querySelector("#sensorEmitterDetailBody"),
   sensorEmitterDetailMap: document.querySelector("#sensorEmitterDetailMap"),
+  sensorEmitterDetailLoading: document.querySelector("#sensorEmitterDetailLoading"),
   sensorEmitterDetailLegend: document.querySelector("#sensorEmitterDetailLegend"),
   emittersNetModal: document.querySelector("#emittersNetModal"),
   emittersNetModalTitle: document.querySelector("#emittersNetModalTitle"),
@@ -2443,6 +2444,10 @@ const dom = {
   dtedInput: document.querySelector("#dtedInput"),
   dtedFolderInput: document.querySelector("#dtedFolderInput"),
   clearTerrainBtn: document.querySelector("#clearTerrainBtn"),
+  activateAllTerrainBtn: document.querySelector("#activateAllTerrainBtn"),
+  deactivateAllTerrainBtn: document.querySelector("#deactivateAllTerrainBtn"),
+  showAllTerrainCoverageBtn: document.querySelector("#showAllTerrainCoverageBtn"),
+  hideAllTerrainCoverageBtn: document.querySelector("#hideAllTerrainCoverageBtn"),
   terrainSummary: document.querySelector("#terrainSummary"),
   terrainList: document.querySelector("#terrainList"),
   terrainSection: document.querySelector("#terrainSection"),
@@ -8458,6 +8463,14 @@ const AI_VIEW_PROFILES = {
     emptyMessage: "Ask me to review placed emitters, link them to units, clean up naming, or check RF configuration consistency.",
     systemGuidance: "The user is in EMITTERS view. Prioritize placed emitter management, emitter-to-unit linkage, configuration review, and inventory cleanup guidance.",
   },
+  sensors: {
+    label: "SENSORS",
+    role: "EW Sensor Collection Analyst",
+    purpose: "Ask me about RF sensor capabilities, map placement, and what map emitters each sensor can collect.",
+    placeholder: "Ask about sensor capabilities, collection, terrain limits, or emitter visibility...",
+    emptyMessage: "Ask me what the Sensors view receivers can detect, identify, or demodulate from map-placed emitters.",
+    systemGuidance: "The user is in SENSORS view. Treat sensors as the Sensors view RF collection receivers, not emitter/radio assets. Prioritize sensor capability, map location, and evaluated collection against map-placed emitters.",
+  },
   topology: {
     label: "TOPOLOGY",
     role: "Link Quality Analyst",
@@ -8548,9 +8561,9 @@ const AI_AGENT_PROFILES = {
     label: "RF Sensor Site Selection",
     indicatorLabel: "Sensor",
     routingPriority: 88,
-    summary: "Optimize sensor siting for visibility, terrain dominance, and backhaul.",
-    systemGuidance: "Prioritize deterministic sensor site studies. Optimize for observation quality, terrain dominance, and viable backhaul to friendly nodes.",
-    triggerPhrases: ["sensor site", "isr", "surveillance", "watch", "observation", "sensor placement"],
+    summary: "Analyze RF sensor capability, collection, visibility, siting, and terrain limits.",
+    systemGuidance: "When the user asks about sensors or what they can do, use the Sensors view receiver records, their map placement, and sensor-to-emitter collection evaluations. Distinguish energy detection, identification/classification, and demod-capable collection.",
+    triggerPhrases: ["sensor site", "sensor capability", "sensor capabilities", "sensor collection", "sensors collect", "what can the sensors", "isr", "surveillance", "watch", "observation", "sensor placement"],
   },
   command_post_site_selection: {
     label: "Command Post Site Selection",
@@ -8716,6 +8729,7 @@ function getAiAgentProfile(profileId = state.ai?.agentProfileId) {
 function buildCurrentViewAiContext(view = state.ui?.currentView, options = {}) {
   if (view === "plan") return buildPlanAiContext(options);
   if (view === "emitters") return buildEmittersAiContext(options);
+  if (view === "sensors") return buildSensorsAiContext(options);
   if (view === "topology") return buildTopoAiContext(options);
   if (view === "analyze") return buildAnalyzeAiContext(options);
   return "";
@@ -8724,6 +8738,8 @@ function buildCurrentViewAiContext(view = state.ui?.currentView, options = {}) {
 const AI_SCENARIO_TIER_LIMITS = {
   minimal: {
     assets: 12,
+    sensors: 8,
+    sensorCollectionRows: 4,
     importedIndex: 24,
     mapLookupIndex: 36,
     viewsheds: 6,
@@ -8731,6 +8747,8 @@ const AI_SCENARIO_TIER_LIMITS = {
   },
   standard: {
     assets: 24,
+    sensors: 16,
+    sensorCollectionRows: 6,
     importedIndex: 80,
     mapLookupIndex: 120,
     viewsheds: 12,
@@ -8738,6 +8756,8 @@ const AI_SCENARIO_TIER_LIMITS = {
   },
   rich: {
     assets: 40,
+    sensors: 40,
+    sensorCollectionRows: 10,
     importedIndex: 200,
     mapLookupIndex: 300,
     viewsheds: 20,
@@ -11886,6 +11906,10 @@ function wireEvents() {
   dom.dtedInput.addEventListener("change", onTerrainImport);
   dom.dtedFolderInput?.addEventListener("change", onTerrainImport);
   dom.clearTerrainBtn.addEventListener("click", clearTerrain);
+  dom.activateAllTerrainBtn?.addEventListener("click", () => setAllTerrainTilesEnabled(true));
+  dom.deactivateAllTerrainBtn?.addEventListener("click", () => setAllTerrainTilesEnabled(false));
+  dom.showAllTerrainCoverageBtn?.addEventListener("click", () => setAllTerrainCoverageVisible(true));
+  dom.hideAllTerrainCoverageBtn?.addEventListener("click", () => setAllTerrainCoverageVisible(false));
   dom.fetchWeatherBtn.addEventListener("click", fetchWeather);
   dom.assetForce.addEventListener("change", () => {
     dom.assetColor.value = FORCE_COLORS[dom.assetForce.value];
@@ -13231,6 +13255,9 @@ function sampleTerrainBaseElevationForTerrain(lat, lon, terrain) {
 }
 
 function terrainContainsCoordinate(terrain, lat, lon) {
+  if (isTerrainSet(terrain)) {
+    return getTerrainSetTiles(terrain).some((tile) => terrainContainsCoordinate(tile, lat, lon));
+  }
   if (!terrain?.bounds) {
     return false;
   }
@@ -13242,9 +13269,122 @@ function terrainContainsCoordinate(terrain, lat, lon) {
   );
 }
 
+function isTerrainSet(terrain) {
+  return Array.isArray(terrain?.tileIds);
+}
+
+function isTerrainTileEnabled(terrain) {
+  return terrain?.enabled !== false;
+}
+
+function getEnabledLocalTerrains() {
+  return state.terrains.filter(isTerrainTileEnabled);
+}
+
+function syncActiveTerrainSelection() {
+  state.terrains.forEach((terrain) => {
+    if (typeof terrain.enabled !== "boolean") {
+      terrain.enabled = true;
+    }
+  });
+  const enabledTerrains = getEnabledLocalTerrains();
+  if (!enabledTerrains.length) {
+    state.activeTerrainId = null;
+    return enabledTerrains;
+  }
+  if (!enabledTerrains.some((terrain) => terrain.id === state.activeTerrainId)) {
+    state.activeTerrainId = enabledTerrains[0].id;
+  }
+  return enabledTerrains;
+}
+
+function combineTerrainBounds(terrains) {
+  const valid = terrains.filter((terrain) => terrain?.bounds?.sw && terrain.bounds.ne);
+  if (!valid.length) {
+    return null;
+  }
+  return {
+    sw: {
+      lat: Math.min(...valid.map((terrain) => terrain.bounds.sw.lat)),
+      lon: Math.min(...valid.map((terrain) => terrain.bounds.sw.lon)),
+    },
+    ne: {
+      lat: Math.max(...valid.map((terrain) => terrain.bounds.ne.lat)),
+      lon: Math.max(...valid.map((terrain) => terrain.bounds.ne.lon)),
+    },
+  };
+}
+
+function hashTerrainKey(value) {
+  let hash = 2166136261;
+  const text = String(value ?? "");
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function getTerrainSetTiles(terrain) {
+  if (!isTerrainSet(terrain)) {
+    return [];
+  }
+  if (Array.isArray(terrain.tiles)) {
+    return terrain.tiles.filter((tile) => tile && !isTerrainSet(tile));
+  }
+  const ids = new Set(terrain.tileIds);
+  return state.terrains
+    .filter((tile) => ids.has(tile.id))
+    .sort((left, right) => getTerrainCellResolutionMeters(left) - getTerrainCellResolutionMeters(right));
+}
+
+function buildTerrainSet(terrains) {
+  const tiles = terrains.filter((terrain) => terrain && !isTerrainSet(terrain));
+  if (!tiles.length) {
+    return null;
+  }
+  const sortedTileIds = tiles.map((terrain) => terrain.id).sort();
+  const bounds = combineTerrainBounds(tiles);
+  const bestResolutionMeters = Math.min(...tiles.map((terrain) => getTerrainCellResolutionMeters(terrain)).filter(Number.isFinite));
+  const latStepDeg = Math.min(...tiles.map((terrain) => Math.abs(Number(terrain.latStepDeg) || Number.POSITIVE_INFINITY)));
+  const lonStepDeg = Math.min(...tiles.map((terrain) => Math.abs(Number(terrain.lonStepDeg) || Number.POSITIVE_INFINITY)));
+  const sourceTypes = new Set(tiles.map((terrain) => terrain.sourceType ?? "dted"));
+  return {
+    id: `terrain-set:${tiles.length}:${hashTerrainKey(sortedTileIds.join("|"))}`,
+    name: `${tiles.length} active terrain tiles`,
+    sourceType: "terrain-set",
+    sourceLabel: `${tiles.length} local terrain tiles`,
+    terrainCoverageMode: usesConfiguredCesiumTerrain() ? "hybrid-local-set" : "local-only",
+    terrainCompleteness: "mosaic",
+    sampledSurfaceType: "terrain",
+    bounds,
+    rows: tiles.reduce((total, terrain) => total + (Number(terrain.rows) || 0), 0),
+    cols: null,
+    latStepDeg: Number.isFinite(latStepDeg) ? latStepDeg : null,
+    lonStepDeg: Number.isFinite(lonStepDeg) ? lonStepDeg : null,
+    activeTileCount: tiles.length,
+    loadedTileCount: state.terrains.length,
+    tileIds: sortedTileIds,
+    tiles,
+    extentVisible: tiles.some((terrain) => terrain.extentVisible),
+    osmBuildingsEnabled: tiles.some((terrain) => terrain.osmBuildingsEnabled),
+    sourceTypes: [...sourceTypes],
+    bestResolutionMeters: Number.isFinite(bestResolutionMeters) ? bestResolutionMeters : null,
+    buildingMaterialPreset: state.settings.buildingMaterialPreset,
+    buildingPropagationMode: getBuildingPropagationMode(),
+  };
+}
+
 function getTerrainCellResolutionMeters(terrain, latitude = terrain?.origin?.lat ?? 0) {
   if (!terrain) {
     return Number.POSITIVE_INFINITY;
+  }
+  if (isTerrainSet(terrain)) {
+    const tiles = getTerrainSetTiles(terrain);
+    if (!tiles.length) {
+      return Number.POSITIVE_INFINITY;
+    }
+    return Math.min(...tiles.map((tile) => getTerrainCellResolutionMeters(tile, latitude)));
   }
   const latMeters = Math.abs(terrain.latStepDeg ?? 0) * 111320;
   const lonMeters = Math.abs(terrain.lonStepDeg ?? 0) * 111320 * Math.max(Math.cos((latitude * Math.PI) / 180), 1e-6);
@@ -13267,7 +13407,7 @@ function findBestCachedIonTerrainForCoordinate(lat, lon) {
 }
 
 function getLocalTerrainsCoveringCoordinate(lat, lon) {
-  return state.terrains
+  return getEnabledLocalTerrains()
     .filter((terrain) => terrainContainsCoordinate(terrain, lat, lon))
     .sort((left, right) => getTerrainCellResolutionMeters(left, lat) - getTerrainCellResolutionMeters(right, lat));
 }
@@ -13294,6 +13434,8 @@ function getTerrainSourceLabel(sourceType) {
       return "Cesium";
     case "hybrid":
       return "Hybrid";
+    case "terrain-set":
+      return "Terrain Set";
     case "dted":
     default:
       return "DTED";
@@ -13334,6 +13476,19 @@ function terrainSampleIsValid(terrain, fieldName, index) {
 }
 
 function sampleTerrainFieldForTerrain(lat, lon, terrain, fieldName = "elevations") {
+  if (isTerrainSet(terrain)) {
+    const tiles = getTerrainSetTiles(terrain)
+      .filter((tile) => terrainContainsCoordinate(tile, lat, lon))
+      .sort((left, right) => getTerrainCellResolutionMeters(left, lat) - getTerrainCellResolutionMeters(right, lat));
+    for (const tile of tiles) {
+      const value = sampleTerrainFieldForTerrain(lat, lon, tile, fieldName);
+      if (value !== null) {
+        return value;
+      }
+    }
+    return null;
+  }
+
   if (!terrain || !terrainContainsCoordinate(terrain, lat, lon)) {
     return null;
   }
@@ -15047,7 +15202,8 @@ async function onAiChatSubmit(event) {
   }
   let preResolvedLookup = null;
   if (!getEffectiveAiConfig()) {
-    preResolvedLookup = canUseLocalLookupOnly ? await tryResolveAiMapLookup(prompt) : null;
+    preResolvedLookup = tryResolveAiSensorCollectionPrompt(prompt)
+      || (canUseLocalLookupOnly ? await tryResolveAiMapLookup(prompt) : null);
     if (!preResolvedLookup) {
       return;
     }
@@ -18622,12 +18778,19 @@ function buildCompactAiScenarioSummary(contextIds = [], options = {}) {
     },
     counts: {
       assets: state.assets.length,
+      sensors: state.sensors.length,
       importedItems: state.importedItems.length,
       viewsheds: state.viewsheds.length,
       terrains: state.terrains.length,
       planUnits: _toState.units.length,
     },
     assets: includeAssets ? state.assets.slice(0, limits.assets).map((asset) => serializeAssetForAi(asset)) : [],
+    sensors: state.sensors.slice(0, limits.sensors).map((sensor) => serializeSensorForAi(sensor)),
+    sensorCollection: buildSensorCollectionAiContext({
+      sensorLimit: limits.sensors,
+      emitterLimit: limits.assets,
+      perSensorEmitterLimit: limits.sensorCollectionRows,
+    }),
     // importedItems: two tiers to keep token count bounded.
     // Tier 1: explicitly linked context items â€” full geometry + properties.
     // Tier 2: everything else â€” lean name/type/folder index (no geometry/properties), capped at 400.
@@ -19413,6 +19576,7 @@ function serializeSensorForAi(sensor) {
   const effectivePosition = getSensorEffectiveMapPosition(sensor);
   const summary = getSensorReceptionSummary(sensor);
   const placedOnMap = hasSensorMapLocation(sensor);
+  const effectiveLocationDisplay = effectivePosition ? formatAiCoordinateForSensorContext(effectivePosition) : null;
   return {
     id: sensor.id,
     contentId: `sensor:${sensor.id}`,
@@ -19430,7 +19594,10 @@ function serializeSensorForAi(sensor) {
       lat: roundAiNumber(effectivePosition.lat),
       lon: roundAiNumber(effectivePosition.lon),
       source: effectivePosition.tacticalObject ? "linked-unit" : "sensor-marker",
+      display: effectiveLocationDisplay,
     } : null,
+    coordinateSystem: state.settings.coordinateSystem,
+    locationDisplay: effectiveLocationDisplay,
     frequencyMinMHz: roundAiNumber(sensor.frequencyMinMHz, 3),
     frequencyMaxMHz: roundAiNumber(sensor.frequencyMaxMHz, 3),
     instantaneousBandwidthMHz: roundAiNumber(sensor.instantaneousBandwidthMHz, 3),
@@ -19440,7 +19607,13 @@ function serializeSensorForAi(sensor) {
     antennaType: sensor.antennaType ?? "",
     antennaGainDbi: roundAiNumber(sensor.antennaGainDbi, 2),
     antennaHeightM: roundAiNumber(sensor.antennaHeightM, 2),
+    systemLossDb: roundAiNumber(sensor.systemLossDb, 2),
     modes: sensor.modes ?? "",
+    receiveModeTags: Array.isArray(sensor.receiveModeTags) ? sensor.receiveModeTags : [],
+    supportedModulations: Array.isArray(sensor.supportedModulations) ? sensor.supportedModulations : [],
+    supportedWaveformFamilies: Array.isArray(sensor.supportedWaveformFamilies) ? sensor.supportedWaveformFamilies : [],
+    dfCapable: Boolean(sensor.dfCapable),
+    detectsUnknownSignals: sensor.detectsUnknownSignals !== false,
     compatibleReceiveNodes: sensor.compatibleReceiveNodes ?? "",
     receptionSummary: {
       detectableOrMarginalCount: summary.count,
@@ -19474,6 +19647,321 @@ function serializeSensorForAi(sensor) {
     hidden: state.hiddenContentIds.has(`sensor:${sensor.id}`),
     folderId: getMapContentFolderId(`sensor:${sensor.id}`),
   };
+}
+
+function formatAiCoordinateForSensorContext(position) {
+  if (!position || !Number.isFinite(Number(position.lat)) || !Number.isFinite(Number(position.lon))) {
+    return "";
+  }
+  const coordinateSystem = state.settings?.coordinateSystem || "mgrs";
+  const raw = formatCoordinate(Number(position.lat), Number(position.lon), coordinateSystem);
+  return coordinateSystem === "mgrs" ? formatMgrsDisplay(raw) : raw;
+}
+
+function getSensorAiEmitterAssetsOnMap() {
+  const seenIds = new Set();
+  return (state.assets || []).filter((asset) => {
+    if (!asset || typeof asset !== "object") return false;
+    const id = String(asset.id || "").trim();
+    if (id && seenIds.has(id)) return false;
+    if (!getAssetEffectiveMapPosition(asset)) return false;
+    if (!getEmitterEmissionEntries(asset).length) return false;
+    if (id) seenIds.add(id);
+    return true;
+  });
+}
+
+function getSensorAiUnplacedEmitterCount() {
+  const seenIds = new Set();
+  return getEmitterWorkspaceAssets().filter((asset) => {
+    if (!asset || typeof asset !== "object") return false;
+    const id = String(asset.id || "").trim();
+    if (id && seenIds.has(id)) return false;
+    if (id) seenIds.add(id);
+    return !getAssetEffectiveMapPosition(asset) && getEmitterEmissionEntries(asset).length > 0;
+  }).length;
+}
+
+function serializeSensorAiPosition(position) {
+  if (!position) return null;
+  return {
+    lat: roundAiNumber(position.lat),
+    lon: roundAiNumber(position.lon),
+    source: position.tacticalObject ? "linked-unit" : "marker",
+    display: formatAiCoordinateForSensorContext(position),
+  };
+}
+
+function serializeSensorAiEmitter(asset) {
+  if (!asset) return null;
+  const position = getAssetEffectiveMapPosition(asset);
+  return {
+    id: asset.id,
+    contentId: `asset:${asset.id}`,
+    name: asset.name || asset.emitterLabel || "Emitter",
+    emitterLabel: asset.emitterLabel || "",
+    force: asset.force || "",
+    linkedUnitId: Number.isFinite(Number(asset.toUnitId)) ? Number(asset.toUnitId) : null,
+    position: serializeSensorAiPosition(position),
+    emissions: getEmitterEmissionEntries(asset).map((emission) => {
+      const normalized = sensorEvaluation.normalizeEmitterEmission(asset, emission);
+      return {
+        id: normalized.id,
+        name: normalized.name,
+        frequencyMHz: roundAiNumber(normalized.frequencyMHz, 3),
+        occupiedBandwidthMHz: roundAiNumber(normalized.occupiedBandwidthMHz, 4),
+        waveform: normalized.waveform,
+        modulation: normalized.modulation,
+        waveformFamilies: normalized.waveformFamilies,
+        modulations: normalized.modulations,
+        powerW: roundAiNumber(normalized.powerW, 3),
+      };
+    }),
+  };
+}
+
+function serializeSensorAiEvaluation(entry) {
+  if (!entry) return null;
+  const emission = entry.emission || {};
+  const propagation = entry.propagation || {};
+  return {
+    emitterId: entry.asset?.id ?? null,
+    emitterName: entry.asset?.name || entry.asset?.emitterLabel || "Emitter",
+    emissionId: emission.id || getSensorEmitterDetailEmissionId(entry),
+    emissionName: emission.name || entry.sourceEmission?.name || "",
+    status: entry.status,
+    label: entry.label,
+    energyDetected: Boolean(entry.energyDetected),
+    identified: Boolean(entry.identified),
+    demodCapable: Boolean(entry.demodCapable),
+    frequencyMHz: roundAiNumber(emission.frequencyMHz, 3),
+    occupiedBandwidthMHz: roundAiNumber(emission.occupiedBandwidthMHz, 4),
+    waveform: emission.waveform || "",
+    modulation: emission.modulation || "",
+    rxDbm: Number.isFinite(Number(entry.rxDbm)) ? roundAiNumber(entry.rxDbm, 2) : null,
+    marginDb: Number.isFinite(Number(entry.marginDb)) ? roundAiNumber(entry.marginDb, 2) : null,
+    demodMarginDb: Number.isFinite(Number(entry.demodMarginDb)) ? roundAiNumber(entry.demodMarginDb, 2) : null,
+    distanceM: Number.isFinite(Number(entry.distanceM)) ? roundAiNumber(entry.distanceM, 1) : null,
+    distanceLabel: Number.isFinite(Number(entry.distanceM)) ? formatDistance(entry.distanceM) : (entry.positionLabel || ""),
+    terrainSource: propagation.terrainSourceLabel || entry.terrainSourceLabel || "",
+    terrainCompleteness: propagation.terrainCompleteness || entry.terrainCompleteness || "",
+    propagationModel: propagation.propagationModel || "",
+    pathLossDb: Number.isFinite(Number(propagation.pathLossDb)) ? roundAiNumber(propagation.pathLossDb, 2) : null,
+    weatherLossDb: Number.isFinite(Number(propagation.weatherLossDb)) ? roundAiNumber(propagation.weatherLossDb, 2) : null,
+    buildingLossDb: Number.isFinite(Number(propagation.buildingLossDb)) ? roundAiNumber(propagation.buildingLossDb, 2) : null,
+    losClear: propagation.geometricLosClear ?? null,
+    fresnelClear: propagation.fresnelPolicyClear ?? propagation.fresnelClear ?? null,
+    limitingReason: entry.limitingReason || entry.positionLabel || "",
+  };
+}
+
+function buildSensorCollectionAiContext(options = {}) {
+  const sensorLimit = Number.isFinite(Number(options.sensorLimit))
+    ? Math.max(1, Number(options.sensorLimit))
+    : 16;
+  const emitterLimit = Number.isFinite(Number(options.emitterLimit))
+    ? Math.max(1, Number(options.emitterLimit))
+    : 12;
+  const perSensorEmitterLimit = Number.isFinite(Number(options.perSensorEmitterLimit))
+    ? Math.max(1, Number(options.perSensorEmitterLimit))
+    : 6;
+  const sensors = state.sensors.slice(0, sensorLimit);
+  const emittersOnMap = getSensorAiEmitterAssetsOnMap();
+  const includedEmitters = emittersOnMap.slice(0, emitterLimit);
+  return {
+    meaning: "Sensors are Sensors view RF collection receivers. Map emitters are transmitter/emitter assets evaluated as collection targets.",
+    autoEvaluateEnabled: state.settings.sensorAutoEvaluate !== false,
+    coordinateSystem: state.settings.coordinateSystem,
+    sensorCount: state.sensors.length,
+    sensorCountIncluded: sensors.length,
+    mapPlacedSensorCount: state.sensors.filter((sensor) => Boolean(getSensorEffectiveMapPosition(sensor))).length,
+    mapPlacedEmitterCount: emittersOnMap.length,
+    unplacedEmitterCount: getSensorAiUnplacedEmitterCount(),
+    emittersOnMap: includedEmitters.map((asset) => serializeSensorAiEmitter(asset)).filter(Boolean),
+    sensors: sensors.map((sensor) => {
+      const capability = sensorEvaluation.normalizeSensorCapability(sensor || {});
+      const position = getSensorEffectiveMapPosition(sensor);
+      const linkedUnit = Number.isFinite(Number(sensor.toUnitId)) ? getPlanUnitById(sensor.toUnitId) : null;
+      const evaluations = state.settings.sensorAutoEvaluate === false
+        ? []
+        : sortSensorEmitterEvaluations(includedEmitters.map((asset) => getSensorEmitterEvaluation(sensor, asset)));
+      return {
+        id: sensor.id,
+        contentId: `sensor:${sensor.id}`,
+        name: sensor.name,
+        profileName: sensor.profileName,
+        category: sensor.category,
+        linkedUnit: linkedUnit ? {
+          id: linkedUnit.id,
+          label: linkedUnit.label,
+          designator: linkedUnit.designator,
+        } : null,
+        mapPlacement: {
+          placed: Boolean(position),
+          position: serializeSensorAiPosition(position),
+        },
+        capability: {
+          frequencyRange: formatSensorFrequencyRange(capability),
+          frequencyMinMHz: roundAiNumber(capability.frequencyMinMHz, 3),
+          frequencyMaxMHz: roundAiNumber(capability.frequencyMaxMHz, 3),
+          instantaneousBandwidthMHz: roundAiNumber(capability.instantaneousBandwidthMHz, 3),
+          channels: capability.channels,
+          demodulators: capability.demodulators,
+          sensitivityDbm: roundAiNumber(capability.sensitivityDbm, 2),
+          antennaType: capability.antennaType,
+          antennaGainDbi: roundAiNumber(capability.antennaGainDbi, 2),
+          antennaHeightM: roundAiNumber(capability.antennaHeightM, 2),
+          systemLossDb: roundAiNumber(capability.systemLossDb, 2),
+          receiveModeTags: capability.receiveModeTags,
+          supportedModulations: capability.supportedModulations,
+          supportedWaveformFamilies: capability.supportedWaveformFamilies,
+          dfCapable: Boolean(capability.dfCapable),
+          detectsUnknownSignals: Boolean(capability.detectsUnknownSignals),
+        },
+        collectionSummary: {
+          evaluatedEmitterCount: evaluations.length,
+          energyDetectedCount: evaluations.filter((entry) => entry.energyDetected || entry.sensed).length,
+          identifiedCount: evaluations.filter((entry) => entry.identified).length,
+          demodCapableCount: evaluations.filter((entry) => entry.demodCapable).length,
+          pendingCount: evaluations.filter((entry) => entry.status === "pending-propagation").length,
+        },
+        emitterEvaluations: evaluations
+          .slice(0, perSensorEmitterLimit)
+          .map((entry) => serializeSensorAiEvaluation(entry))
+          .filter(Boolean),
+      };
+    }),
+  };
+}
+
+function buildSensorsAiContext(options = {}) {
+  const compact = options.compact !== false;
+  return JSON.stringify({
+    view: "sensors",
+    ...buildSensorCollectionAiContext({
+      sensorLimit: compact ? 16 : state.sensors.length || 1,
+      emitterLimit: compact ? 16 : getSensorAiEmitterAssetsOnMap().length || 1,
+      perSensorEmitterLimit: compact ? 6 : 12,
+    }),
+  });
+}
+
+function isSensorCollectionQuestionPrompt(prompt = "", view = state.ui?.currentView) {
+  const raw = String(prompt ?? "").trim();
+  if (!raw) return false;
+  const text = raw.toLowerCase();
+  const hasSensorReference = /\bsensors?\b/.test(text)
+    || (view === "sensors" && /\b(these|they|them|their|cards?|this view|workspace)\b/.test(text));
+  if (!hasSensorReference) return false;
+  const hasQuestionIntent = /[?]$/.test(raw)
+    || /\b(what|which|where|how|can|could|tell|show|list|explain|summarize|overview)\b/.test(text);
+  const hasSensorAnswerIntent = /\b(capabilit|collect|collection|detect|detection|sense|see|intercept|identify|classif|demod|receive|monitor|visibility|visible|range|coverage|location|placed|emitters?|emmitters?|signals?|radios?|transmitters?|nets?)\b/.test(text);
+  const mutationIntent = /\b(add|create|place|move|delete|remove|edit|update|configure|link|unlink|run|simulate|draw|set)\b/.test(text);
+  if (mutationIntent && !hasQuestionIntent) return false;
+  return hasQuestionIntent || hasSensorAnswerIntent;
+}
+
+function pluralizeAiCount(count, singular, plural = `${singular}s`) {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function formatSensorAiFrequency(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return "no frequency";
+  return `${numeric >= 100 ? numeric.toFixed(0) : numeric.toFixed(3).replace(/\.?0+$/, "")} MHz`;
+}
+
+function formatSensorAiDbm(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? `${numeric.toFixed(1)} dBm` : "RX pending";
+}
+
+function formatSensorAiMargin(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? `${numeric.toFixed(1)} dB margin` : "margin pending";
+}
+
+function formatSensorAiRelationshipLine(entry) {
+  const emitterName = entry.asset?.name || entry.asset?.emitterLabel || "Emitter";
+  const emission = entry.emission || {};
+  const label = entry.label || entry.status || "Evaluation";
+  const frequency = formatSensorAiFrequency(emission.frequencyMHz);
+  const rx = formatSensorAiDbm(entry.rxDbm);
+  const margin = formatSensorAiMargin(entry.marginDb);
+  const distance = Number.isFinite(Number(entry.distanceM)) ? formatDistance(entry.distanceM) : (entry.positionLabel || "no map path");
+  const propagation = entry.propagation || {};
+  const terrain = propagation.terrainSourceLabel || entry.terrainSourceLabel || "";
+  const terrainPart = terrain ? `, ${terrain}` : "";
+  const reason = entry.limitingReason || entry.positionLabel || "";
+  return `- **${emitterName}**: ${label}, ${frequency}, ${rx}, ${margin}, ${distance}${terrainPart}. ${reason}`.trim();
+}
+
+function buildSensorCollectionQuestionReply(prompt = "") {
+  if (!isSensorCollectionQuestionPrompt(prompt)) {
+    return "";
+  }
+  const sensors = state.sensors || [];
+  if (!sensors.length) {
+    return "I do not see any Sensors view sensor records. The map emitter/radio assets are transmitters; add RF sensors in the Sensors view before I can evaluate collection against emitters.";
+  }
+
+  const emittersOnMap = getSensorAiEmitterAssetsOnMap();
+  const autoEvaluate = state.settings.sensorAutoEvaluate !== false;
+  const unplacedEmitterCount = getSensorAiUnplacedEmitterCount();
+  const placedSensorCount = sensors.filter((sensor) => Boolean(getSensorEffectiveMapPosition(sensor))).length;
+  const lines = [
+    "**Sensors View Collection Overview**",
+    `I see ${pluralizeAiCount(sensors.length, "Sensors view receiver")} and ${pluralizeAiCount(emittersOnMap.length, "map-placed emitter")}. ${pluralizeAiCount(placedSensorCount, "sensor")} ${placedSensorCount === 1 ? "has" : "have"} a map position. Sensor auto-evaluate is ${autoEvaluate ? "on" : "off"}.`,
+  ];
+
+  if (!emittersOnMap.length) {
+    lines.push("No map-placed emitters with RF emissions are available to evaluate, so collection cannot be assessed yet.");
+  }
+
+  sensors.slice(0, 8).forEach((sensor) => {
+    const capability = sensorEvaluation.normalizeSensorCapability(sensor || {});
+    const position = getSensorEffectiveMapPosition(sensor);
+    const linkedUnit = Number.isFinite(Number(sensor.toUnitId)) ? getPlanUnitById(sensor.toUnitId) : null;
+    const linkLabel = linkedUnit ? `, linked to ${linkedUnit.label || linkedUnit.designator || `Unit ${linkedUnit.id}`}` : "";
+    const locationLabel = position ? `at ${formatAiCoordinateForSensorContext(position)}` : "not placed on the map";
+    lines.push("");
+    lines.push(`**${sensor.name || "RF Sensor"}** - ${formatSensorFrequencyRange(capability)}, BW ${formatSensorBandwidth(capability.instantaneousBandwidthMHz)}, ${capability.channels} RX/${capability.demodulators} demod, ${formatDbm(capability.sensitivityDbm)}, ${capability.antennaType || "Omni"}${linkLabel}; ${locationLabel}.`);
+
+    if (!autoEvaluate) {
+      lines.push("- Collection evaluation is disabled in Settings.");
+      return;
+    }
+    if (!emittersOnMap.length) {
+      return;
+    }
+
+    const evaluations = sortSensorEmitterEvaluations(emittersOnMap.map((asset) => getSensorEmitterEvaluation(sensor, asset)));
+    const demodCount = evaluations.filter((entry) => entry.demodCapable).length;
+    const detectedCount = evaluations.filter((entry) => (entry.energyDetected || entry.sensed) && !entry.demodCapable).length;
+    const pendingCount = evaluations.filter((entry) => entry.status === "pending-propagation").length;
+    lines.push(`- Summary: ${demodCount} demod capable, ${detectedCount} detected/identified but not demod capable, ${pendingCount} still evaluating terrain/weather.`);
+    evaluations.slice(0, 4).forEach((entry) => {
+      lines.push(formatSensorAiRelationshipLine(entry));
+    });
+  });
+
+  if (sensors.length > 8) {
+    lines.push("");
+    lines.push(`${sensors.length - 8} additional sensor records were omitted from this short answer.`);
+  }
+  if (unplacedEmitterCount > 0) {
+    const unplacedVerb = unplacedEmitterCount === 1 ? "is" : "are";
+    lines.push("");
+    lines.push(`${pluralizeAiCount(unplacedEmitterCount, "emitter")} ${unplacedVerb} not map-placed or linked to a mapped unit, so I did not count them as collectable targets.`);
+  }
+  lines.push("");
+  lines.push("Interpretation: demod capable means usable receive/collection; identified or strong energy means the sensor can see/classify RF energy but may not decode it; mode mismatch, bandwidth limited, below sensitivity, terrain masked, and needs placement are limiting reasons.");
+  return lines.join("\n");
+}
+
+function tryResolveAiSensorCollectionPrompt(prompt = "") {
+  const reply = buildSensorCollectionQuestionReply(prompt);
+  return reply ? { assistantMessage: reply, actions: [] } : null;
 }
 
 function serializeViewshedForAi(viewshed) {
@@ -19547,6 +20035,10 @@ function serializeTerrainForAi(terrain) {
     name: terrain.name,
     rows: terrain.rows,
     cols: terrain.cols,
+    active: terrain.enabled !== false,
+    activeTileCount: terrain.activeTileCount ?? null,
+    loadedTileCount: terrain.loadedTileCount ?? null,
+    tileIds: Array.isArray(terrain.tileIds) ? terrain.tileIds.slice(0, 40) : null,
     sourceType: terrain.sourceType ?? null,
     sourceLabel: terrain.sourceLabel ?? getTerrainSourceLabel(terrain.sourceType),
     terrainCoverageMode: terrain.terrainCoverageMode ?? "local-only",
@@ -20642,6 +21134,7 @@ function buildAiSystemPrompt(spec, { activeViewProfile, activeAgentProfile, loca
     activeAgentProfile.systemGuidance,
     "Keep responses terse by default.",
     "For map-item location questions, answer in a complete sentence rather than a naked coordinate.",
+    "When the user asks about sensors, these sensors, sensor capabilities, or what emitters sensors can collect on, sensors means the Sensors view RF collection receivers, not emitter/radio assets. Use sensorCollection and sensors from the scenario/current-view context; distinguish energy detected, identified/classified, and demod-capable collection, and include capability, map placement, terrain/weather path status, and limiting reason.",
     coordinateGuidance,
   ];
 
@@ -20730,6 +21223,14 @@ function buildAiConversationMessages({
 }
 
 async function callAiPlanningAssistant(prompt, images = [], files = [], contextIds = [], { onStatus, onToken } = {}) {
+  const localSensorReply = images.length === 0 && files.length === 0
+    ? tryResolveAiSensorCollectionPrompt(prompt)
+    : null;
+  if (localSensorReply) {
+    onStatus?.("Checking Sensors view");
+    return localSensorReply;
+  }
+
   const localLookup = images.length === 0 && files.length === 0
     ? await tryResolveAiMapLookup(prompt)
     : null;
@@ -21270,6 +21771,14 @@ async function callAiPlanningAssistantOptimized(
   contextIds = [],
   { onStatus, onToken, requestClassOverride = "", includeMapContext = false } = {}
 ) {
+  const localSensorReply = images.length === 0 && files.length === 0
+    ? tryResolveAiSensorCollectionPrompt(prompt)
+    : null;
+  if (localSensorReply) {
+    onStatus?.("Checking Sensors view");
+    return localSensorReply;
+  }
+
   const localLookup = images.length === 0 && files.length === 0
     ? await tryResolveAiMapLookup(prompt)
     : null;
@@ -21806,7 +22315,10 @@ function buildLosMatrix(assetsToCheck) {
       const b = assetsToCheck[j];
       const h1 = Number.isFinite(a.antennaHeightM) ? a.antennaHeightM : 2;
       const h2 = Number.isFinite(b.antennaHeightM) ? b.antennaHeightM : 2;
-      const terrain = findBestLocalTerrainForCoordinate((a.lat + b.lat) / 2, (a.lon + b.lon) / 2);
+      const activeTerrain = getActiveTerrain();
+      const terrain = isTerrainSet(activeTerrain)
+        ? activeTerrain
+        : findBestLocalTerrainForCoordinate((a.lat + b.lat) / 2, (a.lon + b.lon) / 2);
       const result = computeTerrainLos(a.lat, a.lon, h1, b.lat, b.lon, h2, terrain);
       links.push({
         from: a.name ?? a.id,
@@ -21915,7 +22427,8 @@ async function computeTerrainLosAsyncLegacy(lat1, lon1, h1m, lat2, lon2, h2m) {
 
 // Async LOS matrix â€” uses Cesium terrain fallback when no DTED is loaded.
 async function computeTerrainLosAsync(lat1, lon1, h1m, lat2, lon2, h2m, frequencyMHz = 0) {
-  if (!state.terrains.length && !usesConfiguredCesiumTerrain()) {
+  const hasActiveLocalTerrain = getEnabledLocalTerrains().length > 0;
+  if (!hasActiveLocalTerrain && !usesConfiguredCesiumTerrain()) {
     return { hasTerrain: false, terrainCompleteness: "none" };
   }
 
@@ -21935,7 +22448,7 @@ async function computeTerrainLosAsync(lat1, lon1, h1m, lat2, lon2, h2m, frequenc
       fresnelClear: true,
       fresnelPolicyClear: true,
       distanceM: distM,
-      source: state.terrains.length ? "dted" : "cesium",
+      source: hasActiveLocalTerrain ? "dted" : "cesium",
       terrainCompleteness: "full",
     };
   }
@@ -22142,6 +22655,11 @@ function buildAiScenarioSummary() {
     },
     assets,
     sensors,
+    sensorCollection: buildSensorCollectionAiContext({
+      sensorLimit: state.sensors.length || 1,
+      emitterLimit: Math.max(state.assets.length, 1),
+      perSensorEmitterLimit: 12,
+    }),
     planUnits,
     viewsheds,
     importedItems,
@@ -23729,7 +24247,7 @@ async function executeAiAction(action, { placedAssetIds = [], touchedObjects = [
   // Check LOS between a set of candidate coordinates before committing to placement.
   // action.candidates: [{lat, lon, name, antennaHeightM?}]
   if (action.type === "check-los") {
-    const hasDted = state.terrains.length > 0;
+    const hasDted = getEnabledLocalTerrains().length > 0;
     const hasCesium = usesConfiguredCesiumTerrain();
     if (!hasDted && !hasCesium) {
       return "LOS check skipped: no terrain source available (no DTED loaded and no Cesium Ion terrain configured).";
@@ -23765,7 +24283,7 @@ async function executeAiAction(action, { placedAssetIds = [], touchedObjects = [
     const bounds = action.bounds; // {north,south,east,west} for grid sampling
     const gridN = Math.min(Number(action.gridN) || 5, 20); // max 20Ã—20 = 400 samples
 
-    const hasDted = state.terrains.length > 0;
+    const hasDted = getEnabledLocalTerrains().length > 0;
     const hasCesium = usesConfiguredCesiumTerrain();
 
     if (!hasDted && !hasCesium) {
@@ -25962,7 +26480,8 @@ function buildIonTerrainGridId(cacheKey, propagationModel) {
 }
 
 function buildSensorTerrainGridRequest({ purpose, bounds, gridMeters, propagationModel, cacheParts = [] }) {
-  if (!usesConfiguredCesiumTerrain() && !state.terrains.length) return null;
+  const hasActiveLocalTerrain = getEnabledLocalTerrains().length > 0;
+  if (!usesConfiguredCesiumTerrain() && !hasActiveLocalTerrain) return null;
   const normalizedGridMeters = Math.max(10, Number(gridMeters) || 100);
   const shape = estimateTerrainGridShape(bounds, normalizedGridMeters);
   const terrainMode = getEffectiveCesiumTerrainMode();
@@ -25991,7 +26510,7 @@ function buildSensorTerrainGridRequest({ purpose, bounds, gridMeters, propagatio
       bounds,
       rows: shape.rows,
       cols: shape.cols,
-      sourceType: terrainMode === "custom" ? "cesium-custom" : (state.terrains.length ? "hybrid" : "cesium-world"),
+      sourceType: terrainMode === "custom" ? "cesium-custom" : (hasActiveLocalTerrain ? "hybrid" : "cesium-world"),
       terrainCompleteness: "pending",
     },
   };
@@ -26374,6 +26893,14 @@ function setSensorEmitterDetailStatus(message, tone = "") {
   dom.sensorEmitterDetailStatus.className = `sensor-emitter-detail-status${tone ? ` ${tone}` : ""}`;
 }
 
+function setSensorEmitterDetailLoading(isLoading, message = "") {
+  dom.sensorEmitterDetailLoading?.classList.toggle("hidden", !isLoading);
+  if (message && dom.sensorEmitterDetailLoading) {
+    const text = dom.sensorEmitterDetailLoading.querySelector("span");
+    if (text) text.textContent = message;
+  }
+}
+
 function buildSensorEmitterDetailCoverageContext(selection) {
   const { sensor, asset, entry, sensorPosition, emitterPosition } = selection;
   const emission = entry?.sourceEmission || entry?.emission;
@@ -26389,7 +26916,7 @@ function buildSensorEmitterDetailCoverageContext(selection) {
   const fallbackDistanceM = haversineKm(emitterPosition.lat, emitterPosition.lon, sensorPosition.lat, sensorPosition.lon) * 1000;
   const distanceM = Number.isFinite(Number(entry?.distanceM)) ? Number(entry.distanceM) : fallbackDistanceM;
   const radiusMeters = clamp(Math.max(distanceM * 1.15, 1500), 1500, 250000);
-  const gridMeters = clamp(radiusMeters / 70, 50, 4000);
+  const gridMeters = clamp(radiusMeters / 120, 15, 2000);
   const terrainGridRequest = terrain ? null : buildSensorTerrainGridRequest({
     purpose: "sensor-detail-coverage-terrain",
     bounds: boundsFromCenter(emitterPosition.lat, emitterPosition.lon, radiusMeters),
@@ -26445,6 +26972,7 @@ async function requestSensorEmitterDetailCoverage(selection) {
   _sensorEmitterDetailState.coverageCacheKey = context.cacheKey;
   const cached = state.sensorDetailCoverageCache.get(context.cacheKey);
   if (cached) {
+    setSensorEmitterDetailLoading(false);
     renderSensorEmitterDetailCoverageOverlay(cached);
     return;
   }
@@ -26452,12 +26980,24 @@ async function requestSensorEmitterDetailCoverage(selection) {
   _sensorEmitterDetailState.coverageRequestId = requestId;
   state.sensorDetailCoverageRequests.set(requestId, { cacheKey: context.cacheKey });
   setSensorEmitterDetailStatus("Preparing terrain-aware coverage overlay...", "pending");
+  setSensorEmitterDetailLoading(true, "Preparing terrain and weather inputs...");
   if (dom.sensorEmitterDetailLegend) {
-    dom.sensorEmitterDetailLegend.textContent = "Coverage overlay pending...";
+    dom.sensorEmitterDetailLegend.innerHTML = `
+      <strong>RSSI Legend</strong>
+      <div class="spectrum-bar"></div>
+      <div class="legend-scale">
+        <span>-120 dBm</span>
+        <span>-90 dBm</span>
+        <span>-60 dBm</span>
+        <span>-40 dBm</span>
+      </div>
+      <div class="sensor-emitter-detail-legend-note">Waiting for simulation...</div>
+    `;
   }
   try {
     if (context.terrainGridRequest) {
       setSensorEmitterDetailStatus("Sampling terrain grid for sensor coverage...", "pending");
+      setSensorEmitterDetailLoading(true, "Sampling terrain grid for this emitter and sensor...");
       context.terrainId = await ensureIonTerrainGrid(
         context.terrainGridRequest.bounds,
         context.terrainGridRequest.gridMeters,
@@ -26465,9 +27005,11 @@ async function requestSensorEmitterDetailCoverage(selection) {
         { propagationModel: context.propagationModel },
       );
     } else if (context.terrain && !state.terrainReadyIds.has(context.terrain.id)) {
+      setSensorEmitterDetailLoading(true, "Caching terrain in the propagation worker...");
       await cacheTerrainInWorker(context.terrain);
     }
     if (_sensorEmitterDetailState.coverageRequestId !== requestId) return;
+    setSensorEmitterDetailLoading(true, "Tracing terrain, weather, and RSSI paths...");
     state.worker.postMessage({
       type: "simulation:start",
       payload: {
@@ -26488,6 +27030,7 @@ async function requestSensorEmitterDetailCoverage(selection) {
     state.sensorDetailCoverageRequests.delete(requestId);
     if (_sensorEmitterDetailState.coverageRequestId === requestId) {
       _sensorEmitterDetailState.coverageRequestId = "";
+      setSensorEmitterDetailLoading(false);
       setSensorEmitterDetailStatus(error instanceof Error ? error.message : "Coverage overlay failed.", "warning");
     }
   }
@@ -26497,6 +27040,7 @@ function updateSensorEmitterDetailCoverageProgress(payload = {}) {
   if (payload.requestId !== _sensorEmitterDetailState.coverageRequestId) return;
   const percent = Math.round(clamp(payload.fraction ?? 0, 0, 1) * 100);
   setSensorEmitterDetailStatus(`${payload.stage || "Tracing RF paths..."} ${percent}%`, "pending");
+  setSensorEmitterDetailLoading(true, payload.detail ? `${payload.stage || "Tracing RF paths..."} ${payload.detail}` : `Tracing RF paths ${percent}%...`);
 }
 
 function consumeSensorEmitterDetailCoverageResult(payload = {}) {
@@ -26515,6 +27059,7 @@ function consumeSensorEmitterDetailCoverageResult(payload = {}) {
   pruneSensorDetailCoverageCache();
   if (_sensorEmitterDetailState.coverageRequestId === requestId) {
     _sensorEmitterDetailState.coverageRequestId = "";
+    setSensorEmitterDetailLoading(false);
     renderSensorEmitterDetailCoverageOverlay(coverage);
   }
 }
@@ -26535,6 +27080,8 @@ function renderSensorEmitterDetailCoverageOverlay(coverage) {
     gridLatStepDeg: coverage.gridLatStepDeg,
     gridLonStepDeg: coverage.gridLonStepDeg,
     opacity: 0.72,
+    losRenderMode: "gradient",
+    belowThresholdMode: "gradient",
   });
   _sensorEmitterDetailState.coverageLayer.addTo(map);
   const cells = coverage.cellCount ?? countCoverageCells(coverage.rssi, coverage.validMask);
@@ -26615,6 +27162,7 @@ function closeSensorEmitterDetailModal() {
   _sensorEmitterDetailState.emissionId = "";
   _sensorEmitterDetailState.coverageRequestId = "";
   _sensorEmitterDetailState.coverageCacheKey = "";
+  setSensorEmitterDetailLoading(false);
   clearSensorEmitterDetailMapLayers();
   dom.sensorEmitterDetailModal?.classList.add("hidden");
   updateModalBodyState();
@@ -28349,6 +28897,12 @@ function renderAssets() {
 
 function renderTerrains() {
   dom.terrainList.innerHTML = "";
+  const enabledTerrains = syncActiveTerrainSelection();
+  const enabledCount = enabledTerrains.length;
+  if (dom.activateAllTerrainBtn) dom.activateAllTerrainBtn.disabled = !state.terrains.length || enabledCount === state.terrains.length;
+  if (dom.deactivateAllTerrainBtn) dom.deactivateAllTerrainBtn.disabled = !state.terrains.length || enabledCount === 0;
+  if (dom.showAllTerrainCoverageBtn) dom.showAllTerrainCoverageBtn.disabled = !state.terrains.length;
+  if (dom.hideAllTerrainCoverageBtn) dom.hideAllTerrainCoverageBtn.disabled = !state.terrains.length || !state.terrains.some((terrain) => terrain.extentVisible);
   updateTerrainMenuValue();
 
   if (!state.terrains.length) {
@@ -28357,24 +28911,26 @@ function renderTerrains() {
   }
 
   state.terrains.forEach((terrain) => {
+    const enabled = isTerrainTileEnabled(terrain);
     const row = document.createElement("article");
-    row.className = `asset-item terrain-item${terrain.id === state.activeTerrainId ? " is-active" : ""}`;
+    row.className = `asset-item terrain-item${enabled ? " is-active" : " is-disabled"}`;
     row.innerHTML = `
       <header>
         <strong>${escapeHtml(terrain.name)}</strong>
-        <span>${terrain.id === state.activeTerrainId ? "Active" : "Loaded"}</span>
+        <span class="terrain-status-pill">${enabled ? "Active" : "Disabled"}</span>
       </header>
       <div class="terrain-bounds">
         <span>${terrain.rows} x ${terrain.cols} posts</span>
         <span>SW ${terrain.bounds.sw.lat.toFixed(4)}, ${terrain.bounds.sw.lon.toFixed(4)}</span>
         <span>NE ${terrain.bounds.ne.lat.toFixed(4)}, ${terrain.bounds.ne.lon.toFixed(4)}</span>
+        <span>${escapeHtml(terrain.sourceLabel ?? getTerrainSourceLabel(terrain.sourceType))}</span>
       </div>
       <div class="terrain-actions">
         <button class="ghost-button small" type="button" data-terrain-action="toggle" data-terrain-id="${terrain.id}">
           ${terrain.extentVisible ? "Hide Coverage" : "Show Coverage"}
         </button>
-        <button class="primary-button small" type="button" data-terrain-action="activate" data-terrain-id="${terrain.id}">
-          ${terrain.id === state.activeTerrainId ? "Selected" : "Set Primary"}
+        <button class="${enabled ? "ghost-button" : "primary-button"} small" type="button" data-terrain-action="enable" data-terrain-id="${terrain.id}">
+          ${enabled ? "Deactivate" : "Activate"}
         </button>
       </div>
     `;
@@ -28408,13 +28964,20 @@ function updateTerrainMenuValue() {
     return;
   }
 
-  const terrain = getActiveTerrain();
-  if (terrain) {
-    dom.terrainMenuValue.textContent = usesConfiguredCesiumTerrain() ? "Hybrid Terrain" : terrain.name;
+  const enabledTerrains = syncActiveTerrainSelection();
+  if (enabledTerrains.length > 1) {
+    dom.terrainMenuValue.textContent = usesConfiguredCesiumTerrain()
+      ? `Hybrid Terrain (${enabledTerrains.length} tiles)`
+      : `${enabledTerrains.length} DTED tiles`;
     return;
   }
 
-  dom.terrainMenuValue.textContent = `${state.terrains.length} Loaded`;
+  if (enabledTerrains.length === 1) {
+    dom.terrainMenuValue.textContent = usesConfiguredCesiumTerrain() ? "Hybrid Terrain" : enabledTerrains[0].name;
+    return;
+  }
+
+  dom.terrainMenuValue.textContent = `${state.terrains.length} disabled`;
 }
 
 function renderViewsheds() {
@@ -29306,13 +29869,8 @@ function onTerrainAction(event) {
     return;
   }
 
-  if (action === "activate") {
-    state.activeTerrainId = terrain.id;
-    updateTerrainSummary();
-    renderTerrains();
-    updateMapOverlayMetrics();
-    setStatus(`${terrain.name} marked as the primary local terrain. Matching areas still use the best local dataset first, then Cesium fallback.`);
-    syncCesiumScene();
+  if (action === "enable") {
+    setTerrainTileEnabled(terrain, !isTerrainTileEnabled(terrain));
     return;
   }
 
@@ -29327,8 +29885,69 @@ function onTerrainAction(event) {
   }
 }
 
-function showTerrainCoverage(terrain) {
-  hideTerrainCoverage(terrain.id);
+function finalizeTerrainActivationChange(statusMessage) {
+  syncActiveTerrainSelection();
+  invalidateDerivedTerrainCaches();
+  clearSensorEvaluationCache();
+  state.sensorDetailCoverageCache.clear();
+  renderTerrains();
+  updateTerrainSummary();
+  updateMapOverlayMetrics();
+  renderMapContents();
+  syncCesiumScene();
+  state.assets.forEach((asset) => {
+    asset.groundElevationM = sampleTerrainElevation(asset.lat, asset.lon);
+    updateAssetMarker(asset);
+  });
+  if (statusMessage) {
+    setStatus(statusMessage);
+  }
+}
+
+function setTerrainTileEnabled(terrain, enabled) {
+  if (!terrain) {
+    return;
+  }
+  terrain.enabled = Boolean(enabled);
+  if (!terrain.enabled) {
+    hideTerrainCoverage(terrain.id, { deferFinalize: true });
+  }
+  finalizeTerrainActivationChange(`${terrain.name} ${terrain.enabled ? "activated" : "deactivated"} for terrain-aware propagation.`);
+}
+
+function setAllTerrainTilesEnabled(enabled) {
+  if (!state.terrains.length) {
+    return;
+  }
+  state.terrains.forEach((terrain) => {
+    terrain.enabled = Boolean(enabled);
+    if (!terrain.enabled) {
+      hideTerrainCoverage(terrain.id, { deferFinalize: true });
+    }
+  });
+  finalizeTerrainActivationChange(`${state.terrains.length} terrain tile${state.terrains.length === 1 ? "" : "s"} ${enabled ? "activated" : "deactivated"} for propagation.`);
+}
+
+function setAllTerrainCoverageVisible(visible) {
+  if (!state.terrains.length) {
+    return;
+  }
+  state.terrains.forEach((terrain) => {
+    terrain.extentVisible = Boolean(visible);
+    if (visible) {
+      showTerrainCoverage(terrain, { deferFinalize: true });
+    } else {
+      hideTerrainCoverage(terrain.id, { deferFinalize: true });
+    }
+  });
+  renderTerrains();
+  renderMapContents();
+  syncCesiumEntities();
+  setStatus(`${visible ? "Showing" : "Hiding"} coverage for ${state.terrains.length} terrain tile${state.terrains.length === 1 ? "" : "s"}.`);
+}
+
+function showTerrainCoverage(terrain, options = {}) {
+  hideTerrainCoverage(terrain.id, { deferFinalize: true });
   const layer = L.rectangle(
     [
       [terrain.bounds.sw.lat, terrain.bounds.sw.lon],
@@ -29345,8 +29964,10 @@ function showTerrainCoverage(terrain) {
   ).addTo(state.map);
   layer.bindTooltip(`${terrain.name} terrain coverage`, { sticky: true });
   state.terrainCoverageLayers.set(terrain.id, layer);
-  renderMapContents();
-  syncCesiumEntities();
+  if (!options.deferFinalize) {
+    renderMapContents();
+    syncCesiumEntities();
+  }
 }
 
 function hideTerrainCoverage(terrainId, options = {}) {
@@ -29367,8 +29988,9 @@ function hideTerrainCoverage(terrainId, options = {}) {
 }
 
 function updateTerrainSummary() {
+  const enabledTerrains = syncActiveTerrainSelection();
   const terrain = getActiveTerrain();
-  if (!terrain) {
+  if (!state.terrains.length) {
     const propagationModel = dom.propagationModel.value;
     const hasCesiumTerrain = usesConfiguredCesiumTerrain();
     const propagationSummary = usesOsmBuildingsInPropagation(propagationModel)
@@ -29390,13 +30012,30 @@ function updateTerrainSummary() {
     return;
   }
 
+  if (!enabledTerrains.length) {
+    dom.terrainSummary.textContent =
+      `${state.terrains.length} local terrain tile${state.terrains.length === 1 ? "" : "s"} loaded, all disabled. Activate tiles to use local DTED/GeoTIFF in terrain-aware propagation.`;
+    updateTerrainMenuValue();
+    return;
+  }
+
   const hybridSummary = usesConfiguredCesiumTerrain()
-    ? " Local terrain is prioritized where loaded; uncovered or invalid cells stream from Cesium in online mode."
-    : " Only loaded local terrain is available in local-only mode.";
+    ? " Active local tiles are used first; uncovered or invalid cells stream from Cesium in online mode."
+    : " Only active local terrain tiles are available in local-only mode.";
+  const activeBounds = combineTerrainBounds(enabledTerrains);
+  const boundsText = activeBounds
+    ? ` Coverage SW ${activeBounds.sw.lat.toFixed(4)}, ${activeBounds.sw.lon.toFixed(4)} to NE ${activeBounds.ne.lat.toFixed(4)}, ${activeBounds.ne.lon.toFixed(4)}.`
+    : "";
+  const resolutionMeters = getTerrainCellResolutionMeters(terrain);
+  const resolutionText = Number.isFinite(resolutionMeters)
+    ? ` Best spacing is about ${Math.round(resolutionMeters)} m.`
+    : "";
+  const label = enabledTerrains.length === 1
+    ? `Active local terrain: ${enabledTerrains[0].name}. ${enabledTerrains[0].rows} x ${enabledTerrains[0].cols} posts.`
+    : `Active local terrain set: ${enabledTerrains.length} of ${state.terrains.length} loaded tiles.`;
   dom.terrainSummary.textContent =
-    `Primary local terrain: ${terrain.name}. ${terrain.rows} x ${terrain.cols} posts with ` +
-    `${terrain.latStepDeg.toFixed(6)} x ${terrain.lonStepDeg.toFixed(6)} degree spacing.${hybridSummary}` +
-    (terrain.osmBuildingsEnabled ? ` OSM building obstructions enabled with ${getBuildingMaterialModel().label} loss model in ${getBuildingPropagationModeLabel(terrain.buildingPropagationMode || state.settings.buildingPropagationMode)} mode.` : "") +
+    `${label}${boundsText}${resolutionText}${hybridSummary}` +
+    (enabledTerrains.some((entry) => entry.osmBuildingsEnabled) ? ` OSM building obstructions enabled with ${getBuildingMaterialModel().label} loss model in ${getBuildingPropagationModeLabel(terrain?.buildingPropagationMode || state.settings.buildingPropagationMode)} mode.` : "") +
     (usesCesiumPhotorealisticTiles() ? " 3D view uses Google Photorealistic 3D Tiles for visual rendering." : "");
   updateTerrainMenuValue();
 }
@@ -29522,6 +30161,7 @@ async function importTerrainFiles(fileList) {
       const terrain = isGeoTiff ? await parseGeoTiffTerrain(buffer, displayName) : parseDted(buffer, displayName);
       terrain.id = generateId();
       terrain.name = displayName;
+      terrain.enabled = true;
       terrain.extentVisible = false;
       importedTerrains.push(terrain);
     } catch (error) {
@@ -29541,7 +30181,7 @@ async function importTerrainFiles(fileList) {
   const preferredTerrain = mapCenter
     ? findBestLocalTerrainForCoordinate(mapCenter.lat, mapCenter.lng)
     : null;
-  state.activeTerrainId = preferredTerrain?.id || importedTerrains[0].id;
+  state.activeTerrainId = preferredTerrain?.id || state.activeTerrainId || importedTerrains[0].id;
   invalidateDerivedTerrainCaches();
   renderTerrains();
   updateTerrainSummary();
@@ -29672,6 +30312,11 @@ function cacheTerrainInWorker(terrain) {
   if (!terrain?.id) {
     return Promise.resolve();
   }
+  if (isTerrainSet(terrain)) {
+    const tiles = getTerrainSetTiles(terrain);
+    return Promise.all(tiles.map((tile) => cacheTerrainInWorker(tile)))
+      .then(() => cacheTerrainCollectionInWorker(terrain, tiles));
+  }
   if (state.terrainReadyIds.has(terrain.id)) {
     return Promise.resolve();
   }
@@ -29747,6 +30392,49 @@ function cacheTerrainInWorker(terrain) {
       },
       transferables,
     );
+  });
+}
+
+function cacheTerrainCollectionInWorker(terrain, tiles) {
+  if (!terrain?.id) {
+    return Promise.resolve();
+  }
+  if (state.terrainReadyIds.has(terrain.id)) {
+    return Promise.resolve();
+  }
+  if (state.terrainCacheResolvers.has(terrain.id)) {
+    return new Promise((resolve) => {
+      const previousResolve = state.terrainCacheResolvers.get(terrain.id);
+      state.terrainCacheResolvers.set(terrain.id, () => {
+        previousResolve?.();
+        resolve();
+      });
+    });
+  }
+  return new Promise((resolve) => {
+    state.terrainCacheResolvers.set(terrain.id, resolve);
+    state.worker.postMessage({
+      type: "terrain:cache",
+      payload: {
+        id: terrain.id,
+        name: terrain.name,
+        bounds: terrain.bounds,
+        rows: terrain.rows,
+        cols: terrain.cols,
+        latStepDeg: terrain.latStepDeg,
+        lonStepDeg: terrain.lonStepDeg,
+        sourceType: terrain.sourceType,
+        sourceLabel: terrain.sourceLabel,
+        terrainCoverageMode: terrain.terrainCoverageMode,
+        terrainCompleteness: terrain.terrainCompleteness,
+        activeTileCount: tiles.length,
+        loadedTileCount: state.terrains.length,
+        tileIds: tiles.map((tile) => tile.id),
+        osmBuildingsEnabled: tiles.some((tile) => tile.osmBuildingsEnabled),
+        buildingMaterialPreset: terrain.buildingMaterialPreset ?? state.settings.buildingMaterialPreset,
+        buildingPropagationMode: terrain.buildingPropagationMode ?? getBuildingPropagationMode(),
+      },
+    });
   });
 }
 
@@ -30033,12 +30721,24 @@ function getTerrainById(terrainId) {
 }
 
 function getActiveTerrain() {
-  return getTerrainById(state.activeTerrainId);
+  const enabledTerrains = syncActiveTerrainSelection();
+  if (!enabledTerrains.length) {
+    return null;
+  }
+  if (enabledTerrains.length === 1) {
+    return enabledTerrains[0];
+  }
+  return buildTerrainSet(enabledTerrains);
 }
 
 function buildLoadedTerrainCacheKey() {
   return state.terrains
-    .map((terrain) => `${terrain.id}:${terrain.sourceType ?? "dted"}:${terrain.rows}x${terrain.cols}`)
+    .map((terrain) => [
+      terrain.id,
+      terrain.sourceType ?? "dted",
+      `${terrain.rows}x${terrain.cols}`,
+      terrain.enabled === false ? "off" : "on",
+    ].join(":"))
     .sort()
     .join("|");
 }
@@ -31362,7 +32062,7 @@ async function resolveTerrainIdForSimulation(asset) {
   if (!simulationUsesTerrainModel(propagationModel)) {
     return null;
   }
-  if (!state.terrains.length && !usesConfiguredCesiumTerrain()) {
+  if (!getEnabledLocalTerrains().length && !usesConfiguredCesiumTerrain()) {
     return null;
   }
 
@@ -31377,7 +32077,7 @@ async function resolveTerrainIdForSimulation(asset) {
 }
 
 async function resolveTerrainIdForPlanning(polygon, gridMeters) {
-  if (!state.terrains.length && !usesConfiguredCesiumTerrain()) {
+  if (!getEnabledLocalTerrains().length && !usesConfiguredCesiumTerrain()) {
     return null;
   }
 
@@ -31405,7 +32105,7 @@ async function ensureIonTerrainGrid(bounds, gridMeters, cacheKey, options = {}) 
   }
 
   const propagationModel = options.propagationModel || dom.propagationModel.value;
-  const hasLocalTerrain = state.terrains.length > 0;
+  const hasLocalTerrain = getEnabledLocalTerrains().length > 0;
   const hasCesiumTerrain = usesConfiguredCesiumTerrain();
   setStatus(hasLocalTerrain && hasCesiumTerrain
     ? "Blending local terrain with streamed Cesium terrain for propagation..."
@@ -38097,6 +38797,7 @@ function hslToRgb(hueDeg, saturation, lightness) {
 function rssiColorChannels(rssi, lineOfSight, opacity = 0.7, losRenderMode = "transparent", belowThresholdMode = "gradient") {
   const minRssi = -120;
   const maxRssi = -40;
+  if (!Number.isFinite(Number(rssi))) return null;
 
   if (!lineOfSight) {
     if (losRenderMode === "transparent") return null;
@@ -39136,20 +39837,27 @@ const CanvasViewshedLayer = L.Layer.extend({
   },
 
   _ensureColorCache() {
-    const losMode = getSimLosRenderMode();
-    const threshMode = getSimBelowThresholdMode();
+    const losMode = this.options.losRenderMode || getSimLosRenderMode();
+    const threshMode = this.options.belowThresholdMode || getSimBelowThresholdMode();
     if (this._colorCache?.length === this.options.rssi?.length
         && this._colorCacheLosMode === losMode
-        && this._colorCacheThreshMode === threshMode) {
+        && this._colorCacheThreshMode === threshMode
+        && this._colorCacheValidMask === this.options.validMask) {
       return;
     }
 
     const rssi = this.options.rssi ?? [];
     const lineOfSight = this.options.lineOfSight ?? [];
+    const validMask = this.options.validMask ?? [];
     this._colorCache = new Array(rssi.length);
     this._colorCacheLosMode = losMode;
     this._colorCacheThreshMode = threshMode;
+    this._colorCacheValidMask = validMask;
     for (let index = 0; index < rssi.length; index += 1) {
+      if (validMask.length === rssi.length && !validMask[index]) {
+        this._colorCache[index] = null;
+        continue;
+      }
       this._colorCache[index] = rssiColorChannels(rssi[index], Boolean(lineOfSight[index]), 1, losMode, threshMode);
     }
   },
@@ -44706,11 +45414,19 @@ function getTopologyPropagationModel() {
 function getTopologyTerrainForPath(latA, lonA, latB, lonB) {
   const midLat = (latA + latB) / 2;
   const midLon = (lonA + lonB) / 2;
+  const activeTerrain = getActiveTerrain();
+  if (isTerrainSet(activeTerrain)
+    && (
+      terrainContainsCoordinate(activeTerrain, midLat, midLon)
+      || terrainContainsCoordinate(activeTerrain, latA, lonA)
+      || terrainContainsCoordinate(activeTerrain, latB, lonB)
+    )) {
+    return activeTerrain;
+  }
   const midpointTerrain = findBestLocalTerrainForCoordinate(midLat, midLon);
   if (midpointTerrain) return midpointTerrain;
   const midpointIonTerrain = findBestCachedIonTerrainForCoordinate(midLat, midLon);
   if (midpointIonTerrain) return midpointIonTerrain;
-  const activeTerrain = getActiveTerrain();
   if (activeTerrain && terrainContainsCoordinate(activeTerrain, midLat, midLon)) return activeTerrain;
   return findBestLocalTerrainForCoordinate(latA, lonA)
     || findBestLocalTerrainForCoordinate(latB, lonB)
@@ -44824,6 +45540,7 @@ function terrainSourceLabel(source) {
     case "cesium-world": return "Cesium";
     case "cesium-custom": return "Cesium";
     case "geotiff": return "GeoTIFF";
+    case "terrain-set": return "Terrain set";
     case "dted": return "DTED";
     default: return "No terrain";
   }

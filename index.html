@@ -1549,6 +1549,11 @@
           </aside>
           <section class="sensor-emitter-detail-map-shell" aria-label="Sensor emitter relationship map">
             <div id="sensorEmitterDetailMap" class="sensor-emitter-detail-map"></div>
+            <div id="sensorEmitterDetailLoading" class="sensor-emitter-detail-loading hidden" aria-live="polite">
+              <div class="sensor-emitter-detail-spinner" aria-hidden="true"></div>
+              <strong>Running terrain and weather propagation</strong>
+              <span>Sampling terrain, tracing paths, and rendering RSSI.</span>
+            </div>
             <div id="sensorEmitterDetailLegend" class="sensor-emitter-detail-legend"></div>
           </section>
         </div>
@@ -2658,11 +2663,17 @@
           <div class="terrain-summary" id="terrainSummary">
             No local DTED loaded. Terrain-aware propagation uses Cesium terrain when configured, otherwise it falls back to free-space path loss.
           </div>
-          <div class="list-shell compact-shell">
-            <div class="list-header">
+          <div class="list-shell terrain-list-shell">
+            <div class="list-header terrain-list-header">
               <span>Loaded Terrain</span>
+              <div class="terrain-bulk-actions">
+                <button id="activateAllTerrainBtn" class="ghost-button small" type="button">Activate All</button>
+                <button id="deactivateAllTerrainBtn" class="ghost-button small" type="button">Deactivate All</button>
+                <button id="showAllTerrainCoverageBtn" class="ghost-button small" type="button">Show All Coverage</button>
+                <button id="hideAllTerrainCoverageBtn" class="ghost-button small" type="button">Hide All Coverage</button>
+              </div>
             </div>
-            <div id="terrainList" class="asset-list compact-list"></div>
+            <div id="terrainList" class="terrain-tile-list"></div>
           </div>
         </section>
         </section>
