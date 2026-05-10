@@ -1817,6 +1817,7 @@ const EMITTER_PROFILE_LEGACY_STORAGE_KEY = "ew-sim-emitter-profiles";
 const EMITTER_PROFILE_STORAGE_KEY = "ew-sim-emitter-profiles-library";
 const PROFILE_STORAGE_KEY = EMITTER_PROFILE_STORAGE_KEY;
 const SETTINGS_STORAGE_KEY_PREFIX = "ew-sim-map-settings";
+const VIEW_PREFERENCES_STORAGE_KEY = "ew-sim-view-preferences";
 const FONT_FAMILY_OPTIONS = {
   bahnschrift: `Bahnschrift, "DIN Alternate", "Segoe UI", sans-serif`,
   inter: `Inter, "Segoe UI", Roboto, Arial, sans-serif`,
@@ -9492,6 +9493,7 @@ async function applyAuthenticatedSession(payload, successMessage) {
   setLocalWorkspaceModePinned(false);
   state.session.token = payload.token;
   state.session.user = payload.user;
+  loadSettings();
   loadTakIdentitySettings();
   persistSessionStorage();
   await loadProjectList({ preferServerProject: true });
@@ -11934,18 +11936,76 @@ function wireEvents() {
   });
 }
 
-function loadSettings() {
-  Object.assign(state.settings, cloneJsonValue(DEFAULT_SETTINGS_STATE));
-  if (!canUsePersistentBrowserStorage()) {
-    return;
+function readStoredJsonObject(key, { removeInvalid = false } = {}) {
+  if (!key || typeof window === "undefined" || !window.localStorage) {
+    return null;
   }
-  const stored = window.localStorage.getItem(getSettingsStorageKey());
-  if (!stored) {
-    return;
-  }
-
   try {
+    const stored = window.localStorage.getItem(key);
+    if (!stored) {
+      return null;
+    }
     const parsed = JSON.parse(stored);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    if (removeInvalid) {
+      window.localStorage.removeItem(key);
+    }
+    return null;
+  }
+}
+
+function getCurrentViewPreferences() {
+  return {
+    enableSensorsView: Boolean(state.settings.enableSensorsView),
+    sensorAutoEvaluate: state.settings.sensorAutoEvaluate !== false,
+  };
+}
+
+function copyViewPreferenceFields(source, target) {
+  if (!source || typeof source !== "object" || !target || typeof target !== "object") {
+    return false;
+  }
+  let copied = false;
+  if (typeof source.enableSensorsView === "boolean") {
+    target.enableSensorsView = source.enableSensorsView;
+    copied = true;
+  }
+  if (typeof source.sensorAutoEvaluate === "boolean") {
+    target.sensorAutoEvaluate = source.sensorAutoEvaluate;
+    copied = true;
+  }
+  return copied;
+}
+
+function applyPersistedViewPreferences({ fallback = null, user = state.session.user } = {}) {
+  const preferences = {};
+  const scopedUser = user && (user.id || user.username || user.email) ? user : null;
+  copyViewPreferenceFields(fallback, preferences);
+  copyViewPreferenceFields(readStoredJsonObject(VIEW_PREFERENCES_STORAGE_KEY), preferences);
+  if (scopedUser) {
+    copyViewPreferenceFields(readStoredJsonObject(getSettingsStorageKey(scopedUser)), preferences);
+  }
+  copyViewPreferenceFields(preferences, state.settings);
+}
+
+function persistViewPreferences() {
+  if (typeof window === "undefined" || !window.localStorage) {
+    return;
+  }
+  window.localStorage.setItem(VIEW_PREFERENCES_STORAGE_KEY, JSON.stringify(getCurrentViewPreferences()));
+}
+
+function loadSettings({ fallbackViewPreferences = null } = {}) {
+  const viewPreferenceFallback = fallbackViewPreferences ?? getCurrentViewPreferences();
+  Object.assign(state.settings, cloneJsonValue(DEFAULT_SETTINGS_STATE));
+
+  if (canUsePersistentBrowserStorage()) {
+    const parsed = readStoredJsonObject(getSettingsStorageKey(), { removeInvalid: true });
+    if (!parsed) {
+      applyPersistedViewPreferences({ fallback: viewPreferenceFallback });
+      return;
+    }
     state.settings.measurementUnits = ["metric", "standard"].includes(parsed.measurementUnits)
       ? parsed.measurementUnits
       : state.settings.measurementUnits;
@@ -11987,12 +12047,12 @@ function loadSettings() {
     if (typeof parsed.tacticalMarkerSize === "number" && parsed.tacticalMarkerSize >= 30 && parsed.tacticalMarkerSize <= 120) {
       state.settings.tacticalMarkerSize = parsed.tacticalMarkerSize;
     }
-  } catch {
-    window.localStorage.removeItem(getSettingsStorageKey());
   }
+  applyPersistedViewPreferences({ fallback: viewPreferenceFallback });
 }
 
 function persistSettings() {
+  persistViewPreferences();
   if (!canUsePersistentBrowserStorage()) {
     return;
   }
@@ -12368,6 +12428,7 @@ async function reloadWorkspaceState({ restoreAiHistory = false, statusMessage = 
   } catch (error) {
     reloadError = error;
   }
+  applyPersistedViewPreferences();
   renderWorkspaceState();
   if (restoreAiHistory) {
     resetRenderedAiChatMessages();
@@ -12422,6 +12483,9 @@ function applySavedMapState(rawSaved) {
   if (saved.settings) {
     state.settings = { ...state.settings, ...saved.settings };
   }
+  // Optional view preferences are browser/user UI choices, so keep them from
+  // being rolled back by older local/project state snapshots.
+  applyPersistedViewPreferences();
   if (saved.plan && typeof saved.plan === "object") {
     _toState.units = Array.isArray(saved.plan.units)
       ? saved.plan.units.map((unit) => normalizePlanUnit({
