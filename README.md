@@ -143,6 +143,20 @@ cd backend
 npm run check
 ```
 
+### MIL-STD Catalog Generation
+
+The generated MIL-STD catalog files are committed, but the raw Esri `joint-military-symbology-xml` checkout is local cache and should not be committed. To fetch the pinned source checkout and regenerate `milstd-symbol-catalog.js` plus `generated/milstd-symbol-catalog.js`, run:
+
+```powershell
+npm run generate:milstd
+```
+
+Advanced: use a custom source checkout by passing the CSV directory directly:
+
+```powershell
+node scripts/generate-milstd-catalog.mjs --source C:\path\to\joint-military-symbology-xml\samples\imagefile_name_category_tags
+```
+
 ## Operational Note
 
 RF SIM is a planning and scenario-support tool. Terrain, propagation, weather, building, and AI-assisted outputs are decision aids and should be validated before operational use.

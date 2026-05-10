@@ -2,13 +2,21 @@ import fs from "node:fs";
 import path from "node:path";
 
 const repoRoot = process.cwd();
-const sourceDir = path.join(
+const sourceArgIndex = process.argv.indexOf("--source");
+const sourceArg = sourceArgIndex >= 0 ? process.argv[sourceArgIndex + 1] : "";
+const defaultSourceDir = path.join(
   repoRoot,
   ".cache",
   "joint-military-symbology-xml",
   "samples",
   "imagefile_name_category_tags",
 );
+const configuredSourceDir = sourceArg
+  ? path.resolve(repoRoot, sourceArg)
+  : process.env.RFSIM_MILSTD_SOURCE_DIR
+  ? path.resolve(repoRoot, process.env.RFSIM_MILSTD_SOURCE_DIR)
+  : "";
+const sourceDir = configuredSourceDir || defaultSourceDir;
 const targetPath = path.join(repoRoot, "milstd-symbol-catalog.js");
 const generatedTargetPath = path.join(repoRoot, "generated", "milstd-symbol-catalog.js");
 
@@ -103,6 +111,16 @@ function detectObjectClass(legacySidc = "", familyKey = "") {
 }
 
 function buildCatalog() {
+  if (!fs.existsSync(sourceDir)) {
+    throw new Error([
+      `MIL-STD source CSV directory not found: ${sourceDir}`,
+      "",
+      "The joint-military-symbology-xml source checkout is local cache and is not committed.",
+      "Run `npm run prepare:milstd`, or pass `--source <samples/imagefile_name_category_tags>`.",
+      "You can also set RFSIM_MILSTD_SOURCE_DIR to that source CSV directory.",
+    ].join("\n"));
+  }
+
   const files = fs.readdirSync(sourceDir)
     .filter((name) => name.toLowerCase().endsWith(".csv"))
     .filter((name) => /icons|points/i.test(name))

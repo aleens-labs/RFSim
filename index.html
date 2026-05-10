@@ -1468,6 +1468,10 @@
                   <input id="sensorChannelsInput" type="number" step="1" min="1">
                 </label>
                 <label>
+                  Demodulators
+                  <input id="sensorDemodulatorsInput" type="number" step="1" min="0">
+                </label>
+                <label>
                   Sensitivity (dBm)
                   <input id="sensorSensitivityInput" type="number" step="any">
                 </label>
@@ -1492,6 +1496,10 @@
                 <label>
                   Antenna Height (m)
                   <input id="sensorAntennaHeightInput" type="number" step="any" min="0">
+                </label>
+                <label>
+                  System Loss (dB)
+                  <input id="sensorSystemLossInput" type="number" step="any" min="0">
                 </label>
               </div>
             </section>
@@ -3877,7 +3885,7 @@
   <script src="./app-config.js"></script>
   <script src="./milstd-symbol-catalog.js?v=20260508-2"></script>
   <script src="./src/workspace-policy.js"></script>
-  <script type="module" src="./src/main.js?v=20260510-sensor-refresh"></script>
+  <script type="module" src="./src/main.js?v=20260510-terrain-sensors"></script>
   <script>
   (function () {
     const authCanvas = document.getElementById('authWaterfall');

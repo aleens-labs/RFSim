@@ -13,6 +13,7 @@ dist/
 build/
 .codex
 .claude
+.cache/
 rust/rf_sim_compute/target/
 rust/rf_sim_compute/pkg/
 certs/

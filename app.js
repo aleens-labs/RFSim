@@ -102,6 +102,8 @@ const workspacePolicy = globalThis.RfSimWorkspacePolicy ?? {
   },
 };
 
+const sensorEvaluation = globalThis.RfSimSensorEvaluation;
+
 const BASEMAPS = {
   esri: {
     label: "Esri World Imagery",
@@ -2192,10 +2194,12 @@ const dom = {
   sensorFreqMaxInput: document.querySelector("#sensorFreqMaxInput"),
   sensorBandwidthInput: document.querySelector("#sensorBandwidthInput"),
   sensorChannelsInput: document.querySelector("#sensorChannelsInput"),
+  sensorDemodulatorsInput: document.querySelector("#sensorDemodulatorsInput"),
   sensorSensitivityInput: document.querySelector("#sensorSensitivityInput"),
   sensorAntennaTypeInput: document.querySelector("#sensorAntennaTypeInput"),
   sensorAntennaGainInput: document.querySelector("#sensorAntennaGainInput"),
   sensorAntennaHeightInput: document.querySelector("#sensorAntennaHeightInput"),
+  sensorSystemLossInput: document.querySelector("#sensorSystemLossInput"),
   sensorModesInput: document.querySelector("#sensorModesInput"),
   sensorCompatibleNodesInput: document.querySelector("#sensorCompatibleNodesInput"),
   sensorNotesInput: document.querySelector("#sensorNotesInput"),
@@ -2873,6 +2877,13 @@ const state = {
   topologyLinkProfileRequests: new Map(),
   topologyLinkProfilePendingKeys: new Map(),
   topologyLinkProfileRequestSeq: 0,
+  sensorEvaluationCache: new Map(),
+  sensorEvaluationRequests: new Map(),
+  sensorEvaluationPendingKeys: new Map(),
+  sensorEvaluationQueue: [],
+  sensorEvaluationActiveCount: 0,
+  sensorEvaluationRequestSeq: 0,
+  sensorEvaluationRenderTimerId: null,
   renamingMapContentId: null,
   workspaceMenuOpen: false,
   mapContentsSearch: "",
@@ -4005,6 +4016,10 @@ function clearTopologyLinkProfileCache() {
   state.topologyLinkProfileCache.clear();
 }
 
+function clearSensorEvaluationCache() {
+  state.sensorEvaluationCache.clear();
+}
+
 function resolvePendingTopologyLinkProfiles(value = null) {
   state.topologyLinkProfileRequests.forEach((entry) => {
     clearTimeout(entry.timeoutId);
@@ -4014,9 +4029,23 @@ function resolvePendingTopologyLinkProfiles(value = null) {
   state.topologyLinkProfilePendingKeys.clear();
 }
 
+function resolvePendingSensorEvaluations(value = null) {
+  state.sensorEvaluationRequests.forEach((entry) => {
+    clearTimeout(entry.timeoutId);
+    entry.resolve(value);
+  });
+  state.sensorEvaluationQueue.forEach((entry) => entry.resolve(value));
+  state.sensorEvaluationRequests.clear();
+  state.sensorEvaluationPendingKeys.clear();
+  state.sensorEvaluationQueue.length = 0;
+  state.sensorEvaluationActiveCount = 0;
+}
+
 function recreateSimulationWorker() {
   resolvePendingTopologyLinkProfiles(null);
+  resolvePendingSensorEvaluations(null);
   clearTopologyLinkProfileCache();
+  clearSensorEvaluationCache();
   try {
     state.worker?.terminate();
   } catch {}
@@ -13612,7 +13641,11 @@ function onWorkerMessage(event) {
   }
 
   if (type === "link-profile:complete") {
-    consumeTopologyLinkProfileResult(payload);
+    if (String(payload?.requestId || "").startsWith("sensor-eval-")) {
+      consumeSensorEvaluationProfileResult(payload);
+    } else {
+      consumeTopologyLinkProfileResult(payload);
+    }
     return;
   }
 
@@ -25357,6 +25390,9 @@ function sensorIconSvg() {
 }
 
 function deriveSensorCompatibleReceiveNodes(source = {}) {
+  if (sensorEvaluation?.deriveSensorCompatibleReceiveNodes) {
+    return sensorEvaluation.deriveSensorCompatibleReceiveNodes(source);
+  }
   const modes = String(source.modes || "").toUpperCase();
   const nodes = [];
   const range = formatSensorFrequencyRange(source);
@@ -25393,9 +25429,8 @@ function deriveSensorCompatibleReceiveNodes(source = {}) {
 function normalizeSensorRecord(raw = {}) {
   const profile = getSensorProfile(raw.profileId || raw.id || "");
   const source = { ...profile, ...(raw && typeof raw === "object" ? raw : {}) };
+  const capability = sensorEvaluation.normalizeSensorCapability(source);
   const name = String(source.name || profile?.name || "RF Sensor").trim();
-  const minMHz = Number(source.frequencyMinMHz);
-  const maxMHz = Number(source.frequencyMaxMHz);
   const sensor = stampContentRecord({
     id: String(source.id && !SENSOR_LIBRARY.some((entry) => entry.id === source.id) ? source.id : raw.id || generateId()),
     kind: "sensor",
@@ -25407,26 +25442,29 @@ function normalizeSensorRecord(raw = {}) {
     toUnitId: Number.isFinite(Number(source.toUnitId)) ? Number(source.toUnitId) : null,
     lat: normalizeOptionalMapCoordinate(source.lat),
     lon: normalizeOptionalMapCoordinate(source.lon),
-    frequencyMinMHz: Number.isFinite(minMHz) ? Math.max(0, minMHz) : 0,
-    frequencyMaxMHz: Number.isFinite(maxMHz) ? Math.max(0, maxMHz) : 6000,
-    instantaneousBandwidthMHz: Number.isFinite(Number(source.instantaneousBandwidthMHz)) ? Math.max(0, Number(source.instantaneousBandwidthMHz)) : 0,
-    channels: Number.isFinite(Number(source.channels)) ? Math.max(1, Math.round(Number(source.channels))) : 1,
-    demodulators: Number.isFinite(Number(source.demodulators)) ? Math.max(0, Math.round(Number(source.demodulators))) : null,
-    sensitivityDbm: Number.isFinite(Number(source.sensitivityDbm)) ? Number(source.sensitivityDbm) : -105,
-    antennaType: String(source.antennaType || "Omni").trim(),
-    antennaGainDbi: Number.isFinite(Number(source.antennaGainDbi)) ? Number(source.antennaGainDbi) : 0,
-    antennaHeightM: Number.isFinite(Number(source.antennaHeightM)) ? Math.max(0, Number(source.antennaHeightM)) : 2,
-    modes: String(source.modes || "").trim(),
-    compatibleReceiveNodes: String(source.compatibleReceiveNodes || deriveSensorCompatibleReceiveNodes(source)).trim(),
+    frequencyMinMHz: capability.frequencyMinMHz,
+    frequencyMaxMHz: capability.frequencyMaxMHz,
+    instantaneousBandwidthMHz: capability.instantaneousBandwidthMHz,
+    channels: capability.channels,
+    demodulators: capability.demodulators,
+    sensitivityDbm: capability.sensitivityDbm,
+    antennaType: capability.antennaType,
+    antennaGainDbi: capability.antennaGainDbi,
+    antennaHeightM: capability.antennaHeightM,
+    systemLossDb: capability.systemLossDb,
+    modes: capability.modes,
+    receiveModeTags: capability.receiveModeTags,
+    supportedModulations: capability.supportedModulations,
+    supportedWaveformFamilies: capability.supportedWaveformFamilies,
+    dfCapable: capability.dfCapable,
+    detectsUnknownSignals: capability.detectsUnknownSignals,
+    compatibleReceiveNodes: String(source.compatibleReceiveNodes || sensorEvaluation.deriveSensorCompatibleReceiveNodes({ ...source, ...capability })).trim(),
     notes: String(source.notes || "").trim(),
     color: String(source.color || "#7dd3fc"),
     workspaceLayout: source.workspaceLayout && Number.isFinite(Number(source.workspaceLayout.x)) && Number.isFinite(Number(source.workspaceLayout.y))
       ? { x: Number(source.workspaceLayout.x), y: Number(source.workspaceLayout.y) }
       : null,
   });
-  if (sensor.frequencyMaxMHz < sensor.frequencyMinMHz) {
-    [sensor.frequencyMinMHz, sensor.frequencyMaxMHz] = [sensor.frequencyMaxMHz, sensor.frequencyMinMHz];
-  }
   return sensor;
 }
 
@@ -25571,7 +25609,14 @@ function getEmitterEmissionEntries(asset) {
       id: net.id,
       name: net.name || "Net",
       frequencyMHz: Number(net.frequencyMHz),
+      bandwidthKHz: Number.isFinite(Number(net.bandwidthKHz)) ? Number(net.bandwidthKHz) : (Number.isFinite(Number(asset?.bandwidthKHz ?? asset?.ext?.bandwidthKHz)) ? Number(asset.bandwidthKHz ?? asset.ext?.bandwidthKHz) : null),
       waveform: net.waveform || asset.waveform || asset.ext?.waveform || "",
+      modulation: net.modulation || asset.modulation || asset.ext?.modulation || "",
+      powerW: Number.isFinite(Number(net.powerW)) ? Number(net.powerW) : (Number.isFinite(Number(asset?.powerW ?? asset?.ext?.powerW)) ? Number(asset.powerW ?? asset.ext?.powerW) : null),
+      dutyCycle: Number.isFinite(Number(net.dutyCycle)) ? Number(net.dutyCycle) : (Number.isFinite(Number(asset?.dutyCycle ?? asset?.ext?.dutyCycle)) ? Number(asset.dutyCycle ?? asset.ext?.dutyCycle) : null),
+      antennaGainDbi: Number.isFinite(Number(asset?.antennaGainDbi ?? asset?.ext?.antennaGainDbi)) ? Number(asset.antennaGainDbi ?? asset.ext?.antennaGainDbi) : null,
+      antennaHeightM: Number.isFinite(Number(asset?.antennaHeightM ?? asset?.ext?.antennaHeightM)) ? Number(asset.antennaHeightM ?? asset.ext?.antennaHeightM) : null,
+      systemLossDb: Number.isFinite(Number(asset?.systemLossDb ?? asset?.ext?.systemLossDb)) ? Number(asset.systemLossDb ?? asset.ext?.systemLossDb) : null,
     }))
     .filter((entry) => Number.isFinite(entry.frequencyMHz) && entry.frequencyMHz > 0);
   const primaryFrequency = Number(asset?.frequencyMHz);
@@ -25580,104 +25625,252 @@ function getEmitterEmissionEntries(asset) {
         id: "primary",
         name: asset.emitterLabel || asset.name || "Primary",
         frequencyMHz: primaryFrequency,
+        bandwidthKHz: Number.isFinite(Number(asset?.bandwidthKHz ?? asset?.ext?.bandwidthKHz)) ? Number(asset.bandwidthKHz ?? asset.ext?.bandwidthKHz) : null,
         waveform: asset.waveform || asset.ext?.waveform || "",
+        modulation: asset.modulation || asset.ext?.modulation || "",
+        powerW: Number.isFinite(Number(asset?.powerW ?? asset?.ext?.powerW)) ? Number(asset.powerW ?? asset.ext?.powerW) : null,
+        dutyCycle: Number.isFinite(Number(asset?.dutyCycle ?? asset?.ext?.dutyCycle)) ? Number(asset.dutyCycle ?? asset.ext?.dutyCycle) : null,
+        antennaGainDbi: Number.isFinite(Number(asset?.antennaGainDbi ?? asset?.ext?.antennaGainDbi)) ? Number(asset.antennaGainDbi ?? asset.ext?.antennaGainDbi) : null,
+        antennaHeightM: Number.isFinite(Number(asset?.antennaHeightM ?? asset?.ext?.antennaHeightM)) ? Number(asset.antennaHeightM ?? asset.ext?.antennaHeightM) : null,
+        systemLossDb: Number.isFinite(Number(asset?.systemLossDb ?? asset?.ext?.systemLossDb)) ? Number(asset.systemLossDb ?? asset.ext?.systemLossDb) : null,
       }]
     : [];
-  const seen = new Set();
-  return [...primary, ...netEntries].filter((entry) => {
-    const key = `${entry.frequencyMHz}:${entry.waveform}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
+  return sensorEvaluation.dedupeEmitterEmissions([...primary, ...netEntries]);
+}
+
+function buildSensorWorkerEndpoint(sensor, position, frequencyMHz) {
+  const capability = sensorEvaluation.normalizeSensorCapability(sensor || {});
+  return {
+    id: sensor?.id || sensor?.name || "",
+    name: sensor?.name || sensor?.profileName || "RF Sensor",
+    type: "sensor",
+    lat: Number(position.lat),
+    lon: Number(position.lon),
+    frequencyMHz,
+    powerW: 0.001,
+    antennaHeightM: capability.antennaHeightM,
+    antennaGainDbi: capability.antennaGainDbi,
+    receiverGainDbi: capability.antennaGainDbi,
+    receiverSensitivityDbm: capability.sensitivityDbm,
+    systemLossDb: capability.systemLossDb,
+    waveform: capability.modes,
+    netId: "",
+    version: sensor?.version ?? "",
+  };
+}
+
+function buildSensorEmitterWorkerEndpoint(asset, emission, position) {
+  const normalizedEmission = sensorEvaluation.normalizeEmitterEmission(asset || {}, emission || {});
+  const endpoint = buildTopologyWorkerEndpoint(
+    {
+      ...(asset || {}),
+      frequencyMHz: normalizedEmission.frequencyMHz,
+      powerW: normalizedEmission.powerW,
+      antennaGainDbi: normalizedEmission.antennaGainDbi,
+      antennaHeightM: normalizedEmission.antennaHeightM,
+      systemLossDb: normalizedEmission.systemLossDb,
+      waveform: normalizedEmission.waveform,
+      ext: {
+        ...(asset?.ext || {}),
+        waveform: normalizedEmission.waveform,
+      },
+      netId: emission?.id || asset?.netId || asset?.net_id || "",
+    },
+    position,
+    normalizedEmission.frequencyMHz,
+  );
+  endpoint.id = `${asset?.id || asset?.name || "emitter"}:${emission?.id || "primary"}`;
+  endpoint.netId = emission?.id || asset?.netId || asset?.net_id || "";
+  endpoint.version = `${asset?.version ?? ""}:${emission?.id || "primary"}:${normalizedEmission.occupiedBandwidthMHz}:${normalizedEmission.modulation}`;
+  return endpoint;
+}
+
+function buildSensorEvaluationProfileContext(sensor, asset, emission, sensorPosition, emitterPosition) {
+  const normalizedEmission = sensorEvaluation.normalizeEmitterEmission(asset || {}, emission || {});
+  const frequencyMHz = Number(normalizedEmission.frequencyMHz);
+  if (!Number.isFinite(frequencyMHz) || !sensorPosition || !emitterPosition) return null;
+  const txEndpoint = buildSensorEmitterWorkerEndpoint(asset, emission, emitterPosition);
+  const rxEndpoint = buildSensorWorkerEndpoint(sensor, sensorPosition, frequencyMHz);
+  const terrain = getTopologyTerrainForPath(sensorPosition.lat, sensorPosition.lon, emitterPosition.lat, emitterPosition.lon);
+  const propagationModel = getTopologyPropagationModel();
+  const clearancePolicy = propagationModel === "itu-buildings-weather" ? "fresnel-60-buildings" : "fresnel-60";
+  const cacheKey = [
+    "sensor-eval",
+    sensor?.id || "",
+    emission?.id || "primary",
+    buildTopologyPathProfileCacheKey({
+      terrain,
+      propagationModel,
+      clearancePolicy,
+      endpointA: txEndpoint,
+      endpointB: rxEndpoint,
+    }),
+  ].join("|");
+  return {
+    terrain,
+    propagationModel,
+    clearancePolicy,
+    cacheKey,
+    payload: {
+      terrainId: terrain?.id || "",
+      txAsset: txEndpoint,
+      rxTarget: rxEndpoint,
+      weather: state.weather,
+      propagationModel,
+      clearancePolicy,
+    },
+  };
+}
+
+function pruneSensorEvaluationCache(maxEntries = 500) {
+  while (state.sensorEvaluationCache.size > maxEntries) {
+    const firstKey = state.sensorEvaluationCache.keys().next().value;
+    if (firstKey === undefined) break;
+    state.sensorEvaluationCache.delete(firstKey);
+  }
+}
+
+function scheduleSensorEvaluationRender() {
+  if (state.sensorEvaluationRenderTimerId) {
+    window.clearTimeout(state.sensorEvaluationRenderTimerId);
+  }
+  state.sensorEvaluationRenderTimerId = window.setTimeout(() => {
+    state.sensorEvaluationRenderTimerId = null;
+    if (state.ui?.currentView === "sensors") {
+      renderSensorsWorkspace();
+    }
+  }, 80);
+}
+
+function pumpSensorEvaluationQueue() {
+  if (!state.worker) return;
+  const maxConcurrent = 4;
+  while (state.sensorEvaluationActiveCount < maxConcurrent && state.sensorEvaluationQueue.length) {
+    const entry = state.sensorEvaluationQueue.shift();
+    if (!entry) continue;
+    state.sensorEvaluationActiveCount += 1;
+    entry.timeoutId = window.setTimeout(() => {
+      state.sensorEvaluationRequests.delete(entry.requestId);
+      state.sensorEvaluationPendingKeys.delete(entry.cacheKey);
+      state.sensorEvaluationActiveCount = Math.max(0, state.sensorEvaluationActiveCount - 1);
+      entry.resolve(null);
+      pumpSensorEvaluationQueue();
+    }, 2600);
+    state.sensorEvaluationRequests.set(entry.requestId, entry);
+    state.worker.postMessage({
+      type: "link-profile:start",
+      payload: { ...entry.payload, requestId: entry.requestId },
+    });
+  }
+}
+
+function enqueueSensorWorkerLinkProfile(payload, cacheKey) {
+  if (!state.worker || !cacheKey) return Promise.resolve(null);
+  const requestId = `sensor-eval-${++state.sensorEvaluationRequestSeq}`;
+  return new Promise((resolve) => {
+    state.sensorEvaluationQueue.push({
+      cacheKey,
+      payload,
+      requestId,
+      resolve,
+      timeoutId: null,
+    });
+    pumpSensorEvaluationQueue();
   });
+}
+
+function requestSensorWorkerEvaluationProfile(context) {
+  if (!context?.cacheKey) return;
+  if (state.sensorEvaluationCache.has(context.cacheKey) || state.sensorEvaluationPendingKeys.has(context.cacheKey)) {
+    return;
+  }
+  const promise = (async () => {
+    if (context.terrain && !state.terrainReadyIds.has(context.terrain.id)) {
+      try {
+        await cacheTerrainInWorker(context.terrain);
+      } catch {}
+    }
+    return enqueueSensorWorkerLinkProfile(context.payload, context.cacheKey);
+  })()
+    .then((result) => {
+      if (!result && !state.sensorEvaluationCache.has(context.cacheKey)) {
+        state.sensorEvaluationPendingKeys.delete(context.cacheKey);
+      }
+      scheduleSensorEvaluationRender();
+      return result;
+    })
+    .catch(() => {
+      state.sensorEvaluationPendingKeys.delete(context.cacheKey);
+      scheduleSensorEvaluationRender();
+      return null;
+    });
+  state.sensorEvaluationPendingKeys.set(context.cacheKey, promise);
+}
+
+function consumeSensorEvaluationProfileResult(payload = {}) {
+  const requestId = payload.requestId;
+  const entry = requestId ? state.sensorEvaluationRequests.get(requestId) : null;
+  if (!entry) return;
+  clearTimeout(entry.timeoutId);
+  state.sensorEvaluationRequests.delete(requestId);
+  state.sensorEvaluationPendingKeys.delete(entry.cacheKey);
+  state.sensorEvaluationActiveCount = Math.max(0, state.sensorEvaluationActiveCount - 1);
+  if (payload.error) {
+    entry.resolve(null);
+  } else {
+    const result = { ...payload, receivedAt: Date.now() };
+    state.sensorEvaluationCache.set(entry.cacheKey, result);
+    pruneSensorEvaluationCache();
+    entry.resolve(result);
+  }
+  scheduleSensorEvaluationRender();
+  pumpSensorEvaluationQueue();
+}
+
+function getSensorCachedWorkerProfile(sensor, asset, emission, sensorPosition, emitterPosition) {
+  const context = buildSensorEvaluationProfileContext(sensor, asset, emission, sensorPosition, emitterPosition);
+  if (!context) return null;
+  const cached = state.sensorEvaluationCache.get(context.cacheKey);
+  if (cached) return { ...cached, cached: true };
+  requestSensorWorkerEvaluationProfile(context);
+  return null;
 }
 
 function estimateSensorReception(sensor, asset, emission) {
   const sensorPosition = getSensorEffectiveMapPosition(sensor);
   const emitterPosition = getAssetEffectiveMapPosition(asset);
-  const frequencyMHz = Number(emission.frequencyMHz);
-  const sensorMinMHz = Number(sensor?.frequencyMinMHz);
-  const sensorMaxMHz = Number(sensor?.frequencyMaxMHz);
-  if (
-    Number.isFinite(frequencyMHz)
-    && Number.isFinite(sensorMinMHz)
-    && Number.isFinite(sensorMaxMHz)
-    && (frequencyMHz < sensorMinMHz || frequencyMHz > sensorMaxMHz)
-  ) {
-    return {
-      status: "out-of-range",
-      label: "Outside receiver range",
-      className: "not-detected",
-      marginDb: Number.NEGATIVE_INFINITY,
-      rxDbm: null,
-      distanceM: null,
-      positionLabel: sensorPosition && emitterPosition ? "" : getSensorEvaluationPlacementLabel(sensorPosition, emitterPosition),
-      asset,
-      emission,
-    };
-  }
-  if (!sensorPosition || !emitterPosition) {
-    return {
-      status: "not-placed",
-      label: "Needs map placement",
-      className: "not-detected",
-      marginDb: Number.NEGATIVE_INFINITY,
-      rxDbm: null,
-      distanceM: null,
-      positionLabel: getSensorEvaluationPlacementLabel(sensorPosition, emitterPosition),
-      asset,
-      emission,
-    };
-  }
-  const distanceM = Math.max(1, haversineKm(sensorPosition.lat, sensorPosition.lon, emitterPosition.lat, emitterPosition.lon) * 1000);
-  const txPowerW = Number.isFinite(Number(asset.powerW)) && Number(asset.powerW) > 0 ? Number(asset.powerW) : 5;
-  const txGain = Number.isFinite(Number(asset.antennaGainDbi)) ? Number(asset.antennaGainDbi) : 2.15;
-  const rxGain = Number.isFinite(Number(sensor.antennaGainDbi)) ? Number(sensor.antennaGainDbi) : 0;
-  const txHeight = Number.isFinite(Number(asset.antennaHeightM)) ? Number(asset.antennaHeightM) : 2;
-  const rxHeight = Number.isFinite(Number(sensor.antennaHeightM)) ? Number(sensor.antennaHeightM) : 2;
-  const loss = Math.max(0, Number(asset.systemLossDb) || 0);
-  let terrainLossDb = 0;
-  let terrainLos = null;
-  const terrain = findBestLocalTerrainForCoordinate(
-    (sensorPosition.lat + emitterPosition.lat) / 2,
-    (sensorPosition.lon + emitterPosition.lon) / 2,
-  );
-  if (terrain) {
-    terrainLos = computeTerrainLos(
-      sensorPosition.lat,
-      sensorPosition.lon,
-      rxHeight,
-      emitterPosition.lat,
-      emitterPosition.lon,
-      txHeight,
-      terrain,
-    );
-    if (terrainLos?.hasTerrain) {
-      const clearance = Number(terrainLos.minClearanceM);
-      if (terrainLos.blocked) {
-        terrainLossDb = clamp(18 + Math.abs(Number.isFinite(clearance) ? clearance : 0) * 0.45, 18, 42);
-      } else if (Number.isFinite(clearance) && clearance < 8) {
-        terrainLossDb = clamp((8 - clearance) * 1.2, 0, 12);
-      }
-    }
-  }
-  const rxDbm = wattsToDbm(txPowerW) + txGain + rxGain - loss - fsplDb(frequencyMHz, distanceM) - terrainLossDb;
-  const sensitivity = Number.isFinite(Number(sensor.sensitivityDbm)) ? Number(sensor.sensitivityDbm) : -105;
-  const marginDb = rxDbm - sensitivity;
-  const className = marginDb >= 8 ? "detectable" : marginDb >= 0 ? "marginal" : "not-detected";
-  const status = marginDb >= 8 ? "detectable" : marginDb >= 0 ? "marginal" : "below-sensitivity";
-  const label = marginDb >= 20 ? "Strong" : marginDb >= 8 ? "Detectable" : marginDb >= 0 ? "Marginal" : "Below sensitivity";
-  return {
-    status,
-    label,
-    className,
-    marginDb,
-    rxDbm,
-    distanceM,
-    terrainLossDb,
-    terrainLos,
-    asset,
+  const initialResult = sensorEvaluation.evaluateSensorEmission({
+    sensor,
+    emitter: asset,
     emission,
+    propagation: null,
+    sensorPosition,
+    emitterPosition,
+  });
+  if (initialResult.status !== "pending-propagation") {
+    return {
+      ...initialResult,
+      asset,
+      emission: initialResult.emission || emission,
+      sourceEmission: emission,
+      positionLabel: initialResult.positionLabel || getSensorEvaluationPlacementLabel(sensorPosition, emitterPosition),
+    };
+  }
+  const workerProfile = getSensorCachedWorkerProfile(sensor, asset, emission, sensorPosition, emitterPosition);
+  const result = sensorEvaluation.evaluateSensorEmission({
+    sensor,
+    emitter: asset,
+    emission,
+    propagation: workerProfile,
+    sensorPosition,
+    emitterPosition,
+  });
+  return {
+    ...result,
+    asset,
+    emission: result.emission || emission,
+    sourceEmission: emission,
+    positionLabel: result.positionLabel || getSensorEvaluationPlacementLabel(sensorPosition, emitterPosition),
   };
 }
 
@@ -25704,10 +25897,17 @@ function getSensorEvaluableEmitterAssets() {
 
 function getSensorEmissionEvaluationSortScore(entry) {
   const statusWeight = {
+    "demod-capable": 7000,
+    identified: 6000,
+    "bandwidth-limited": 5200,
+    "mode-mismatch": 5100,
+    "energy-detected": 5000,
     detectable: 5000,
-    marginal: 4000,
+    marginal: 4500,
+    "terrain-masked": 3200,
     "below-sensitivity": 3000,
-    "not-placed": 2000,
+    "pending-propagation": 2500,
+    "not-placed": 1500,
     "out-of-range": 1000,
     unconfigured: 0,
   }[entry?.status] ?? 0;
@@ -25716,12 +25916,7 @@ function getSensorEmissionEvaluationSortScore(entry) {
 }
 
 function pickBestSensorEmissionEvaluation(entries = []) {
-  return entries.reduce((best, entry) => {
-    if (!best) return entry;
-    const entryScore = getSensorEmissionEvaluationSortScore(entry);
-    const bestScore = getSensorEmissionEvaluationSortScore(best);
-    return entryScore > bestScore ? entry : best;
-  }, null);
+  return sensorEvaluation.pickBestSensorEmissionEvaluation(entries) || entries[0] || null;
 }
 
 function getSensorEmitterEvaluation(sensor, asset) {
@@ -25749,7 +25944,7 @@ function getSensorEmitterEvaluation(sensor, asset) {
     asset,
     emissions: evaluated,
     emissionCount: evaluated.length,
-    detectableEmissionCount: evaluated.filter((entry) => entry.className === "detectable" || entry.className === "marginal").length,
+    detectableEmissionCount: evaluated.filter((entry) => entry.sensed || entry.energyDetected).length,
   };
 }
 
@@ -25775,7 +25970,7 @@ function getSensorReceptionSummary(sensor) {
   }
   const emitterEvaluations = getSensorEvaluableEmitterAssets().map((asset) => getSensorEmitterEvaluation(sensor, asset));
   const ranked = sortSensorEmitterEvaluations(emitterEvaluations);
-  const count = ranked.filter((entry) => entry.className === "detectable" || entry.className === "marginal").length;
+  const count = ranked.filter((entry) => entry.sensed || entry.energyDetected).length;
   const maxRows = 6;
   return {
     count,
@@ -26001,14 +26196,17 @@ function renderSensorsWorkspace() {
           const frequencyLabel = Number.isFinite(Number(entry.emission?.frequencyMHz))
             ? formatEmitterWorkspaceFrequency(entry.emission.frequencyMHz)
             : "No frequency";
-          const rxLabel = entry.rxDbm === null ? "RX --" : `RX ${entry.rxDbm.toFixed(1)} dBm`;
+          const rxLabel = Number.isFinite(Number(entry.rxDbm)) ? `RX ${Number(entry.rxDbm).toFixed(1)} dBm` : "RX --";
+          const marginLabel = Number.isFinite(Number(entry.marginDb)) ? `Margin ${Number(entry.marginDb).toFixed(1)} dB` : "Margin --";
           const positionLabel = entry.distanceM ? formatDistance(entry.distanceM) : (entry.positionLabel || "No map position");
           const emissionCountLabel = entry.emissionCount > 1 ? ` | ${entry.emissionCount} emissions checked` : "";
-          const terrainLabel = entry.terrainLos?.hasTerrain ? ` | ${entry.terrainLos.blocked ? "Terrain masked" : "Terrain LOS"}` : "";
+          const terrainLabel = entry.terrainSourceLabel ? ` | ${entry.terrainSourceLabel}` : "";
+          const reasonLabel = entry.limitingReason || entry.positionLabel || entry.label;
           return `
           <div class="sensor-detection-row ${entry.className}">
             <strong>${escapeHtml(entry.asset?.name || entry.asset?.emitterLabel || "Emitter")} | ${escapeHtml(entry.label)}</strong>
-            <span>${escapeHtml(frequencyLabel)} | ${escapeHtml(rxLabel)} | ${escapeHtml(positionLabel)}${escapeHtml(emissionCountLabel)}${escapeHtml(terrainLabel)}</span>
+            <span>${escapeHtml(frequencyLabel)} | ${escapeHtml(rxLabel)} | ${escapeHtml(marginLabel)} | ${escapeHtml(positionLabel)}${escapeHtml(terrainLabel)}${escapeHtml(emissionCountLabel)}</span>
+            <span class="sensor-detection-reason">${escapeHtml(reasonLabel)}</span>
           </div>
         `;
         }).join("")}${summary.hiddenEmitterCount ? `<div class="emitters-net-empty">${escapeHtml(`${summary.hiddenEmitterCount} more emitter${summary.hiddenEmitterCount === 1 ? "" : "s"} evaluated`)}</div>` : ""}`
@@ -26260,10 +26458,12 @@ function openSensorEditor(sensorId = "", profileId = "", options = {}) {
   if (dom.sensorFreqMaxInput) dom.sensorFreqMaxInput.value = source.frequencyMaxMHz ?? "";
   if (dom.sensorBandwidthInput) dom.sensorBandwidthInput.value = source.instantaneousBandwidthMHz ?? "";
   if (dom.sensorChannelsInput) dom.sensorChannelsInput.value = source.channels ?? "";
+  if (dom.sensorDemodulatorsInput) dom.sensorDemodulatorsInput.value = source.demodulators ?? source.channels ?? "";
   if (dom.sensorSensitivityInput) dom.sensorSensitivityInput.value = source.sensitivityDbm ?? "";
   if (dom.sensorAntennaTypeInput) dom.sensorAntennaTypeInput.value = source.antennaType || "Omni";
   if (dom.sensorAntennaGainInput) dom.sensorAntennaGainInput.value = source.antennaGainDbi ?? "";
   if (dom.sensorAntennaHeightInput) dom.sensorAntennaHeightInput.value = source.antennaHeightM ?? "";
+  if (dom.sensorSystemLossInput) dom.sensorSystemLossInput.value = source.systemLossDb ?? "";
   if (dom.sensorModesInput) dom.sensorModesInput.value = source.modes || "";
   if (dom.sensorCompatibleNodesInput) dom.sensorCompatibleNodesInput.value = source.compatibleReceiveNodes || deriveSensorCompatibleReceiveNodes(source);
   if (dom.sensorNotesInput) dom.sensorNotesInput.value = source.notes || "";
@@ -26284,10 +26484,12 @@ function applySensorProfileToEditor() {
   if (dom.sensorFreqMaxInput) dom.sensorFreqMaxInput.value = profile.frequencyMaxMHz;
   if (dom.sensorBandwidthInput) dom.sensorBandwidthInput.value = profile.instantaneousBandwidthMHz;
   if (dom.sensorChannelsInput) dom.sensorChannelsInput.value = profile.channels;
+  if (dom.sensorDemodulatorsInput) dom.sensorDemodulatorsInput.value = profile.demodulators ?? profile.channels ?? 1;
   if (dom.sensorSensitivityInput) dom.sensorSensitivityInput.value = profile.sensitivityDbm;
   if (dom.sensorAntennaTypeInput) dom.sensorAntennaTypeInput.value = profile.antennaType || "Omni";
   if (dom.sensorAntennaGainInput) dom.sensorAntennaGainInput.value = profile.antennaGainDbi;
   if (dom.sensorAntennaHeightInput) dom.sensorAntennaHeightInput.value = profile.antennaHeightM;
+  if (dom.sensorSystemLossInput) dom.sensorSystemLossInput.value = profile.systemLossDb ?? 2;
   if (dom.sensorModesInput) dom.sensorModesInput.value = profile.modes || "";
   if (dom.sensorCompatibleNodesInput) dom.sensorCompatibleNodesInput.value = profile.compatibleReceiveNodes || deriveSensorCompatibleReceiveNodes(profile);
   if (dom.sensorNotesInput) dom.sensorNotesInput.value = profile.notes || "";
@@ -26300,6 +26502,9 @@ function getSensorEditorCompatibilitySource() {
     frequencyMinMHz: Number(dom.sensorFreqMinInput?.value),
     frequencyMaxMHz: Number(dom.sensorFreqMaxInput?.value),
     modes: dom.sensorModesInput?.value || profile?.modes || "",
+    receiveModeTags: profile?.receiveModeTags || [],
+    supportedModulations: profile?.supportedModulations || [],
+    supportedWaveformFamilies: profile?.supportedWaveformFamilies || [],
   };
 }
 
@@ -26322,10 +26527,12 @@ function getSensorEditorData() {
     frequencyMaxMHz: Number(dom.sensorFreqMaxInput?.value),
     instantaneousBandwidthMHz: Number(dom.sensorBandwidthInput?.value),
     channels: Number(dom.sensorChannelsInput?.value),
+    demodulators: Number(dom.sensorDemodulatorsInput?.value),
     sensitivityDbm: Number(dom.sensorSensitivityInput?.value),
     antennaType: dom.sensorAntennaTypeInput?.value || "Omni",
     antennaGainDbi: Number(dom.sensorAntennaGainInput?.value),
     antennaHeightM: Number(dom.sensorAntennaHeightInput?.value),
+    systemLossDb: Number(dom.sensorSystemLossInput?.value),
     modes: dom.sensorModesInput?.value || "",
     compatibleReceiveNodes: dom.sensorCompatibleNodesInput?.value || "",
     notes: dom.sensorNotesInput?.value || "",
@@ -41198,7 +41405,7 @@ const SENSOR_LIBRARY = Object.freeze([
     modes: "AM, FM, USB, LSB, CW, I/Q, spectrum monitoring, direction-finding capable with DF antenna",
     notes: "Rugged portable monitoring receiver for spectrum operations and direction finding workflows.",
   },
-]);
+].map((profile) => sensorEvaluation.normalizeSensorProfile(profile)));
 
 
 const UNIT_TYPE_SYMBOLS = {

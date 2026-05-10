@@ -3607,7 +3607,7 @@ body.theme-light .ai-agent-mode-indicator {
   --map-overlay-gap: 10px;
   --map-overlay-control-h: 34px;
   --map-view-toggle-w: 104px;
-  --map-geo-search-w: clamp(320px, 44vw, 480px);
+  --map-geo-search-w: clamp(224px, 30.8vw, 336px);
   --map-offline-w: 104px;
   position: relative;
   min-width: 0;
@@ -10156,9 +10156,25 @@ body.emitter-modal-open {
   background: color-mix(in srgb, var(--bg-input) 88%, var(--accent-warning) 8%);
 }
 
+.sensor-detection-row.energy,
+.sensor-detection-row.identified {
+  border-color: rgba(var(--accent-rgb), 0.3);
+  background: color-mix(in srgb, var(--bg-input) 88%, var(--accent) 8%);
+}
+
+.sensor-detection-row.pending {
+  border-color: rgba(148, 163, 184, 0.28);
+  background: color-mix(in srgb, var(--bg-input) 90%, #94a3b8 5%);
+}
+
 .sensor-detection-row.not-detected {
   border-color: rgba(var(--accent-danger-rgb), 0.26);
   background: color-mix(in srgb, var(--bg-input) 90%, var(--accent-danger) 7%);
+}
+
+.sensor-detection-row .sensor-detection-reason {
+  white-space: normal;
+  line-height: 1.25;
 }
 
 .sensor-marker-wrapper {

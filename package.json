@@ -6,7 +6,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "check": "node --check app.js && node --check simulation-worker.js && node --check rf-compute-wasm-loader.js && node --check src/workspace-policy.js",
+    "check": "node --check app.js && node --check simulation-worker.js && node --check rf-compute-wasm-loader.js && node --check src/workspace-policy.js && node --check src/sensor-evaluation.js && node --check scripts/generate-milstd-catalog.mjs && node --check scripts/prepare-milstd-source.mjs",
+    "prepare:milstd": "node scripts/prepare-milstd-source.mjs",
+    "generate:milstd": "npm run prepare:milstd && node scripts/generate-milstd-catalog.mjs",
     "test": "node --test frontend-test/*.test.js",
     "wasm:build": "wasm-pack build rust/rf_sim_compute --target web --out-dir pkg --release",
     "wasm:dev": "wasm-pack build rust/rf_sim_compute --target web --out-dir pkg --dev"
