@@ -2158,8 +2158,11 @@ const dom = {
   emittersCtxDelete: document.querySelector("#emittersCtxDelete"),
   emittersCtxClose: document.querySelector("#emittersCtxClose"),
   sensorsAddBtn: document.querySelector("#sensorsAddBtn"),
+  sensorsAutoLayoutBtn: document.querySelector("#sensorsAutoLayoutBtn"),
+  sensorsFitBtn: document.querySelector("#sensorsFitBtn"),
   sensorsRefreshBtn: document.querySelector("#sensorsRefreshBtn"),
   sensorsOpenMapBtn: document.querySelector("#sensorsOpenMapBtn"),
+  sensorsLibraryToggleBtn: document.querySelector("#sensorsLibraryToggleBtn"),
   sensorsLibraryList: document.querySelector("#sensorsLibraryList"),
   sensorsCanvas: document.querySelector("#sensorsCanvas"),
   sensorsWorld: document.querySelector("#sensorsWorld"),
@@ -25621,6 +25624,83 @@ function buildSensorWorkspaceDefaultLayout(index = 0) {
   };
 }
 
+function getSensorWorkspaceLayoutMetrics() {
+  return {
+    cardWidth: 300,
+    cardHeight: 390,
+    columnGap: 34,
+    rowGap: 36,
+    startX: 180,
+    startY: 190,
+  };
+}
+
+function getSensorAutoLayoutColumnCount(sensorCount = state.sensors.length) {
+  const canvas = dom.sensorsCanvas;
+  const { cardWidth, columnGap } = getSensorWorkspaceLayoutMetrics();
+  const maxByWidth = canvas?.clientWidth
+    ? Math.max(1, Math.floor((canvas.clientWidth - 180) / (cardWidth + columnGap)))
+    : 3;
+  const balancedColumns = Math.max(1, Math.ceil(Math.sqrt(Math.max(1, sensorCount) * 1.25)));
+  return clamp(Math.min(maxByWidth, balancedColumns, 4), 1, 4);
+}
+
+function autoLayoutSensorsWorkspace({ fitView = true } = {}) {
+  if (!state.sensors.length) {
+    setStatus("No sensors to auto layout.");
+    return;
+  }
+  const { cardWidth, cardHeight, columnGap, rowGap, startX, startY } = getSensorWorkspaceLayoutMetrics();
+  const columns = getSensorAutoLayoutColumnCount(state.sensors.length);
+  state.sensors.forEach((sensor, index) => {
+    const column = index % columns;
+    const row = Math.floor(index / columns);
+    sensor.workspaceLayout = {
+      x: startX + (column * (cardWidth + columnGap)),
+      y: startY + (row * (cardHeight + rowGap)),
+    };
+  });
+  renderSensorsWorkspace();
+  if (fitView) {
+    requestAnimationFrame(() => fitSensorsWorkspaceToContent());
+  }
+  saveMapState();
+  setStatus("Sensor workspace auto layout complete.");
+}
+
+function fitSensorsWorkspaceToContent({ sensorId = "", padding = 130 } = {}) {
+  const canvas = dom.sensorsCanvas;
+  if (!canvas) {
+    return;
+  }
+  const targetSensors = sensorId
+    ? state.sensors.filter((sensor) => sensor.id === sensorId)
+    : state.sensors;
+  if (!targetSensors.length) {
+    return;
+  }
+  const { cardWidth, cardHeight } = getSensorWorkspaceLayoutMetrics();
+  const layouts = targetSensors.map((sensor, index) => ensureSensorWorkspaceLayout(sensor, index));
+  const xs = layouts.map((layout) => Number(layout.x) || 0);
+  const ys = layouts.map((layout) => Number(layout.y) || 0);
+  const minX = Math.min(...xs) - (cardWidth / 2);
+  const maxX = Math.max(...xs) + (cardWidth / 2);
+  const minY = Math.min(...ys) - (cardHeight / 2);
+  const maxY = Math.max(...ys) + (cardHeight / 2);
+  const contentWidth = Math.max(maxX - minX, cardWidth);
+  const contentHeight = Math.max(maxY - minY, cardHeight);
+  const zoomX = canvas.clientWidth > 0 ? (canvas.clientWidth - (padding * 2)) / contentWidth : _sensorsWorkspaceState.zoom;
+  const zoomY = canvas.clientHeight > 0 ? (canvas.clientHeight - (padding * 2)) / contentHeight : _sensorsWorkspaceState.zoom;
+  if (!sensorId && canvas.clientWidth > 0 && canvas.clientHeight > 0) {
+    _sensorsWorkspaceState.zoom = clamp(Math.min(zoomX, zoomY, 1), 0.45, 1.8);
+  }
+  const centerX = (minX + maxX) / 2;
+  const centerY = (minY + maxY) / 2;
+  _sensorsWorkspaceState.panX = (canvas.clientWidth / 2) - (centerX * _sensorsWorkspaceState.zoom);
+  _sensorsWorkspaceState.panY = (canvas.clientHeight / 2) - (centerY * _sensorsWorkspaceState.zoom);
+  applySensorsWorkspaceTransform();
+}
+
 function reserveSensorWorkspaceSpawnLayout() {
   const canvas = dom.sensorsCanvas;
   if (!canvas) {
@@ -25656,6 +25736,25 @@ function applySensorsWorkspaceTransform() {
   dom.sensorsWorld.style.transform = `translate(${_sensorsWorkspaceState.panX}px, ${_sensorsWorkspaceState.panY}px) scale(${_sensorsWorkspaceState.zoom})`;
 }
 
+function syncSensorsLibraryCollapsedUi({ fit = false } = {}) {
+  const collapsed = Boolean(_sensorsWorkspaceState.libraryCollapsed);
+  dom.sensorsView?.classList.toggle("sensors-library-collapsed", collapsed);
+  if (dom.sensorsLibraryToggleBtn) {
+    dom.sensorsLibraryToggleBtn.innerHTML = collapsed ? "&#9654;" : "&#9664;";
+    dom.sensorsLibraryToggleBtn.setAttribute("aria-expanded", String(!collapsed));
+    dom.sensorsLibraryToggleBtn.setAttribute("aria-label", collapsed ? "Expand sensor library" : "Collapse sensor library");
+    dom.sensorsLibraryToggleBtn.title = collapsed ? "Expand sensor library" : "Collapse sensor library";
+  }
+  if (fit && state.ui?.currentView === "sensors") {
+    requestAnimationFrame(() => fitSensorsWorkspaceToContent());
+  }
+}
+
+function toggleSensorsLibraryPanel() {
+  _sensorsWorkspaceState.libraryCollapsed = !_sensorsWorkspaceState.libraryCollapsed;
+  syncSensorsLibraryCollapsedUi({ fit: true });
+}
+
 function renderSensorsLibrary() {
   if (!dom.sensorsLibraryList) return;
   dom.sensorsLibraryList.innerHTML = "";
@@ -25680,6 +25779,7 @@ function renderSensorsLibrary() {
 
 function renderSensorsView() {
   initSensorsViewIfNeeded();
+  syncSensorsLibraryCollapsedUi();
   renderSensorsLibrary();
   renderSensorsWorkspace();
 }
@@ -25875,8 +25975,11 @@ function initSensorsViewIfNeeded() {
   });
 
   dom.sensorsAddBtn?.addEventListener("click", () => openSensorEditor("", SENSOR_LIBRARY[0]?.id));
+  dom.sensorsAutoLayoutBtn?.addEventListener("click", () => autoLayoutSensorsWorkspace());
+  dom.sensorsFitBtn?.addEventListener("click", () => fitSensorsWorkspaceToContent());
   dom.sensorsRefreshBtn?.addEventListener("click", () => renderSensorsView());
   dom.sensorsOpenMapBtn?.addEventListener("click", () => switchView("map"));
+  dom.sensorsLibraryToggleBtn?.addEventListener("click", toggleSensorsLibraryPanel);
   dom.sensorsCtxClose?.addEventListener("click", hideSensorsContextMenu);
   dom.sensorsCtxEdit?.addEventListener("click", () => {
     const sensorId = _sensorsWorkspaceState.contextSensorId;
@@ -40726,6 +40829,7 @@ const _sensorsWorkspaceState = {
   contextSensorId: "",
   editingSensorId: "",
   pendingSpawnLayout: null,
+  libraryCollapsed: false,
 };
 
 const SENSOR_LIBRARY = Object.freeze([

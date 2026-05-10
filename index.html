@@ -1369,6 +1369,8 @@
           </div>
           <div class="to-toolbar-section to-toolbar-section-right emitters-toolbar-actions">
             <button id="sensorsAddBtn" class="primary-button small" type="button">Add Sensor</button>
+            <button id="sensorsAutoLayoutBtn" class="ghost-button small" type="button">Auto Layout</button>
+            <button id="sensorsFitBtn" class="ghost-button small" type="button">Fit View</button>
             <button id="sensorsRefreshBtn" class="ghost-button small" type="button">Refresh</button>
             <button id="sensorsOpenMapBtn" class="ghost-button small" type="button">Open Map</button>
           </div>
@@ -1376,8 +1378,11 @@
         <div class="sensors-main">
           <aside class="sensors-library-panel">
             <div class="list-header emitters-workspace-header">
-              <span>Sensor Library</span>
-              <span class="fine-print">Add common RF receivers.</span>
+              <div class="sensors-library-title">
+                <button id="sensorsLibraryToggleBtn" class="sensors-library-toggle" type="button" aria-expanded="true" aria-label="Collapse sensor library">&#9664;</button>
+                <span>Sensor Library</span>
+              </div>
+              <span class="fine-print sensors-library-subtitle">Add common RF receivers.</span>
             </div>
             <div id="sensorsLibraryList" class="sensors-library-list"></div>
           </aside>
