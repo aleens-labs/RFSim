@@ -10602,6 +10602,40 @@ body.emitter-modal-open {
   min-height: 420px;
 }
 
+.leaflet-tooltip.sensor-emitter-detail-tooltip {
+  padding: 7px 10px;
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  border-radius: 5px;
+  background: rgba(10, 15, 24, 0.94);
+  color: var(--text);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.38), 0 0 0 1px rgba(15, 23, 42, 0.42);
+  font-family: var(--app-font-family);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  line-height: 1.1;
+}
+
+.leaflet-tooltip.sensor-emitter-detail-tooltip::before {
+  border-color: transparent;
+}
+
+.leaflet-tooltip-top.sensor-emitter-detail-tooltip::before {
+  border-top-color: rgba(10, 15, 24, 0.94);
+}
+
+.leaflet-tooltip-bottom.sensor-emitter-detail-tooltip::before {
+  border-bottom-color: rgba(10, 15, 24, 0.94);
+}
+
+.leaflet-tooltip-left.sensor-emitter-detail-tooltip::before {
+  border-left-color: rgba(10, 15, 24, 0.94);
+}
+
+.leaflet-tooltip-right.sensor-emitter-detail-tooltip::before {
+  border-right-color: rgba(10, 15, 24, 0.94);
+}
+
 .sensor-emitter-detail-loading {
   position: absolute;
   inset: 0;

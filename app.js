@@ -26807,7 +26807,7 @@ function getSensorEmitterDetailBasemapConfig() {
   return BASEMAPS[dom.basemapSelect?.value] || BASEMAPS.esri;
 }
 
-function sensorCollectionWaveRgba(hexColor, opacity) {
+function sensorCollectionArrowRgba(hexColor, opacity) {
   const hex = String(hexColor || "#7dd3fc").replace("#", "").trim();
   const value = /^[0-9a-f]{6}$/i.test(hex) ? hex : "7dd3fc";
   const r = parseInt(value.slice(0, 2), 16);
@@ -26816,7 +26816,7 @@ function sensorCollectionWaveRgba(hexColor, opacity) {
   return `rgba(${r}, ${g}, ${b}, ${clamp(opacity, 0, 1).toFixed(3)})`;
 }
 
-const SensorCollectionWaveLayer = L.Layer.extend({
+const SensorCollectionArrowLayer = L.Layer.extend({
   initialize(emitterLatLng, sensorLatLng, options = {}) {
     this._emitterLatLng = L.latLng(emitterLatLng);
     this._sensorLatLng = L.latLng(sensorLatLng);
@@ -26838,7 +26838,7 @@ const SensorCollectionWaveLayer = L.Layer.extend({
       pane.style.zIndex = "560";
       pane.style.pointerEvents = "none";
     }
-    this._canvas = L.DomUtil.create("canvas", "sensor-collection-wave-layer");
+    this._canvas = L.DomUtil.create("canvas", "sensor-collection-arrow-layer");
     this._canvas.style.position = "absolute";
     this._canvas.style.pointerEvents = "none";
     pane.appendChild(this._canvas);
@@ -26881,10 +26881,10 @@ const SensorCollectionWaveLayer = L.Layer.extend({
     const ctx = this._canvas.getContext("2d");
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
     ctx.clearRect(0, 0, size.x, size.y);
-    this._drawCollectionPath(ctx);
+    this._drawCollectionArrow(ctx);
   },
 
-  _drawCollectionPath(ctx) {
+  _drawCollectionArrow(ctx) {
     const emitter = this._map.latLngToContainerPoint(this._emitterLatLng);
     const sensor = this._map.latLngToContainerPoint(this._sensorLatLng);
     const dx = sensor.x - emitter.x;
@@ -26908,39 +26908,29 @@ const SensorCollectionWaveLayer = L.Layer.extend({
     ctx.beginPath();
     ctx.moveTo(emitter.x, emitter.y);
     ctx.lineTo(sensor.x, sensor.y);
-    ctx.strokeStyle = sensorCollectionWaveRgba(color, opacity * 0.72);
-    ctx.lineWidth = 3.2;
+    ctx.strokeStyle = sensorCollectionArrowRgba(color, opacity * 0.78);
+    ctx.lineWidth = 3.4;
     ctx.stroke();
 
-    const count = distance < 140
-      ? 1
-      : Math.round(clamp(distance / 112, 2, 7));
-    const startInset = Math.min(42, distance * 0.18);
-    const endInset = Math.min(58, distance * 0.2);
-    const usableDistance = Math.max(18, distance - startInset - endInset);
-    const spacing = usableDistance / (count + 1);
-    const waveRadius = clamp(Math.min(spacing * 0.42, distance * 0.07), 12, 26);
-    const forwardBulge = clamp(waveRadius * 0.58, 7, 16);
+    const arrowLength = clamp(distance * 0.09, 18, 34);
+    const arrowHalfWidth = clamp(arrowLength * 0.42, 8, 14);
+    const baseX = sensor.x - ux * arrowLength;
+    const baseY = sensor.y - uy * arrowLength;
+    const leftX = baseX + nx * arrowHalfWidth;
+    const leftY = baseY + ny * arrowHalfWidth;
+    const rightX = baseX - nx * arrowHalfWidth;
+    const rightY = baseY - ny * arrowHalfWidth;
 
-    ctx.strokeStyle = sensorCollectionWaveRgba(color, opacity);
-    ctx.lineWidth = 2.7;
-    for (let i = 1; i <= count; i += 1) {
-      const centerDist = startInset + spacing * i;
-      ctx.beginPath();
-      for (let step = 0; step <= 18; step += 1) {
-        const theta = -Math.PI / 2 + (Math.PI * step) / 18;
-        const localX = centerDist + Math.cos(theta) * forwardBulge;
-        const localY = Math.sin(theta) * waveRadius;
-        const x = emitter.x + ux * localX + nx * localY;
-        const y = emitter.y + uy * localX + ny * localY;
-        if (step === 0) {
-          ctx.moveTo(x, y);
-        } else {
-          ctx.lineTo(x, y);
-        }
-      }
-      ctx.stroke();
-    }
+    ctx.beginPath();
+    ctx.moveTo(sensor.x, sensor.y);
+    ctx.lineTo(leftX, leftY);
+    ctx.lineTo(rightX, rightY);
+    ctx.closePath();
+    ctx.fillStyle = sensorCollectionArrowRgba(color, opacity * 0.86);
+    ctx.strokeStyle = sensorCollectionArrowRgba(color, opacity);
+    ctx.lineWidth = 2.4;
+    ctx.fill();
+    ctx.stroke();
     ctx.restore();
   },
 });
@@ -26995,13 +26985,19 @@ function renderSensorEmitterDetailMap(selection) {
   }
   const sensorLatLng = [sensorPosition.lat, sensorPosition.lon];
   const emitterLatLng = [emitterPosition.lat, emitterPosition.lon];
+  const tooltipOptions = {
+    permanent: false,
+    direction: "top",
+    opacity: 1,
+    className: "sensor-emitter-detail-tooltip",
+  };
   L.marker(emitterLatLng, { icon: createEmitterIcon(asset), keyboard: false })
-    .bindTooltip(asset.name || asset.emitterLabel || "Emitter", { permanent: false, direction: "top" })
+    .bindTooltip(asset.name || asset.emitterLabel || "Emitter", tooltipOptions)
     .addTo(_sensorEmitterDetailState.layerGroup);
   L.marker(sensorLatLng, { icon: createSensorIcon(sensor), keyboard: false })
-    .bindTooltip(sensor.name || "RF Sensor", { permanent: false, direction: "top" })
+    .bindTooltip(sensor.name || "RF Sensor", tooltipOptions)
     .addTo(_sensorEmitterDetailState.layerGroup);
-  new SensorCollectionWaveLayer(emitterLatLng, sensorLatLng, {
+  new SensorCollectionArrowLayer(emitterLatLng, sensorLatLng, {
     opacity: entry?.energyDetected ? 0.94 : 0.72,
   }).addTo(_sensorEmitterDetailState.layerGroup);
   const bounds = L.latLngBounds([emitterLatLng, sensorLatLng]);
